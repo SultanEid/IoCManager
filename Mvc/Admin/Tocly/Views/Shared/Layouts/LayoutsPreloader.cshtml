@@ -1,0 +1,71 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    @Html.Partial("~/Views/Shared/_TitleMeta.cshtml")
+
+    @RenderSection("styles", false)
+
+    @Html.Partial("~/Views/Shared/_headCSS.cshtml")
+
+</head>
+<body data-sidebar="colored">
+    <!-- Loader -->
+    <div id="preloader">
+        <div id="status">
+            <div class="spinner">
+                <i class="ri-loader-line spin-icon"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Begin page -->
+    <div id="layout-wrapper">
+
+        @Html.Partial("~/Views/Shared/_header.cshtml")
+        @Html.Partial("~/Views/Shared/_leftSidebar.cshtml")
+
+
+        <!-- ============================================================== -->
+        <!-- Start right Content here -->
+        <!-- ============================================================== -->
+        <div class="main-content">
+
+            <div class="page-content">
+                <div class="container-fluid">
+
+                    @Html.Partial("~/Views/Shared/pagetitle.cshtml")
+
+                    @RenderBody()
+                </div> <!-- container-fluid -->
+            </div>
+            <!-- End Page-content -->
+
+            @RenderSection("externalhtml", required: false)
+
+            @Html.Partial("~/Views/Shared/_footer.cshtml")
+
+        </div>
+        <!-- end main content-->
+
+    </div>
+    <!-- END layout-wrapper -->
+
+    @Html.Partial("~/Views/Shared/_rightSidebar.cshtml")
+
+    <!-- Right bar overlay-->
+    <div class="rightbar-overlay"></div>
+
+    <!-- JAVASCRIPT -->
+    <script src="~/assets/libs/jquery/jquery.min.js"></script>
+    <script src="~/assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="~/assets/libs/metismenu/metisMenu.min.js"></script>
+    <script src="~/assets/libs/simplebar/simplebar.min.js"></script>
+    <script src="~/assets/libs/node-waves/waves.min.js"></script>
+
+    <!-- Icon -->
+    <script src="https://unicons.iconscout.com/release/v2.0.1/script/monochrome/bundle.js"></script>
+
+    @RenderSection("scripts", required: false)
+</body>
+</html>

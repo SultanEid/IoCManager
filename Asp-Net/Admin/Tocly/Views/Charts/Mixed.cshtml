@@ -1,0 +1,55 @@
+﻿
+@{
+    ViewBag.Title = "Mixed";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">Line & Column Charts</h4>
+                <div id="line_column_chart" class="apex-charts" dir="ltr"></div>
+            </div>
+        </div><!--end card-->
+    </div><!-- end col -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">Multiple Y-Axis Charts</h4>
+                <div id="multi_chart" class="apex-charts" dir="ltr"></div>
+            </div>
+        </div><!--end card-->
+    </div><!-- end col -->
+</div><!-- end row -->
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">Line & Area Charts</h4>
+                <div id="line_area_chart" class="apex-charts" dir="ltr"></div>
+            </div>
+        </div><!--end card-->
+    </div><!-- end col -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">Line, Column & Area Charts</h4>
+                <div id="line_area_charts" class="apex-charts" dir="ltr"></div>
+            </div>
+        </div><!--end card-->
+    </div><!-- end col -->
+</div><!-- end row -->
+@section scripts{
+
+
+    <!-- apexcharts -->
+    <script src="~/assets/libs/apexcharts/apexcharts.min.js"></script>
+
+    <!-- mixed charts init -->
+    <script src="~/assets/js/pages/apexcharts-mixed.init.js"></script>
+
+    <script src="~/assets/js/app.js"></script>
+}
