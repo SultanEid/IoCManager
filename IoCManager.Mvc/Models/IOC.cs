@@ -6,13 +6,13 @@ namespace IoCManager.Mvc.Models
     {
 
         //data fields
-        int iocID { get; set; }
-        string value { get; set; }
-        string type { get; set; }
-        string severity { get; set; }
-        string source { get; set; }
-        DateTime createdAt { get; set; }
-        DateTime lastUpdated { get; set; }
+        public int iocID { get; set; }
+        public string value { get; set; }
+        public string type { get; set; }
+        public string severity { get; set; }
+        public string source { get; set; }
+        public DateTime createdAt { get; set; }
+        public  DateTime lastUpdated { get; set; }
 
 
         //methods

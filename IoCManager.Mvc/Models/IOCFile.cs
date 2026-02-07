@@ -1,14 +1,16 @@
-﻿namespace IoCManager.Mvc.Models
+﻿using System;
+
+namespace IoCManager.Mvc.Models
 {
     public class IOCFile
     {
         //data fields
-        string fileName { get; set; }
-        string filePath { get; set; }
-        long size { get; set; }
-        string fileType { get; set; }
-        DateTime importedAt { get; set; }
-        bool formatValid { get; set; }
+        public string FileName { get; set; }
+        public string FilePath { get; set; }
+        public long Size { get; set; }
+        public string FileType { get; set; }
+        public DateTime ImportedAt { get; set; }
+        public bool FormatValid { get; set; }
 
         //methods
         public void parseFile() {

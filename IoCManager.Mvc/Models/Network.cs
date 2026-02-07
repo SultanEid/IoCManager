@@ -13,9 +13,13 @@
         //methods
 
         public void addTarget(Target target) {
+
+
           }
         public void removeTarget(Target target) { 
         
+
+
         }
         public string getNetworkMap() { 
             return "";

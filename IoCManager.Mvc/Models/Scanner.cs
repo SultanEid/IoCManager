@@ -1,4 +1,6 @@
-﻿namespace IoCManager.Mvc.Models
+﻿using System;
+
+namespace IoCManager.Mvc.Models
 {
     public class Scanner
     {

@@ -1,19 +1,54 @@
-﻿namespace IoCManager.Mvc.Models
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
+namespace IoCManager.Mvc.Models
 {
     public class IOCManager
     {
 
-         int managerID { get; set; }
-         string name { get; set; }
-         DateTime dashboardLastUpdated { get; set; }
+        public int ManagerID ;
+        public string name;
+        public DateTime DashboardLastUpdated;
 
-      
+
 
         // methods
-        public void loadIOCFiles() {
-        
-        }
-        public void registerTarget() { 
+        public List<IOCFile> LoadIOCFiles(string directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath))
+                throw new ArgumentException("directoryPath is required.", nameof(directoryPath));
+
+            if (!Directory.Exists(directoryPath))
+                return new List<IOCFile>();
+
+            var files = Directory.GetFiles(directoryPath);
+
+            var result = files.Select(path =>
+            {
+                var info = new FileInfo(path);
+
+                return new IOCFile
+                {
+
+                    FileName = info.Name,
+                    FilePath = info.FullName,
+                    Size = info.Length,
+                    FileType = info.Extension,
+                    ImportedAt = DateTime.UtcNow,
+                    FormatValid = true
+                };
+            }).ToList();
+
+            DashboardLastUpdated = DateTime.UtcNow;
+            return result;
+        } 
+
+
+
+        public void registerTarget() 
+        { 
         
         }
         public void registerNetwork() {

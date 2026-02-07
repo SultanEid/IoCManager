@@ -15,7 +15,6 @@ namespace IoCManager.Mvc.Controllers
         {
             var client = _factory.CreateClient("IocApi");
 
-            // هذا endpoint موجود عندك حسب Swagger
             var response = await client.GetAsync("/api/Iocs");
 
             return Content(

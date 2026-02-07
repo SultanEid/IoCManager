@@ -6,19 +6,26 @@ namespace IoCManager.Mvc.Models
     {
         //  data fields
 
-        public int reportID { get; set; }
-        public string title { get; set; }
-        public string format { get; set; }
-        public DateTime createdAt { get; set; }
-        public string summary { get; set; }
-        public string severityStats { get; set; }
-
+        public int reportID;
+        public string title;
+        public string format;
+        public DateTime createdAt;
+        public string summary;
+        public string severityStats;
         // methods
-        public void generate() { }
-        public void addScanResult(object result) { }
-        public void exportPDF() { }
-        public void exportJSON() { }
+        public void generate() {
+        }
+        public void addScanResult(object result) {
+        
+        }
+        public void exportPDF() {
+        
+        }
+        public void exportJSON() { 
+        
+        }
         public void attachToPlan(ScanPlan scanPlan) { }
         public void displayReport() { }
+
     }
 }
