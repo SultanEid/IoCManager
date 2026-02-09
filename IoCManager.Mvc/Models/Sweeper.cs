@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using IoCManagerProject;
 
 namespace IoCManager.Mvc.Models
 {
@@ -97,7 +98,7 @@ namespace IoCManager.Mvc.Models
             if (ioc == null)
                 return false;
 
-            if (!ioc.validateIOC())
+            if (!ioc.ValidateIOC())
                 return false;
 
             if (_lastResults == null || _lastResults.Count == 0)
@@ -113,7 +114,7 @@ namespace IoCManager.Mvc.Models
                 if (string.IsNullOrWhiteSpace(details))
                     continue;
 
-                if (ioc.match(details))
+                if (ioc.Match(details))
                     return true;
             }
         

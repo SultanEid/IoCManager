@@ -1,4 +1,5 @@
 ﻿using System;
+using IoCManagerProject;
 
 namespace IoCManager.Mvc.Models
 {
