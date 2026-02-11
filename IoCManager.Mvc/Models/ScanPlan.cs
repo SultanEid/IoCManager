@@ -5,12 +5,12 @@ namespace IoCManager.Mvc.Models
     public class ScanPlan
     {
 
-        int planID { get; set; }
-        string name { get; set; }
-        string status { get; set; }
-        DateTime createdAt { get; set; }
-        DateTime scheduledTime { get; set; }
-        string description { get; set; }
+        public int planID { get; set; }
+        public string name { get; set; }
+        public string status { get; set; }
+        public DateTime createdAt { get; set; }
+        public DateTime scheduledTime { get; set; }
+        public string description { get; set; }
 
         //methods
 
