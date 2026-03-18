@@ -212,12 +212,92 @@ function Parse-YaraOutput {
     return [pscustomobject]@{ matches = $matchList; other = $other }
 }
 
+function Get-RemoteFileHashes {
+    param(
+        [string]$EffectiveOS,
+        $SshBaseArgs,
+        [string[]]$FilePaths
+    )
+
+    $hashes = @{}
+    $uniquePaths = $FilePaths |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+
+    if (-not $uniquePaths -or $uniquePaths.Count -eq 0) {
+        return $hashes
+    }
+
+    if ($EffectiveOS -eq "windows") {
+        $output = @()
+        foreach ($path in $uniquePaths) {
+            $quotedPath = Quote-PsLiteral $path
+            $remoteScript = @"
+`$ProgressPreference = 'SilentlyContinue'
+`$ErrorActionPreference = 'Stop'
+`$path = $quotedPath
+`$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath `$path).Hash
+if (-not [string]::IsNullOrWhiteSpace(`$hash)) {
+    [Console]::Out.WriteLine(`$path + '|' + `$hash.ToLowerInvariant())
+}
+"@
+            $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($remoteScript))
+            $hashLine = & ssh @SshBaseArgs "powershell.exe -EncodedCommand $encoded" 2>$null
+            if ($hashLine) {
+                $output += $hashLine
+            }
+        }
+    }
+    else {
+        $quotedPaths = $uniquePaths | ForEach-Object { Quote-PosixArg $_ }
+        $remoteScript = "for path in " + ($quotedPaths -join " ") + "; do if [ -f ""`$path"" ]; then hash=`$(sha256sum ""`$path"" | awk '{print `$1}'); printf '%s|%s\n' ""`$path"" ""`$hash""; fi; done"
+        $output = & ssh @SshBaseArgs $remoteScript 2>$null
+    }
+
+    foreach ($line in $output) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $parts = $line -split '\|', 2
+        if ($parts.Count -ne 2) { continue }
+        $hashes[$parts[0]] = $parts[1]
+    }
+
+    return $hashes
+}
+
+function Normalize-MatchPath([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
+
+    if ($Path -match '^[A-Za-z]:\\') {
+        return ($Path -replace '\\{2,}', '\')
+    }
+
+    return $Path
+}
+
 function Build-JsonResult {
-    param($YaraExitCode, $EffectiveOS, $RemoteYaraPath, $FlagsStr, $ScanPath, $RemoteRule, $RemoteResult, $LocalResult, $Target, $User, $Port)
+    param($YaraExitCode, $EffectiveOS, $RemoteYaraPath, $FlagsStr, $ScanPath, $RemoteRule, $RemoteResult, $LocalResult, $Target, $User, $Port, $SshBaseArgs)
     
     $rawLines = Get-Content -LiteralPath $LocalResult -ErrorAction SilentlyContinue
     $parsed = Parse-YaraOutput -Lines $rawLines
-    $uniqueFiles = if ($parsed.matches.Count -gt 0) { $parsed.matches | Select-Object -ExpandProperty file -Unique } else { @() }
+    $uniqueFiles = if ($parsed.matches.Count -gt 0) {
+        $parsed.matches |
+            ForEach-Object { Normalize-MatchPath $_.file } |
+            Select-Object -Unique
+    }
+    else {
+        @()
+    }
+    $fileHashes = Get-RemoteFileHashes -EffectiveOS $EffectiveOS -SshBaseArgs $SshBaseArgs -FilePaths $uniqueFiles
+
+    foreach ($match in $parsed.matches) {
+        $hash = $null
+        $normalizedPath = Normalize-MatchPath $match.file
+        if ($normalizedPath -and $fileHashes.ContainsKey($normalizedPath)) {
+            $hash = $fileHashes[$normalizedPath]
+        }
+
+        Add-Member -InputObject $match -NotePropertyName file_hash -NotePropertyValue $hash -Force
+    }
 
     $obj = [pscustomobject]@{
         metadata = [pscustomobject]@{
@@ -331,7 +411,7 @@ elseif ($EffectiveOS -eq "windows") {
 # =============================================================================
 
 # Build and Save JSON FIRST to avoid parsing the custom text header as false YARA rules
-$json = Build-JsonResult -YaraExitCode $ec -EffectiveOS $EffectiveOS -RemoteYaraPath $RemoteYaraPath -FlagsStr $flagsStr -ScanPath $ScanPath -RemoteRule $remoteRule -RemoteResult $remoteResult -LocalResult $localTxtResult -Target $Target -User $User -Port $Port
+$json = Build-JsonResult -YaraExitCode $ec -EffectiveOS $EffectiveOS -RemoteYaraPath $RemoteYaraPath -FlagsStr $flagsStr -ScanPath $ScanPath -RemoteRule $remoteRule -RemoteResult $remoteResult -LocalResult $localTxtResult -Target $Target -User $User -Port $Port -SshBaseArgs $sshBase
 $json | Set-Content $localJsonResult
 
 # NOW modify the TXT file to include the human-readable header
