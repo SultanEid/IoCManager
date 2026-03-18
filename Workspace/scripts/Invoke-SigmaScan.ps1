@@ -1,12 +1,15 @@
 <#
 .SYNOPSIS
-  Invoke a remote Sigma (Chainsaw) hunt on a Windows target over SSH, then pull results locally.
+  Invoke a remote Sigma hunt on a Windows or Linux target over SSH, then pull results locally.
 
 .DESCRIPTION
-  This script copies Sigma rules (official or custom) from the local machine (IOC_MGR) to a temporary folder
-  on the remote Windows target using SCP, runs Chainsaw "hunt" against an EVTX log for a given
-  time window (MinutesBack), outputs results as JSON on the remote host, and then downloads
-  that JSON to the local results directory.
+  Windows mode:
+    Copies Sigma rules from IOC_MGR to the remote Windows target, runs Chainsaw against EVTX,
+    and downloads the JSON results.
+
+  Linux mode:
+    Uses a constrained Sigma-compatible custom rule subset on IOC_MGR and hunts recent
+    journal/syslog content on the remote Linux target over SSH, then downloads the JSON results.
 
   After downloading, the script optionally:
     - Deletes the temporary rules folder on the remote target (Cleanup)
@@ -14,6 +17,12 @@
     - Creates a human-readable TXT table from the JSON output (Interactive Mode Only)
 
 .NOTES
+  Linux mode currently supports custom YAML rules that use:
+    detection:
+      selection:
+        keywords:
+          - "needle"
+
   Silent mode returns enveloped JSON only when detections exist.
   If no detections are found:
     - Interactive mode prints a success/no-detections message
@@ -30,6 +39,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string] $KeyPath,
 
+  [ValidateSet("auto", "windows", "linux")]
+  [string] $RemoteOS = "auto",
+
   [ValidateRange(1, 525600)]
   [int] $MinutesBack = 60,
 
@@ -40,6 +52,8 @@ param(
   [string] $CustomRule,
 
   [string] $EvtxPath = "C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx",
+
+  [string] $LinuxLogPath = "",
 
   [switch] $Cleanup = $true,
 
@@ -98,6 +112,11 @@ if (!(Test-Path -LiteralPath $RulesPath)) {
 $RulesItem = Get-Item -LiteralPath $RulesPath
 $RulesLeaf = $RulesItem.Name
 $RulesIsDirectory = $RulesItem.PSIsContainer
+$EffectiveOs = if ($RemoteOS -eq 'auto') {
+    if ([string]::IsNullOrWhiteSpace($EvtxPath)) { 'linux' } else { 'windows' }
+} else {
+    $RemoteOS
+}
 
 # =========================
 #  Remote + local working directories
@@ -173,7 +192,7 @@ function Invoke-ScpUpload {
     )
 
     $args = @('-q')
-    $args += Get-SshCommonArgs | Where-Object { $_ -ne 'BatchMode=yes' -or $true }
+    $args += Get-SshCommonArgs
     if ($Recursive) { $args += '-r' }
     $args += @($LocalPath, "$User@${Target}:$RemotePath")
 
@@ -196,7 +215,7 @@ function Invoke-ScpDownload {
     )
 
     $args = @('-q')
-    $args += Get-SshCommonArgs | Where-Object { $_ -ne 'BatchMode=yes' -or $true }
+    $args += Get-SshCommonArgs
     $args += @("$User@${Target}:$RemotePath", $LocalPath)
 
     $output = & $SCP @args 2>&1
@@ -256,11 +275,264 @@ if ($ScanEntireLog -and $Interactive) {
     Write-Host "[+] Proceeding with full log scan..." -ForegroundColor Green
 }
 
-# =========================
-#  Pre-flight
-# =========================
-if ($Interactive) { Write-Host "[*] Verifying Chainsaw toolkit on target..." }
+$CustomRulesOnly = -not [string]::IsNullOrWhiteSpace($CustomRule)
 
+function Get-LinuxSigmaRuleDefinitions {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $RuleRoot
+    )
+
+    $ruleFiles = if ((Get-Item -LiteralPath $RuleRoot).PSIsContainer) {
+        Get-ChildItem -LiteralPath $RuleRoot -Filter *.yml -File -Recurse
+    } else {
+        @(Get-Item -LiteralPath $RuleRoot)
+    }
+
+    $definitions = New-Object System.Collections.Generic.List[object]
+
+    foreach ($ruleFile in $ruleFiles) {
+        $lines = Get-Content -LiteralPath $ruleFile.FullName
+        $title = $null
+        $level = 'medium'
+        $status = 'experimental'
+        $identifier = $null
+        $keywords = New-Object System.Collections.Generic.List[string]
+        $product = 'linux'
+        $service = 'syslog'
+        $category = 'process_creation'
+        $inKeywords = $false
+
+        foreach ($line in $lines) {
+            if ($line -match '^\s*title:\s*(.+?)\s*$') { $title = $Matches[1].Trim(); $inKeywords = $false; continue }
+            if ($line -match '^\s*id:\s*(.+?)\s*$') { $identifier = $Matches[1].Trim(); $inKeywords = $false; continue }
+            if ($line -match '^\s*level:\s*(.+?)\s*$') { $level = $Matches[1].Trim(); $inKeywords = $false; continue }
+            if ($line -match '^\s*status:\s*(.+?)\s*$') { $status = $Matches[1].Trim(); $inKeywords = $false; continue }
+            if ($line -match '^\s*product:\s*(.+?)\s*$') { $product = $Matches[1].Trim(); $inKeywords = $false; continue }
+            if ($line -match '^\s*service:\s*(.+?)\s*$') { $service = $Matches[1].Trim(); $inKeywords = $false; continue }
+            if ($line -match '^\s*category:\s*(.+?)\s*$') { $category = $Matches[1].Trim(); $inKeywords = $false; continue }
+            if ($line -match '^\s*keywords:\s*$') { $inKeywords = $true; continue }
+
+            if ($inKeywords -and $line -match '^\s*-\s*(.+?)\s*$') {
+                $value = $Matches[1].Trim().Trim('"').Trim("'")
+                if (-not [string]::IsNullOrWhiteSpace($value)) {
+                    $keywords.Add($value) | Out-Null
+                }
+                continue
+            }
+
+            if ($line -match '^\s*\S') {
+                $inKeywords = $false
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($title)) {
+            throw "Linux Sigma rule '$($ruleFile.Name)' is missing a title."
+        }
+
+        if ($keywords.Count -eq 0) {
+            throw "Linux Sigma rule '$($ruleFile.Name)' must define detection.selection.keywords."
+        }
+
+        $definitions.Add([pscustomobject]@{
+            title = $title
+            id = if ([string]::IsNullOrWhiteSpace($identifier)) { [Guid]::NewGuid().ToString() } else { $identifier }
+            level = $level
+            status = $status
+            logsource = [pscustomobject]@{
+                category = $category
+                product = $product
+                service = $service
+            }
+            keywords = @($keywords)
+            file = $ruleFile.Name
+        }) | Out-Null
+    }
+
+    return $definitions.ToArray()
+}
+
+function Quote-PosixArg {
+    param(
+        [AllowNull()]
+        [string] $Value
+    )
+
+    if ($null -eq $Value -or $Value.Length -eq 0) {
+        return "''"
+    }
+
+    return "'" + $Value.Replace("'", "'\''") + "'"
+}
+
+function Invoke-LinuxSigmaHunt {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]] $RuleDefinitions,
+
+        [Parameter(Mandatory = $true)]
+        [string] $RemoteResultFile,
+
+        [Parameter(Mandatory = $true)]
+        [string] $EffectiveLogPath
+    )
+
+    $definitionsJson = $RuleDefinitions | ConvertTo-Json -Depth 10 -Compress
+    $definitionsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($definitionsJson))
+    $sinceIso = (Get-Date).ToUniversalTime().AddMinutes(-$MinutesBack).ToString('O')
+    $logPathBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($EffectiveLogPath))
+    $remoteResultBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($RemoteResultFile))
+
+    $pythonScript = @'
+import base64
+import datetime
+import json
+import re
+import subprocess
+import sys
+
+rules = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
+if isinstance(rules, dict):
+    rules = [rules]
+since_iso = sys.argv[2]
+log_path = base64.b64decode(sys.argv[3]).decode('utf-8')
+result_path = base64.b64decode(sys.argv[4]).decode('utf-8')
+
+since = datetime.datetime.fromisoformat(since_iso.replace('Z', '+00:00'))
+
+cmd = ['journalctl', '--since', since.strftime('%Y-%m-%d %H:%M:%S'), '--no-pager', '-o', 'short-iso']
+proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False)
+raw_lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+if not raw_lines and log_path:
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as handle:
+            raw_lines = [line.rstrip('\n') for line in handle if line.strip()]
+    except OSError:
+        raw_lines = []
+
+def is_sysmon_line(line):
+    lowered = line.lower()
+    return '<event>' in lowered or ' sysmon[' in lowered
+
+lines = [line for line in raw_lines if is_sysmon_line(line)]
+
+detections = []
+command_line_pattern = re.compile(r"""<Data\s+Name=(['"])CommandLine\1>(.*?)</Data>""", re.IGNORECASE)
+logger_pattern = re.compile(r"""(?i)(?:^|\s)(?:/usr/bin/)?(?:bash|sh|dash)\s+-c\s+logger\s+(.+)$|(?:^|\s)(?:/usr/bin/)?logger\s+(.+)$""")
+seen_detections = set()
+
+def extract_command_line(line):
+    match = command_line_pattern.search(line)
+    if match:
+        return match.group(2)
+    return line
+
+def normalize_command_line(command_line):
+    normalized = command_line.strip()
+    lowered = normalized.lower()
+    prefixes = (
+        '/usr/bin/bash -c ',
+        '/bin/bash -c ',
+        'bash -c ',
+        '/usr/bin/sh -c ',
+        '/bin/sh -c ',
+        'sh -c ',
+        '/usr/bin/dash -c ',
+        '/bin/dash -c ',
+        'dash -c '
+    )
+    for prefix in prefixes:
+        if lowered.startswith(prefix):
+            normalized = normalized[len(prefix):].strip()
+            break
+    if normalized.startswith('"') and normalized.endswith('"') and len(normalized) >= 2:
+        normalized = normalized[1:-1].strip()
+    logger_match = logger_pattern.search(normalized)
+    if logger_match:
+        message = logger_match.group(1) or logger_match.group(2) or ''
+        normalized = f"logger {message.strip()}".strip()
+    return normalized
+
+for line in lines:
+    line_lower = line.lower()
+    for rule in rules:
+        keywords = [keyword.lower() for keyword in rule.get('keywords', [])]
+        if all(keyword in line_lower for keyword in keywords):
+            command_line = normalize_command_line(extract_command_line(line))
+            detection_key = (rule.get('id'), command_line)
+            if detection_key in seen_detections:
+                continue
+            seen_detections.add(detection_key)
+            detections.append({
+                'name': rule['title'],
+                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'level': rule.get('level', 'medium'),
+                'source': 'sigma',
+                'status': rule.get('status', 'experimental'),
+                'id': rule.get('id'),
+                'logsource': rule.get('logsource', {}),
+                'message': line,
+                'CommandLine': command_line,
+                'document': {
+                    'kind': 'journalctl',
+                    'path': log_path or 'journalctl',
+                    'data': {
+                        'Message': line,
+                        'CommandLine': command_line,
+                        'RawMessage': line
+                    }
+                }
+            })
+
+with open(result_path, 'w', encoding='utf-8') as handle:
+    json.dump(detections, handle)
+'@
+
+    $localPythonPath = Join-Path $env:TEMP ("detechtive_sigma_{0}.py" -f ([Guid]::NewGuid().ToString("N")))
+    $remotePythonPath = "/tmp/detechtive_sigma_$([Guid]::NewGuid().ToString('N')).py"
+
+    try {
+        Set-Content -LiteralPath $localPythonPath -Value $pythonScript -Encoding UTF8
+        Invoke-ScpUpload -LocalPath $localPythonPath -RemotePath $remotePythonPath
+
+        $quotedRemotePython = Quote-PosixArg $remotePythonPath
+        $quotedDefinitions = Quote-PosixArg $definitionsBase64
+        $quotedSince = Quote-PosixArg $sinceIso
+        $quotedLogPath = Quote-PosixArg $logPathBase64
+        $quotedResultPath = Quote-PosixArg $remoteResultBase64
+        $remoteCommand = "python3 $quotedRemotePython $quotedDefinitions $quotedSince $quotedLogPath $quotedResultPath"
+
+        $sshArgs = @()
+        $sshArgs += Get-SshCommonArgs
+        $sshArgs += "$User@$Target"
+        $sshArgs += $remoteCommand
+
+        $output = & $SSH @sshArgs 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $detail = if ($output) { ($output -join [Environment]::NewLine).Trim() } else { "No additional error details." }
+            throw "Remote Linux Sigma scan failed.`n$detail"
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $localPythonPath -Force -ErrorAction SilentlyContinue
+        if ($remotePythonPath) {
+            $cleanupArgs = @()
+            $cleanupArgs += Get-SshCommonArgs
+            $cleanupArgs += "$User@$Target"
+            $cleanupArgs += "rm -f -- $(Quote-PosixArg $remotePythonPath)"
+            & $SSH @cleanupArgs 2>$null | Out-Null
+        }
+    }
+}
+
+if ($EffectiveOs -eq 'linux' -and -not $CustomRulesOnly) {
+    throw "Linux Sigma mode currently supports custom rules only."
+}
+
+if ($EffectiveOs -eq 'windows' -and $Interactive) { Write-Host "[*] Verifying Chainsaw toolkit on target..." }
+
+if ($EffectiveOs -eq 'windows') {
 $PreFlightPS = @"
 if (!(Test-Path '$RemoteSigmaBase\chainsaw\chainsaw.exe')) { throw 'chainsaw.exe missing' }
 if (!(Test-Path '$RemoteSigmaBase\chainsaw\mappings\sigma-event-logs-all.yml')) { throw 'mapping file missing' }
@@ -271,45 +543,53 @@ $PreFlightCheck = Invoke-RemotePS -ScriptText $PreFlightPS -FailureMessage "Pre-
 if (-not ($PreFlightCheck | Where-Object { $_ -match '^OK$' })) {
     throw "Pre-flight failed: unexpected remote response."
 }
+}
 
 # =========================
 #  Create temp rules folder
 # =========================
-if ($Interactive) { Write-Host "[*] Creating temp rules folder on target..." }
+if ($EffectiveOs -eq 'windows' -and $Interactive) { Write-Host "[*] Creating temp rules folder on target..." }
 
 $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
 $remoteRulesRoot    = "C:\Temp\detechtive_rules_$ts"
 $remoteRulesRootScp = "C:/Temp/detechtive_rules_$ts"
 $remoteRulesPath    = "$remoteRulesRoot\$RulesLeaf"
 
-$CreateTempPS = @"
+if ($EffectiveOs -eq 'windows') {
+    $CreateTempPS = @"
 New-Item -ItemType Directory -Force '$remoteRulesRoot' | Out-Null
 if (!(Test-Path '$remoteRulesRoot')) { throw 'Failed to create remote temp rules root.' }
 "@
 
-Invoke-RemotePS -ScriptText $CreateTempPS -FailureMessage "Failed to create temp rules folder on target." | Out-Null
+    Invoke-RemotePS -ScriptText $CreateTempPS -FailureMessage "Failed to create temp rules folder on target." | Out-Null
+}
 
 # =========================
 #  Copy rules via SCP
 # =========================
-if ($Interactive) { Write-Host "[*] Copying rules from '$RulesPath' to target..." }
+if ($EffectiveOs -eq 'windows' -and $Interactive) { Write-Host "[*] Copying rules from '$RulesPath' to target..." }
 
-Invoke-ScpUpload -LocalPath $RulesPath -RemotePath $remoteRulesRootScp -Recursive:$RulesIsDirectory
+if ($EffectiveOs -eq 'windows') {
+    Invoke-ScpUpload -LocalPath $RulesPath -RemotePath $remoteRulesRootScp -Recursive:$RulesIsDirectory
+}
 
-$VerifyRulesPS = @"
+if ($EffectiveOs -eq 'windows') {
+    $VerifyRulesPS = @"
 if (!(Test-Path '$remoteRulesPath')) { throw 'Uploaded rule path not found on target.' }
 Write-Output 'OK'
 "@
 
-Invoke-RemotePS -ScriptText $VerifyRulesPS -FailureMessage "Uploaded rules could not be verified on target." | Out-Null
+    Invoke-RemotePS -ScriptText $VerifyRulesPS -FailureMessage "Uploaded rules could not be verified on target." | Out-Null
+}
 
 # =========================
 #  Run Chainsaw hunt
 # =========================
-if ($Interactive) { Write-Host "[*] Running Chainsaw on target..." }
+if ($EffectiveOs -eq 'windows' -and $Interactive) { Write-Host "[*] Running Chainsaw on target..." }
 
 $injectDanger = if ($ScanEntireLog) { '$true' } else { '$false' }
 
+if ($EffectiveOs -eq 'windows') {
 $psScan = @"
 `$ProgressPreference = 'SilentlyContinue'
 
@@ -367,13 +647,22 @@ Write-Output "RESULT_PATH:`$outFile"
 Write-Output "RESULT_EXITCODE:`$chainsawExit"
 "@
 
-$remoteOutRaw = Invoke-RemotePS -ScriptText $psScan -FailureMessage "Remote Sigma scan failed."
+    $remoteOutRaw = Invoke-RemotePS -ScriptText $psScan -FailureMessage "Remote Sigma scan failed."
 
-$remoteOut = ($remoteOutRaw | Where-Object { $_ -match '^RESULT_PATH:' } | Select-Object -Last 1) -replace '^RESULT_PATH:', ''
-$remoteExitLine = ($remoteOutRaw | Where-Object { $_ -match '^RESULT_EXITCODE:' } | Select-Object -Last 1) -replace '^RESULT_EXITCODE:', ''
+    $remoteOut = ($remoteOutRaw | Where-Object { $_ -match '^RESULT_PATH:' } | Select-Object -Last 1) -replace '^RESULT_PATH:', ''
+    $remoteExitLine = ($remoteOutRaw | Where-Object { $_ -match '^RESULT_EXITCODE:' } | Select-Object -Last 1) -replace '^RESULT_EXITCODE:', ''
 
-if ([string]::IsNullOrWhiteSpace($remoteOut)) {
-    throw "Remote scan failed to return an output file path."
+    if ([string]::IsNullOrWhiteSpace($remoteOut)) {
+        throw "Remote scan failed to return an output file path."
+    }
+}
+else {
+    if ($Interactive) { Write-Host "[*] Running Linux Sigma hunt on target..." }
+    $linuxRules = Get-LinuxSigmaRuleDefinitions -RuleRoot $RulesPath
+    $remoteOut = "/tmp/detechtive_sigma_$((Get-Date).ToString('yyyyMMdd_HHmmss')).json"
+    $remoteExitLine = "0"
+    $effectiveLinuxLogPath = if ([string]::IsNullOrWhiteSpace($LinuxLogPath)) { "/var/log/syslog" } else { $LinuxLogPath }
+    Invoke-LinuxSigmaHunt -RuleDefinitions $linuxRules -RemoteResultFile $remoteOut -EffectiveLogPath $effectiveLinuxLogPath
 }
 
 [int]$ChainsawExitCode = 0
@@ -403,15 +692,24 @@ if ($Interactive) { Write-Host "[+] Saved to: $LocalFile" }
 #  Cleanup target
 # =========================
 if ($Cleanup) {
-    if ($Interactive) { Write-Host "[*] Cleaning temp rules folder on target..." }
+    if ($EffectiveOs -eq 'windows' -and $Interactive) { Write-Host "[*] Cleaning temp rules folder on target..." }
 
-    $CleanupPS = @"
+    if ($EffectiveOs -eq 'windows') {
+        $CleanupPS = @"
 if (Test-Path '$remoteRulesRoot') {
     Remove-Item -Recurse -Force '$remoteRulesRoot' -ErrorAction Stop
 }
 "@
 
-    Invoke-RemotePS -ScriptText $CleanupPS -FailureMessage "Remote cleanup failed." | Out-Null
+        Invoke-RemotePS -ScriptText $CleanupPS -FailureMessage "Remote cleanup failed." | Out-Null
+    }
+    else {
+        $cleanupArgs = @()
+        $cleanupArgs += Get-SshCommonArgs
+        $cleanupArgs += "$User@$Target"
+        $cleanupArgs += "rm -f -- $(Quote-PosixArg $remoteOut)"
+        & $SSH @cleanupArgs 2>$null | Out-Null
+    }
 }
 
 # =========================
@@ -440,7 +738,7 @@ if ($DetectionCount -gt 0) {
 
     $RawPayload = [pscustomobject]@{
         detection_count  = $DetectionCount
-        source_log       = $EvtxPath
+        source_log       = if ($EffectiveOs -eq 'windows') { $EvtxPath } else { if ([string]::IsNullOrWhiteSpace($LinuxLogPath)) { "/var/log/syslog" } else { $LinuxLogPath } }
         scan_entire_log  = [bool]$ScanEntireLog
         minutes_back     = $TimeWindow
         rule_source      = $RulesLeaf
@@ -449,11 +747,15 @@ if ($DetectionCount -gt 0) {
         detections       = $Detections
     }
 
-    $CommandLine = "chainsaw hunt $EvtxPath -s $remoteRulesPath -m $RemoteSigmaBase\chainsaw\mappings\sigma-event-logs-all.yml"
+    $CommandLine = if ($EffectiveOs -eq 'windows') {
+        "chainsaw hunt $EvtxPath -s $remoteRulesPath -m $RemoteSigmaBase\chainsaw\mappings\sigma-event-logs-all.yml"
+    } else {
+        "linux-sigma hunt journalctl --since $MinutesBack minutes"
+    }
     $EnvelopeObj = Build-EnvelopeObject `
         -RawPayload $RawPayload `
         -TargetServer "$User@$Target" `
-        -OsType "windows" `
+        -OsType $EffectiveOs `
         -CmdLine $CommandLine `
         -ExitCode $ChainsawExitCode
 
@@ -476,6 +778,12 @@ if ($Interactive) {
         $Results = foreach ($item in $Detections) {
             $image = $item.document.data.Event.EventData.Image
             $cmd   = $item.document.data.Event.EventData.CommandLine
+            if (-not $cmd) {
+                $cmd = $item.document.data.CommandLine
+            }
+            if (-not $cmd) {
+                $cmd = $item.CommandLine
+            }
 
             [pscustomobject]@{
                 Timestamp   = $item.timestamp
