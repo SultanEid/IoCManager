@@ -11,6 +11,7 @@ using Backend.Infrastructure.Persistence.QueryServices;
 using Backend.Infrastructure.Security;
 using Backend.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,6 +72,7 @@ public static class ServiceCollectionExtensions
 
         var databaseOptions = configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
         var connectionString = DatabaseConnectionStringResolver.Resolve(configuration, databaseOptions.ConnectionStringName);
+        var allowSqlRetries = ShouldEnableSqlRetries(connectionString);
 
         services.AddDbContext<CtiDbContext>(options =>
             options.UseSqlServer(
@@ -78,7 +80,10 @@ public static class ServiceCollectionExtensions
                 sqlServer =>
                 {
                     sqlServer.MigrationsAssembly(typeof(CtiDbContext).Assembly.FullName);
-                    sqlServer.EnableRetryOnFailure();
+                    if (allowSqlRetries)
+                    {
+                        sqlServer.EnableRetryOnFailure();
+                    }
                 }));
 
         var identityOptions = configuration.GetSection(IdentitySecurityOptions.SectionName).Get<IdentitySecurityOptions>()
@@ -137,5 +142,19 @@ public static class ServiceCollectionExtensions
         });
 
         return services;
+    }
+
+    private static bool ShouldEnableSqlRetries(string connectionString)
+    {
+        try
+        {
+            var builder = new SqlConnectionStringBuilder(connectionString);
+            var dataSource = builder.DataSource?.Trim() ?? string.Empty;
+            return !dataSource.Contains("(localdb)", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return true;
+        }
     }
 }
