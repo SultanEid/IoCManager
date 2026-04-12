@@ -38,6 +38,12 @@ public sealed class SqlUserTableAuthService : IAuthService
             return null;
         }
 
+        var developmentToken = TryCreateDevelopmentFallbackToken(request);
+        if (developmentToken is not null)
+        {
+            return developmentToken;
+        }
+
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -65,16 +71,68 @@ WHERE UserName = @lookup OR Email = @lookup;";
             return null;
         }
 
+        return CreateTokenResponse(userId.ToString(), userName, storedEmail, role);
+    }
+
+    private bool MatchesPassword(string suppliedPassword, string storedPasswordHash)
+    {
+        if (string.IsNullOrWhiteSpace(storedPasswordHash))
+        {
+            return false;
+        }
+
+        var trimmedInput = suppliedPassword.Trim();
+        if (_options.AcceptPreHashedPassword
+            && string.Equals(trimmedInput, storedPasswordHash, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var hashedInput = ComputeSha256Hex(trimmedInput);
+        return string.Equals(hashedInput, storedPasswordHash, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private TokenResponse? TryCreateDevelopmentFallbackToken(TokenRequest request)
+    {
+        if (!_options.DevelopmentFallbackEnabled)
+        {
+            return null;
+        }
+
+        var lookup = request.UserName.Trim();
+        var matchesIdentity =
+            string.Equals(lookup, _options.DevelopmentFallbackUserName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(lookup, _options.DevelopmentFallbackEmail, StringComparison.OrdinalIgnoreCase);
+
+        if (!matchesIdentity)
+        {
+            return null;
+        }
+
+        if (!string.Equals(request.Password.Trim(), _options.DevelopmentFallbackPassword, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return CreateTokenResponse(
+            userId: "0",
+            userName: _options.DevelopmentFallbackUserName,
+            email: _options.DevelopmentFallbackEmail,
+            role: _options.DevelopmentFallbackRole);
+    }
+
+    private TokenResponse CreateTokenResponse(string userId, string userName, string email, string? role)
+    {
         var signingKey = ResolveSigningKey();
         var nowUtc = DateTimeOffset.UtcNow;
         var expiresAtUtc = nowUtc.AddMinutes(Math.Clamp(_jwtOptions.AccessTokenLifetimeMinutes, 5, 240));
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new(JwtRegisteredClaimNames.Sub, userId),
             new(JwtRegisteredClaimNames.UniqueName, userName),
-            new(JwtRegisteredClaimNames.Email, storedEmail),
-            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(JwtRegisteredClaimNames.Email, email),
+            new(ClaimTypes.NameIdentifier, userId),
             new(ClaimTypes.Name, userName),
         };
 
@@ -94,24 +152,6 @@ WHERE UserName = @lookup OR Email = @lookup;";
 
         var serialized = new JwtSecurityTokenHandler().WriteToken(token);
         return new TokenResponse(serialized, expiresAtUtc, "Bearer");
-    }
-
-    private bool MatchesPassword(string suppliedPassword, string storedPasswordHash)
-    {
-        if (string.IsNullOrWhiteSpace(storedPasswordHash))
-        {
-            return false;
-        }
-
-        var trimmedInput = suppliedPassword.Trim();
-        if (_options.AcceptPreHashedPassword
-            && string.Equals(trimmedInput, storedPasswordHash, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var hashedInput = ComputeSha256Hex(trimmedInput);
-        return string.Equals(hashedInput, storedPasswordHash, StringComparison.OrdinalIgnoreCase);
     }
 
     private SymmetricSecurityKey ResolveSigningKey()
