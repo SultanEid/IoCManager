@@ -1,0 +1,181 @@
+﻿@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-workbench-sans), "Aptos", "Segoe UI", "Noto Sans", sans-serif;
+  --font-mono: var(--font-workbench-mono), "Cascadia Mono", "Consolas", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-shell-sidebar: var(--shell-sidebar);
+  --color-shell-header: var(--shell-header);
+
+  --radius-sm: calc(var(--radius) * 0.7);
+  --radius-md: calc(var(--radius) * 0.85);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.35);
+}
+
+:root {
+  color-scheme: dark;
+
+  --background: oklch(0.105 0.012 251);
+  --foreground: oklch(0.955 0.012 251);
+
+  --surface-1: oklch(0.14 0.014 251);
+  --surface-2: oklch(0.172 0.016 251);
+  --surface-3: oklch(0.208 0.017 251);
+  --shell-sidebar: oklch(0.122 0.016 251 / 0.95);
+  --shell-header: oklch(0.112 0.012 251 / 0.93);
+
+  --card: var(--surface-1);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.15 0.014 251 / 0.98);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.73 0.118 219);
+  --primary-foreground: oklch(0.17 0.02 251);
+
+  --secondary: oklch(0.26 0.018 251);
+  --secondary-foreground: oklch(0.92 0.015 251);
+
+  --muted: oklch(0.23 0.012 251);
+  --muted-foreground: oklch(0.71 0.013 251);
+
+  --accent: oklch(0.28 0.02 251);
+  --accent-foreground: oklch(0.95 0.012 251);
+
+  --border: oklch(0.86 0.021 251 / 0.24);
+  --input: oklch(0.86 0.02 251 / 0.31);
+  --ring: oklch(0.74 0.12 219 / 0.78);
+  --destructive: oklch(0.67 0.2 24);
+
+  --radius: 0.85rem;
+
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.25rem;
+  --space-xl: 1.75rem;
+  --space-2xl: 2.25rem;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-fast: 130ms;
+  --motion-base: 210ms;
+  --motion-slow: 320ms;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/60;
+  }
+
+  html,
+  body {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    background-image:
+      radial-gradient(circle at 7% 3%, color-mix(in srgb, var(--primary) 24%, transparent), transparent 36%),
+      radial-gradient(circle at 100% 96%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 34%),
+      linear-gradient(160deg, color-mix(in srgb, var(--surface-1) 55%, var(--background)), var(--background));
+    background-attachment: fixed;
+    text-rendering: geometricPrecision;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--primary) 38%, transparent);
+    color: var(--foreground);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .wb-page {
+    @apply space-y-4 md:space-y-5;
+  }
+
+  .wb-page-header {
+    @apply rounded-xl border border-border/70 bg-surface-1/90 px-4 py-4 md:px-5;
+  }
+
+  .wb-panel {
+    @apply rounded-xl border border-border/75 bg-surface-1/85 p-4 shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_4%,transparent)_inset];
+  }
+
+  .wb-panel-muted {
+    @apply rounded-xl border border-border/60 bg-surface-2/75 p-4;
+  }
+
+  .wb-kicker {
+    @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground;
+  }
+
+  .wb-subtle {
+    @apply text-xs text-muted-foreground;
+  }
+
+  .wb-shell-main {
+    @apply mx-auto w-full max-w-[1540px] px-3 pb-6 pt-4 sm:px-4 md:px-6 md:pt-5;
+  }
+}
+
+@layer utilities {
+  .animate-fade-up {
+    animation: fade-up var(--motion-base) var(--ease-emphasized) both;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+

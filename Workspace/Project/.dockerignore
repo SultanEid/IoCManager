@@ -1,0 +1,47 @@
+# VCS / metadata
+.git
+.gitignore
+.dockerignore
+.ignore
+.agents
+
+# Keep historical snapshots out of build context
+archive
+research
+
+# Dependency and build outputs
+**/node_modules
+**/.next
+**/dist
+**/out
+**/bin
+**/obj
+**/.nuget
+**/.dotnet-home
+**/.tmp
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+
+# Runtime/test artifacts
+.postgres
+**/test-results
+**/playwright-report
+**/coverage-final.json
+**/lcov.info
+**/.nyc_output
+**/*.log
+**/*.err.log
+**/*.out.log
+**/*.diag.log
+**/*.binlog
+**/*.db
+**/*.sqlite*
+
+# Local env files (allow examples)
+**/.env
+**/.env.*
+!**/.env.example
