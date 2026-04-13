@@ -17,12 +17,20 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
+using Backend.Application.Abstractions.Services;
+using Backend.Infrastructure.Services;
+
 namespace Backend.Infrastructure.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+
+        services
+            .AddScoped<IScanPlanService, ScanPlanService>();
+
+
         services
             .AddOptions<DatabaseOptions>()
             .Bind(configuration.GetSection(DatabaseOptions.SectionName))
