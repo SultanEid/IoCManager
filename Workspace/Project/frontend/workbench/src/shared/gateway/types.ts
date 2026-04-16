@@ -13,6 +13,7 @@ import type {
   ManagedServerInventoryResponse,
   ManagedServerResponse,
   PowerBiVisualizationCatalogResponse,
+  GeneratedReportResponse,
   ReportListResponse,
   RuleDistributionAttemptResponse,
   RuleDistributionJobResponse,
@@ -578,6 +579,27 @@ export type ReportListQuery = {
   pageSize?: number
 }
 
+export type ReportGenerationType =
+  | "ExecutiveSummary"
+  | "DetailedIocReport"
+  | "TargetExposureSummary"
+  | "ScanActivitySummary"
+
+export type GenerateReportInput = {
+  reportType: ReportGenerationType
+  title?: string
+  fromUtc?: string
+  toUtc?: string
+  targetServerId?: string
+  scannerFamily?: RuleFamily
+  severity?: string
+  status?: string
+  iocType?: string
+  source?: string
+  persist?: boolean
+  actorUserId: string
+}
+
 export type AuditLogListQuery = {
   q?: string
   actorUserId?: string
@@ -627,6 +649,7 @@ export interface Gateway {
   login(username: string, password: string): Promise<TokenResponse>
   listAlertRegistry(query?: AlertListQuery, signal?: AbortSignal): Promise<AlertListResponse>
   listReports(query?: ReportListQuery, signal?: AbortSignal): Promise<ReportListResponse>
+  generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>
   getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse>
   listAuditLogs(query?: AuditLogListQuery, signal?: AbortSignal): Promise<AuditLogListResponse>
   listFeedSources(signal?: AbortSignal): Promise<FeedSourceResponse[]>

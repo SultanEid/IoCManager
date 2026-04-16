@@ -9,6 +9,7 @@ param (
     [string]$Mode,
 
     [string]$IP,
+    [string]$QuarantineIPs,
     [string]$FilePath,
     [datetime]$Since,
     [int]$MinutesBack = 60,
@@ -23,10 +24,13 @@ param (
     [string]$MasterRulePath = "C:\Tools\Snort\rules\local.rules",
     [string]$ResultsBaseDir = "C:\Tools\Snort\results",
     [string]$ScratchDir = "C:\Tools\forensic_logs_temp",
-    [string]$SensorReloadCommand = "systemctl restart snort"
+    [string]$SensorReloadCommand = "systemctl restart snort",
+    [switch]$SkipRuleSync,
+    [string]$QuarantineCapturePath
 )
 
-$script:RunTimestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$script:RunTimestamp = Get-Date -Format "yyyyMMdd_HHmmss_fff"
+$script:RunNonce = [guid]::NewGuid().ToString('N')
 $script:BashSingleQuoteEscape = [string][char]39 + '"' + [string][char]39 + '"' + [string][char]39
 $snortRegex = '\[\*\*\]\s+\[\d+:(?<sid>\d+):\d+\]\s+(?<msg>.*?)\s+\[\*\*\]\s+(?:\[Classification:.*?\]\s+)?(?:\[Priority:.*?\]\s+)?\{(?<proto>\w+)\}\s+(?<src>[\d\.]+)(?::\d+)?\s+->\s+(?<dest>[\d\.]+)(?::\d+)?'
 $snortTimestampRegex = '^(?<ts>\d{2}/\d{2}-\d{2}:\d{2}:\d{2})(?:\.\d+)?'
@@ -61,6 +65,21 @@ function Save-TargetAlert {
 
     $targetFile = Join-Path $targetDir "scan_${script:RunTimestamp}.json"
     $EnvelopedJson | Out-File -FilePath $targetFile -Append -Encoding UTF8
+}
+
+function Save-QuarantineCapture {
+    param($EnvelopedJson)
+
+    if ([string]::IsNullOrWhiteSpace($QuarantineCapturePath)) {
+        return
+    }
+
+    $captureDirectory = Split-Path -Parent $QuarantineCapturePath
+    if (-not [string]::IsNullOrWhiteSpace($captureDirectory) -and -not (Test-Path $captureDirectory)) {
+        New-Item -ItemType Directory -Force -Path $captureDirectory | Out-Null
+    }
+
+    $EnvelopedJson | Out-File -FilePath $QuarantineCapturePath -Append -Encoding UTF8
 }
 
 function Out-InteractiveTable {
@@ -236,7 +255,7 @@ function Convert-SnortTimestampToUtc {
     $candidate = "{0}/{1}" -f $currentYear, $match.Groups['ts'].Value
 
     try {
-        $parsed = [datetime]::ParseExact($candidate, "yyyy/MM/dd-HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal)
+        $parsed = [datetime]::ParseExact($candidate, "yyyy/MM/dd-HH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeLocal)
         if ($parsed -gt (Get-Date).AddDays(1)) {
             $parsed = $parsed.AddYears(-1)
         }
@@ -289,7 +308,7 @@ function Sync-SensorRules {
         return
     }
 
-    $tempRulePath = "/tmp/detechtive_snort_${script:RunTimestamp}.rules"
+    $tempRulePath = "/tmp/detechtive_snort_${script:RunTimestamp}_${script:RunNonce}.rules"
 
     if ($Interactive) {
         Write-Host "[*] Rule change detected. Syncing via SCP..." -ForegroundColor Yellow
@@ -336,18 +355,30 @@ function Convert-SnortLineToObject {
     }
 }
 
-Sync-SensorRules
+if ($Mode -ne "Pcap" -and -not $SkipRuleSync) {
+    Sync-SensorRules
+}
 
 switch ($Mode) {
     "Quarantine" {
-        if (-not $IP) {
-            throw "IP is required for Quarantine mode."
+        $filterIps = @()
+        if (-not [string]::IsNullOrWhiteSpace($IP)) {
+            $filterIps += $IP
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($QuarantineIPs)) {
+            $filterIps += $QuarantineIPs.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_.Trim() }
+        }
+
+        $filterIps = $filterIps | Select-Object -Unique
+        if ($filterIps.Count -eq 0) {
+            throw "At least one target IP is required for Quarantine mode."
         }
 
         if ($Interactive) {
             Write-Host "[*] MODE: SNORT QUARANTINE" -ForegroundColor DarkCyan
             Write-Host "[*] SENSOR: $SSHUser@$SensorIP" -ForegroundColor DarkCyan
-            Write-Host "[*] INSPECTION FILTER: $IP" -ForegroundColor DarkCyan
+            Write-Host "[*] INSPECTION FILTER: $($filterIps -join ', ')" -ForegroundColor DarkCyan
             Write-Host "[!] Monitoring real-time alerts. Press Ctrl+C to stop.`n" -ForegroundColor DarkGray
         }
 
@@ -360,12 +391,13 @@ switch ($Mode) {
                     continue
                 }
 
-                if ($alertObj.Source_IP -ne $IP -and $alertObj.Dest_IP -ne $IP) {
+                if ($filterIps -notcontains $alertObj.Source_IP -and $filterIps -notcontains $alertObj.Dest_IP) {
                     continue
                 }
 
                 $envelopedJson = Build-Envelope -LogObj $alertObj -Target "$SSHUser@$SensorIP" -OsType "linux" -CmdLine $remoteCmd
                 Save-TargetAlert -TargetIp $alertObj.Dest_IP -EnvelopedJson $envelopedJson
+                Save-QuarantineCapture -EnvelopedJson $envelopedJson
 
                 if ($Interactive) {
                     Write-Host "[$($alertObj.Timestamp)] [SNORT] $($alertObj.RuleTitle)" -ForegroundColor Cyan
@@ -445,42 +477,56 @@ switch ($Mode) {
             return
         }
 
-        if (-not (Test-Path $LocalSnortExe)) {
-            throw "Local Snort executable not found: $LocalSnortExe"
-        }
+        $results = @()
+        $outputLines = @()
+        $cmdLineStr = ""
+        $useLocalSnort = (Test-Path $LocalSnortExe) -and (Test-Path $LocalSnortConf)
 
-        if (-not (Test-Path $LocalSnortConf)) {
-            throw "Local Snort config not found: $LocalSnortConf"
-        }
+        if ($useLocalSnort) {
+            $outDir = Join-Path $ScratchDir "snort_$script:RunTimestamp"
+            $stdoutFile = Join-Path $outDir "snort_stdout.log"
+            $stderrFile = Join-Path $outDir "snort_stderr.log"
+            New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-        $outDir = Join-Path $ScratchDir "snort_$script:RunTimestamp"
-        $stdoutFile = Join-Path $outDir "snort_stdout.log"
-        $stderrFile = Join-Path $outDir "snort_stderr.log"
-        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+            foreach ($file in @($stdoutFile, $stderrFile)) {
+                if (Test-Path $file) {
+                    Remove-Item $file -Force
+                }
+            }
 
-        foreach ($file in @($stdoutFile, $stderrFile)) {
-            if (Test-Path $file) {
-                Remove-Item $file -Force
+            $args = @('-A', 'console', '-q', '-c', $LocalSnortConf, '-R', $MasterRulePath, '-r', $FilePath, '-k', 'none')
+            $cmdLineStr = "$LocalSnortExe " + ($args -join ' ')
+            $exitCode = Invoke-LocalProcess -Executable $LocalSnortExe -Arguments $args -StdOutPath $stdoutFile -StdErrPath $stderrFile
+
+            if ($exitCode -ne 0) {
+                $stderr = if (Test-Path $stderrFile) { (Get-Content $stderrFile -Raw).Trim() } else { '' }
+                throw "Snort PCAP execution failed with exit code $exitCode. $stderr"
+            }
+
+            if (Test-Path $stdoutFile) {
+                $outputLines = @(Get-Content $stdoutFile)
+            }
+        } else {
+            Sync-SensorRules
+            $remotePcapPath = "/tmp/detechtive_snort_pcap_${script:RunTimestamp}_${script:RunNonce}$([System.IO.Path]::GetExtension($FilePath))"
+            try {
+                Invoke-SensorUpload -LocalPath $FilePath -RemotePath $remotePcapPath
+                $remoteCmd = "/usr/sbin/snort -A console -q -c /etc/snort/snort.conf -r $(Quote-BashArg $remotePcapPath) -k none"
+                $cmdLineStr = $remoteCmd
+                $outputLines = @(Invoke-SensorCommand -AsRoot -Command $remoteCmd)
+            }
+            finally {
+                Invoke-SensorCommand -AsRoot -Command "rm -f -- $(Quote-BashArg $remotePcapPath)" -IgnoreExitCode | Out-Null
             }
         }
 
-        $args = @('-A', 'console', '-q', '-c', $LocalSnortConf, '-r', $FilePath, '-k', 'none')
-        $cmdLineStr = "$LocalSnortExe " + ($args -join ' ')
-        $exitCode = Invoke-LocalProcess -Executable $LocalSnortExe -Arguments $args -StdOutPath $stdoutFile -StdErrPath $stderrFile
-
-        if ($exitCode -ne 0) {
-            $stderr = if (Test-Path $stderrFile) { (Get-Content $stderrFile -Raw).Trim() } else { '' }
-            throw "Snort PCAP execution failed with exit code $exitCode. $stderr"
-        }
-
-        if (-not (Test-Path $stdoutFile)) {
-            return
-        }
-
-        $results = @()
-        foreach ($line in Get-Content $stdoutFile) {
+        foreach ($line in $outputLines) {
             $alertObj = Convert-SnortLineToObject -Line $line
             if ($null -eq $alertObj) {
+                continue
+            }
+
+            if ($IP -and $alertObj.Source_IP -ne $IP -and $alertObj.Dest_IP -ne $IP) {
                 continue
             }
 

@@ -1,7 +1,7 @@
 namespace Backend.Contracts.V2;
 
-public sealed record UserResponse(Guid Id, string UserName, string? Email, string DisplayName);
-public sealed record RoleResponse(Guid Id, string Name);
+public sealed record UserResponse(string Id, string UserName, string? Email, string DisplayName, string Role);
+public sealed record RoleResponse(string Id, string Name);
 
 public sealed record CreateRoleRequest(string Name);
 public sealed record CreateUserRequest(string UserName, string Email, string DisplayName, string Password, IReadOnlyList<string> Roles);

@@ -8,8 +8,8 @@ vi.mock("next/navigation", () => ({
 }))
 
 describe("IoCRegistryPage", () => {
-  it("redirects legacy registry route to reporting", () => {
+  it("redirects legacy registry route to reports", () => {
     IoCRegistryPage()
-    expect(mockedRedirect).toHaveBeenCalledWith("/reporting")
+    expect(mockedRedirect).toHaveBeenCalledWith("/reports")
   })
 })

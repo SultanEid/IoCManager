@@ -323,14 +323,15 @@ export const healthReadySchema = z.object({
 })
 
 export const userResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   userName: z.string(),
   email: z.string().nullable(),
   displayName: z.string(),
+  role: z.string(),
 })
 
 export const roleResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
 })
 
@@ -634,6 +635,29 @@ export const reportResponseSchema = z.object({
   alertIds: z.array(z.string().uuid()),
 })
 
+export const generatedReportMetricResponseSchema = z.object({
+  label: z.string(),
+  value: z.string(),
+  detail: z.string(),
+})
+
+export const generatedReportSectionResponseSchema = z.object({
+  title: z.string(),
+  summary: z.string(),
+  metrics: z.array(generatedReportMetricResponseSchema),
+  highlights: z.array(z.string()),
+})
+
+export const generatedReportResponseSchema = z.object({
+  requestedReportType: z.string(),
+  title: z.string(),
+  status: z.string(),
+  generatedAtUtc: z.string(),
+  sections: z.array(generatedReportSectionResponseSchema),
+  alertIds: z.array(z.string().uuid()),
+  persistedReport: reportResponseSchema.nullable(),
+})
+
 export const reportListResponseSchema = z.object({
   items: z.array(reportResponseSchema),
   totalCount: z.number().int(),
@@ -909,6 +933,9 @@ export type FeedSourceResponse = z.infer<typeof feedSourceResponseSchema>
 export type IocResponse = z.infer<typeof iocResponseSchema>
 export type IocListResponse = z.infer<typeof iocListResponseSchema>
 export type ReportResponse = z.infer<typeof reportResponseSchema>
+export type GeneratedReportMetricResponse = z.infer<typeof generatedReportMetricResponseSchema>
+export type GeneratedReportSectionResponse = z.infer<typeof generatedReportSectionResponseSchema>
+export type GeneratedReportResponse = z.infer<typeof generatedReportResponseSchema>
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>
 export type PowerBiWorkspaceResponse = z.infer<typeof powerBiWorkspaceResponseSchema>
 export type PowerBiVisualizationResponse = z.infer<typeof powerBiVisualizationResponseSchema>

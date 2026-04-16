@@ -10,6 +10,7 @@ import type {
   ManagedServerInventoryResponse,
   ManagedServerResponse,
   PowerBiVisualizationCatalogResponse,
+  GeneratedReportResponse,
   ReportListResponse,
   ScanJobResponse,
   ScanJobTargetExecutionResponse,
@@ -52,6 +53,7 @@ import type {
   CreateRuleProposalInput,
   DetectionListQuery,
   Gateway,
+  GenerateReportInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -156,7 +158,9 @@ export class MockGateway implements Gateway {
     userName: persona.username,
     email: `${persona.username}@demo.local`,
     displayName: persona.displayName,
+    role: persona.roles[0] ?? "Analyst",
   }))
+  private generatedReports: ReportListResponse["items"] = []
 
   async login(username: string, _password: string): Promise<TokenResponse> {
     consume(_password)
@@ -303,13 +307,67 @@ export class MockGateway implements Gateway {
   }
 
   async listReports(query: ReportListQuery = {}, _signal?: AbortSignal): Promise<ReportListResponse> {
-    consume(query, _signal)
+    consume(_signal)
+    const normalizedQ = query.q?.trim().toLowerCase()
+    const filtered = this.generatedReports.filter((item) => {
+      const matchesQ =
+        !normalizedQ
+        || item.title.toLowerCase().includes(normalizedQ)
+        || item.summaryJson.toLowerCase().includes(normalizedQ)
+      const matchesType = !query.reportType || item.reportType === query.reportType
+      return matchesQ && matchesType
+    })
+
+    const page = paginate(filtered, query.page, query.pageSize)
     return {
-      items: [],
-      totalCount: 0,
-      page: query.page ?? 1,
-      pageSize: query.pageSize ?? 20,
+      items: page.items,
+      totalCount: filtered.length,
+      page: page.page,
+      pageSize: page.pageSize,
     }
+  }
+
+  async generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse> {
+    const generatedAtUtc = new Date().toISOString()
+    const title = input.title?.trim() || `${input.reportType} preview`
+    const preview: GeneratedReportResponse = {
+      requestedReportType: input.reportType,
+      title,
+      status: input.persist ? "persisted" : "preview_ready",
+      generatedAtUtc,
+      sections: [
+        {
+          title: "Design/Demo Preview",
+          summary: "Mock mode returns a lightweight preview so the report workflow can still be exercised.",
+          metrics: [
+            { label: "Report type", value: input.reportType, detail: "Current template selection." },
+            { label: "Target filter", value: input.targetServerId ?? "All targets", detail: "Preview scope only." },
+            { label: "Scanner family", value: input.scannerFamily ?? "All scanners", detail: "Preview scope only." },
+          ],
+          highlights: ["Switch to ASP.NET mode for persisted summaries backed by stored data."],
+        },
+      ],
+      alertIds: [],
+      persistedReport: null,
+    }
+
+    if (input.persist) {
+      const persistedReport = {
+        id: nextUserId(),
+        title,
+        reportType: input.reportType,
+        summaryJson: JSON.stringify(preview.sections),
+        generatedAtUtc,
+        createdAtUtc: generatedAtUtc,
+        updatedAtUtc: generatedAtUtc,
+        alertIds: [],
+      }
+
+      this.generatedReports = [persistedReport, ...this.generatedReports]
+      preview.persistedReport = persistedReport
+    }
+
+    return copy(preview)
   }
 
   async getPowerBiVisualizationCatalog(_signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse> {
@@ -378,6 +436,7 @@ export class MockGateway implements Gateway {
       userName: input.userName.trim(),
       email: input.email.trim(),
       displayName: input.displayName.trim(),
+      role: input.roles[0] ?? "Analyst",
     }
 
     this.users = [created, ...this.users]

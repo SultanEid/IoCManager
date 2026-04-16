@@ -7,6 +7,7 @@ namespace Backend.Api.Infrastructure;
 public sealed record IcmpProbeResult(
     bool Reachable,
     string? Hostname,
+    int? Ttl,
     string Status,
     string? Diagnostic);
 
@@ -31,6 +32,7 @@ public sealed class SystemIcmpProbe : IIcmpProbe
             return new IcmpProbeResult(
                 Reachable: reachable,
                 Hostname: reachable ? address.ToString() : null,
+                Ttl: reachable ? reply.Options?.Ttl : null,
                 Status: status,
                 Diagnostic: null);
         }
@@ -39,6 +41,7 @@ public sealed class SystemIcmpProbe : IIcmpProbe
             return new IcmpProbeResult(
                 Reachable: false,
                 Hostname: null,
+                Ttl: null,
                 Status: "ProbeError",
                 Diagnostic: ex.Message);
         }

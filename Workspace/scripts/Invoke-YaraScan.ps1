@@ -73,6 +73,8 @@ param(
 
     [string]$PrivateKeyPassphrase = "",
 
+    [switch]$UseEnvironmentPassword,
+
     [switch]$AcceptNewHostKey,
 
     [switch]$NoCleanup,
@@ -108,6 +110,61 @@ function Quote-PsLiteral([string]$s) {
 function To-SshWinPath([string]$p) {
     if ($null -eq $p) { return $p }
     return ($p -replace "\\","/")
+}
+
+function Assert-ValidRemoteScanPath {
+    param(
+        [string]$EffectiveOS,
+        [string]$ScanPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ScanPath)) {
+        throw "ScanPath is required."
+    }
+
+    if ($EffectiveOS -eq "windows" -and -not (Is-WindowsPath $ScanPath)) {
+        throw "Windows YARA scans require an absolute Windows scan path like 'C:\\IOC\\'."
+    }
+
+    if ($EffectiveOS -eq "linux" -and (Is-WindowsPath $ScanPath)) {
+        throw "Linux YARA scans require a POSIX scan path like '/opt/ioc/'."
+    }
+}
+
+function New-NormalizedYaraRuleFile {
+    param([string]$SourcePath)
+
+    if ([string]::IsNullOrWhiteSpace($SourcePath)) {
+        throw "RulePath is required."
+    }
+
+    $resolvedPath = (Resolve-Path -LiteralPath $SourcePath).Path
+    $bytes = [System.IO.File]::ReadAllBytes($resolvedPath)
+    $content = switch -Regex ($true) {
+        { $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF } {
+            [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
+            break
+        }
+        { $bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE } {
+            [System.Text.Encoding]::Unicode.GetString($bytes, 2, $bytes.Length - 2)
+            break
+        }
+        { $bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF } {
+            [System.Text.Encoding]::BigEndianUnicode.GetString($bytes, 2, $bytes.Length - 2)
+            break
+        }
+        { $bytes -contains 0 } {
+            [System.Text.Encoding]::Unicode.GetString($bytes)
+            break
+        }
+        default {
+            [System.Text.Encoding]::UTF8.GetString($bytes)
+        }
+    }
+    $tempPath = Join-Path $env:TEMP ("yara_rule_{0}.yar" -f ([guid]::NewGuid().ToString("N")))
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tempPath, $content, $utf8NoBom)
+    return $tempPath
 }
 
 # =============================================================================
@@ -151,40 +208,86 @@ function Add-KeyToAgentNonInteractive {
     }
 }
 
+function Invoke-OpenSshCommand {
+    param(
+        [string]$Executable,
+        [string[]]$Arguments,
+        [string]$Password
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Password)) {
+        $output = & $Executable @Arguments 2>&1
+        return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+    }
+
+    $askpass = Join-Path $env:TEMP ("askpass_{0}.cmd" -f ([guid]::NewGuid().ToString("N")))
+    Set-Content -LiteralPath $askpass -Encoding ascii -Value "@echo $Password"
+
+    $oldAsk = $env:SSH_ASKPASS
+    $oldReq = $env:SSH_ASKPASS_REQUIRE
+    $oldDisplay = $env:DISPLAY
+    try {
+        $env:SSH_ASKPASS = $askpass
+        $env:SSH_ASKPASS_REQUIRE = "force"
+        $env:DISPLAY = "1"
+        $output = & $Executable @Arguments 2>&1
+        return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+    }
+    finally {
+        $env:SSH_ASKPASS = $oldAsk
+        $env:SSH_ASKPASS_REQUIRE = $oldReq
+        $env:DISPLAY = $oldDisplay
+        Remove-Item -LiteralPath $askpass -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # =============================================================================
 # [3] REMOTE EXECUTION: SSH & SCP Wrappers
 # =============================================================================
 
 function Build-SshBaseArgs {
-    param($User, $Target, $Port, $PrivateKeyPath, $AcceptNewHostKey, $UseAgent)
+    param($User, $Target, $Port, $PrivateKeyPath, $Password, $AcceptNewHostKey, $UseAgent)
     $args = @("-p", "$Port")
+    $usePasswordAuth = -not [string]::IsNullOrWhiteSpace($Password) -and [string]::IsNullOrWhiteSpace($PrivateKeyPath)
     if (-not $UseAgent -and $PrivateKeyPath) {
         $args += @("-i", $PrivateKeyPath, "-o", "IdentitiesOnly=yes")
     }
-    $args += @("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey", "-o", "PasswordAuthentication=no")
+    if ($usePasswordAuth) {
+        $args += @("-o", "BatchMode=no", "-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "PubkeyAuthentication=no", "-o", "PasswordAuthentication=yes")
+    }
+    else {
+        $args += @("-o", "BatchMode=yes", "-o", "PreferredAuthentications=publickey", "-o", "PasswordAuthentication=no")
+    }
     if ($AcceptNewHostKey) { $args += @("-o", "StrictHostKeyChecking=accept-new") }
     $args += @("${User}@${Target}")
     return ,$args
 }
 
 function Run-Ssh {
-    param($BaseArgs, $RemoteCommand)
-    $out = & ssh @BaseArgs $RemoteCommand 2>&1
-    if ($LASTEXITCODE -ne 0 -and $out) { Write-Error ($out -join "`n") }
-    return $LASTEXITCODE
+    param($BaseArgs, $RemoteCommand, $Password)
+    $result = Invoke-OpenSshCommand -Executable "ssh" -Arguments ($BaseArgs + $RemoteCommand) -Password $Password
+    if ($result.ExitCode -ne 0 -and $result.Output) { Write-Error ($result.Output -join "`n") }
+    return $result.ExitCode
 }
 
 function Run-ScpAction {
-    param($Local, $Remote, $User, $Target, $Port, $Key, $Accept, $Agent, [switch]$Download)
-    $args = @("-q", "-P", "$Port", "-o", "BatchMode=yes")
+    param($Local, $Remote, $User, $Target, $Port, $Key, $Password, $Accept, $Agent, [switch]$Download)
+    $args = @("-q", "-P", "$Port")
+    $usePasswordAuth = -not [string]::IsNullOrWhiteSpace($Password) -and [string]::IsNullOrWhiteSpace($Key)
     if (-not $Agent -and $Key) { $args += @("-i", $Key, "-o", "IdentitiesOnly=yes") }
+    if ($usePasswordAuth) {
+        $args += @("-o", "BatchMode=no", "-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "PubkeyAuthentication=no", "-o", "PasswordAuthentication=yes")
+    }
+    else {
+        $args += @("-o", "BatchMode=yes")
+    }
     if ($Accept) { $args += @("-o", "StrictHostKeyChecking=accept-new") }
     
     if ($Download) { $args += @("${User}@${Target}:${Remote}", $Local) }
     else { $args += @($Local, "${User}@${Target}:${Remote}") }
     
-    & scp @args
-    return $LASTEXITCODE
+    $result = Invoke-OpenSshCommand -Executable "scp" -Arguments $args -Password $Password
+    return $result.ExitCode
 }
 
 # =============================================================================
@@ -198,6 +301,16 @@ function Parse-YaraOutput {
 
     foreach ($line in $Lines) {
         if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^===') { continue }
+        if ($line -match 'error scanning .+: could not open file' `
+            -or $line -match '^\s*yara(?:32|64)?\.exe\s*:' `
+            -or $line -match '^\s*At line:\d+ char:\d+' `
+            -or $line -match '^\s*\+\s+.+' `
+            -or $line -match '^\s*~{3,}' `
+            -or $line -match 'CategoryInfo\s*:' `
+            -or $line -match 'FullyQualifiedErrorId\s*:') {
+            $other.Add($line) | Out-Null
+            continue
+        }
         if ($line -match '^\s*(0x[0-9A-Fa-f]+):\s*(\$\S+):\s*(.*)$') {
             if ($null -ne $current) { $current.strings += [pscustomobject]@{ offset=$Matches[1]; id=$Matches[2]; value=$Matches[3] } }
             continue
@@ -216,6 +329,7 @@ function Get-RemoteFileHashes {
     param(
         [string]$EffectiveOS,
         $SshBaseArgs,
+        [string]$Password,
         [string[]]$FilePaths
     )
 
@@ -242,7 +356,8 @@ if (-not [string]::IsNullOrWhiteSpace(`$hash)) {
 }
 "@
             $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($remoteScript))
-            $hashLine = & ssh @SshBaseArgs "powershell.exe -EncodedCommand $encoded" 2>$null
+            $hashResult = Invoke-OpenSshCommand -Executable "ssh" -Arguments ($SshBaseArgs + "powershell.exe -EncodedCommand $encoded") -Password $Password
+            $hashLine = $hashResult.Output
             if ($hashLine) {
                 $output += $hashLine
             }
@@ -251,7 +366,8 @@ if (-not [string]::IsNullOrWhiteSpace(`$hash)) {
     else {
         $quotedPaths = $uniquePaths | ForEach-Object { Quote-PosixArg $_ }
         $remoteScript = "for path in " + ($quotedPaths -join " ") + "; do if [ -f ""`$path"" ]; then hash=`$(sha256sum ""`$path"" | awk '{print `$1}'); printf '%s|%s\n' ""`$path"" ""`$hash""; fi; done"
-        $output = & ssh @SshBaseArgs $remoteScript 2>$null
+        $hashResult = Invoke-OpenSshCommand -Executable "ssh" -Arguments ($SshBaseArgs + $remoteScript) -Password $Password
+        $output = $hashResult.Output
     }
 
     foreach ($line in $output) {
@@ -275,7 +391,7 @@ function Normalize-MatchPath([string]$Path) {
 }
 
 function Build-JsonResult {
-    param($YaraExitCode, $EffectiveOS, $RemoteYaraPath, $FlagsStr, $ScanPath, $RemoteRule, $RemoteResult, $LocalResult, $Target, $User, $Port, $SshBaseArgs)
+    param($YaraExitCode, $EffectiveOS, $RemoteYaraPath, $FlagsStr, $ScanPath, $RemoteRule, $RemoteResult, $LocalResult, $Target, $User, $Port, $SshBaseArgs, $Password)
     
     $rawLines = Get-Content -LiteralPath $LocalResult -ErrorAction SilentlyContinue
     $parsed = Parse-YaraOutput -Lines $rawLines
@@ -287,7 +403,7 @@ function Build-JsonResult {
     else {
         @()
     }
-    $fileHashes = Get-RemoteFileHashes -EffectiveOS $EffectiveOS -SshBaseArgs $SshBaseArgs -FilePaths $uniqueFiles
+    $fileHashes = Get-RemoteFileHashes -EffectiveOS $EffectiveOS -SshBaseArgs $SshBaseArgs -Password $Password -FilePaths $uniqueFiles
 
     foreach ($match in $parsed.matches) {
         $hash = $null
@@ -337,9 +453,14 @@ if ($Linux -and $Windows) { throw "Select only one OS flag." }
 $EffectiveOS = if ($Linux) { "linux" } elseif ($Windows) { "windows" } else { 
     if ($RemoteOS -ne "auto") { $RemoteOS } else { if (Is-WindowsPath $ScanPath) { "windows" } else { "linux" } }
 }
+Assert-ValidRemoteScanPath -EffectiveOS $EffectiveOS -ScanPath $ScanPath
 
 # Key Management
 $UseAgent = $false
+$SshPassword = if ($UseEnvironmentPassword) { $env:IOC_MANAGER_SSH_PASSWORD } else { "" }
+if (-not $PrivateKeyPath -and [string]::IsNullOrWhiteSpace($SshPassword)) {
+    throw "Provide either PrivateKeyPath or a subnet SSH password."
+}
 if ($PrivateKeyPath -and $PrivateKeyPassphrase) {
     Assert-Command "ssh-add"
     Ensure-SshAgentRunning
@@ -347,9 +468,13 @@ if ($PrivateKeyPath -and $PrivateKeyPassphrase) {
     $UseAgent = $true
 }
 
-$sshBase = Build-SshBaseArgs -User $User -Target $Target -Port $Port -PrivateKeyPath $PrivateKeyPath -AcceptNewHostKey:$AcceptNewHostKey -UseAgent:$UseAgent
+$sshBase = Build-SshBaseArgs -User $User -Target $Target -Port $Port -PrivateKeyPath $PrivateKeyPath -Password $SshPassword -AcceptNewHostKey:$AcceptNewHostKey -UseAgent:$UseAgent
 $yaraFlags = @(); if ($Recursive) { $yaraFlags += "-r" }; if ($ShowStrings) { $yaraFlags += "-s" }
 $flagsStr = ($yaraFlags -join " ")
+$normalizedRulePath = $null
+if (-not $RemoteRulePath) {
+    $normalizedRulePath = New-NormalizedYaraRuleFile -SourcePath $RulePath
+}
 
 # =============================================================================
 # [6] OS BRANCH: Linux
@@ -360,18 +485,18 @@ if ($EffectiveOS -eq "linux") {
     $remoteRule = if ($RemoteRulePath) { $RemoteRulePath } else { "$RemoteWorkDir/rule_$timestamp.yar" }
     $remoteResult = "$RemoteWorkDir/result_$timestamp.txt"
 
-    [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand "mkdir -p -- $(Quote-PosixArg $RemoteWorkDir)")
+    [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand "mkdir -p -- $(Quote-PosixArg $RemoteWorkDir)" -Password $SshPassword)
 
     if (-not $RemoteRulePath) {
-        [void](Run-ScpAction -Local (Resolve-Path $RulePath).Path -Remote $remoteRule -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Accept $AcceptNewHostKey -Agent $UseAgent)
+        [void](Run-ScpAction -Local $normalizedRulePath -Remote $remoteRule -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Password $SshPassword -Accept $AcceptNewHostKey -Agent $UseAgent)
     }
 
-    $ec = Run-Ssh -BaseArgs $sshBase -RemoteCommand "$RemoteYaraPath $flagsStr $(Quote-PosixArg $remoteRule) $(Quote-PosixArg $ScanPath) > $(Quote-PosixArg $remoteResult) 2>&1"
-    [void](Run-ScpAction -Local $localTxtResult -Remote $remoteResult -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Accept $AcceptNewHostKey -Agent $UseAgent -Download)
+    $ec = Run-Ssh -BaseArgs $sshBase -RemoteCommand "$RemoteYaraPath $flagsStr $(Quote-PosixArg $remoteRule) $(Quote-PosixArg $ScanPath) > $(Quote-PosixArg $remoteResult) 2>&1" -Password $SshPassword
+    [void](Run-ScpAction -Local $localTxtResult -Remote $remoteResult -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Password $SshPassword -Accept $AcceptNewHostKey -Agent $UseAgent -Download)
 
     if (-not $NoCleanup) {
         $rmCmd = "rm -f -- $(Quote-PosixArg $remoteResult)"; if (-not $RemoteRulePath) { $rmCmd += " $(Quote-PosixArg $remoteRule)" }
-        [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand $rmCmd)
+        [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand $rmCmd -Password $SshPassword)
     }
 }
 
@@ -387,22 +512,22 @@ elseif ($EffectiveOS -eq "windows") {
 
     $quiet = '$ProgressPreference="SilentlyContinue";'
     $cmdMkdir = ([System.Text.Encoding]::Unicode.GetBytes($quiet + "New-Item -ItemType Directory -Force -Path $(Quote-PsLiteral $RemoteWorkDir)"))
-    [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand "powershell.exe -EncodedCommand $([Convert]::ToBase64String($cmdMkdir))")
+    [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand "powershell.exe -EncodedCommand $([Convert]::ToBase64String($cmdMkdir))" -Password $SshPassword)
 
     if (-not $RemoteRulePath) {
-        [void](Run-ScpAction -Local (Resolve-Path $RulePath).Path -Remote (To-SshWinPath $remoteRule) -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Accept $AcceptNewHostKey -Agent $UseAgent)
+        [void](Run-ScpAction -Local $normalizedRulePath -Remote (To-SshWinPath $remoteRule) -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Password $SshPassword -Accept $AcceptNewHostKey -Agent $UseAgent)
     }
 
     $psScan = "$quiet & $(Quote-PsLiteral $RemoteYaraPath) $flagsStr $(Quote-PsLiteral $remoteRule) $(Quote-PsLiteral $ScanPath) 1> $(Quote-PsLiteral $remoteResult) 2>&1; exit `$LASTEXITCODE"
     $cmdScan = ([System.Text.Encoding]::Unicode.GetBytes($psScan))
-    $ec = Run-Ssh -BaseArgs $sshBase -RemoteCommand "powershell.exe -EncodedCommand $([Convert]::ToBase64String($cmdScan))"
+    $ec = Run-Ssh -BaseArgs $sshBase -RemoteCommand "powershell.exe -EncodedCommand $([Convert]::ToBase64String($cmdScan))" -Password $SshPassword
 
-    [void](Run-ScpAction -Local $localTxtResult -Remote (To-SshWinPath $remoteResult) -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Accept $AcceptNewHostKey -Agent $UseAgent -Download)
+    [void](Run-ScpAction -Local $localTxtResult -Remote (To-SshWinPath $remoteResult) -User $User -Target $Target -Port $Port -Key $PrivateKeyPath -Password $SshPassword -Accept $AcceptNewHostKey -Agent $UseAgent -Download)
 
     if (-not $NoCleanup) {
         $cleanup = "$quiet Remove-Item -Force -Path $(Quote-PsLiteral $remoteResult)"; if (-not $RemoteRulePath) { $cleanup += ",$(Quote-PsLiteral $remoteRule)" }
         $cmdDel = ([System.Text.Encoding]::Unicode.GetBytes($cleanup))
-        [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand "powershell.exe -EncodedCommand $([Convert]::ToBase64String($cmdDel))")
+        [void](Run-Ssh -BaseArgs $sshBase -RemoteCommand "powershell.exe -EncodedCommand $([Convert]::ToBase64String($cmdDel))" -Password $SshPassword)
     }
 }
 
@@ -411,7 +536,7 @@ elseif ($EffectiveOS -eq "windows") {
 # =============================================================================
 
 # Build and Save JSON FIRST to avoid parsing the custom text header as false YARA rules
-$json = Build-JsonResult -YaraExitCode $ec -EffectiveOS $EffectiveOS -RemoteYaraPath $RemoteYaraPath -FlagsStr $flagsStr -ScanPath $ScanPath -RemoteRule $remoteRule -RemoteResult $remoteResult -LocalResult $localTxtResult -Target $Target -User $User -Port $Port -SshBaseArgs $sshBase
+$json = Build-JsonResult -YaraExitCode $ec -EffectiveOS $EffectiveOS -RemoteYaraPath $RemoteYaraPath -FlagsStr $flagsStr -ScanPath $ScanPath -RemoteRule $remoteRule -RemoteResult $remoteResult -LocalResult $localTxtResult -Target $Target -User $User -Port $Port -SshBaseArgs $sshBase -Password $SshPassword
 $json | Set-Content $localJsonResult
 
 # NOW modify the TXT file to include the human-readable header
@@ -428,4 +553,8 @@ if ($Interactive) {
 
 # ALWAYS output the pure JSON to stdout so C# can capture it natively
 Write-Output $json
+
+if ($normalizedRulePath) {
+    Remove-Item -LiteralPath $normalizedRulePath -Force -ErrorAction SilentlyContinue
+}
 

@@ -56,7 +56,11 @@ function toUtcDateWindowEnd(value: string) {
   return date.toISOString()
 }
 
-export function RuleDistributionPage() {
+type RuleDistributionPageProps = {
+  embedded?: boolean
+}
+
+export function RuleDistributionPage({ embedded = false }: RuleDistributionPageProps) {
   const queryClient = useQueryClient()
   const { session } = useAuth()
   const sessionOperatorUserId = session?.userId ?? session?.username ?? ""
@@ -243,14 +247,24 @@ export function RuleDistributionPage() {
   const jobs = jobsQuery.data ?? []
 
   return (
-    <section className="wb-page space-y-4">
-      <header className="wb-page-header">
-        <p className="wb-kicker">Rule Distribution</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-tight">Live distribution jobs and per-target execution state</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          This workflow is backed only by persisted distribution jobs, attempts, and target outcomes from the backend.
-        </p>
-      </header>
+    <section className={embedded ? "space-y-4" : "wb-page space-y-4"}>
+      {embedded ? (
+        <article className="wb-panel space-y-2">
+          <p className="wb-kicker">Rule Distribution</p>
+          <h3 className="text-sm font-semibold tracking-tight">Distribution workflow inside rules management</h3>
+          <p className="text-xs text-muted-foreground">
+            Live distribution jobs, per-target execution state, and retry controls stay with the rest of the rule lifecycle.
+          </p>
+        </article>
+      ) : (
+        <header className="wb-page-header">
+          <p className="wb-kicker">Rule Distribution</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight">Live distribution jobs and per-target execution state</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This workflow is backed only by persisted distribution jobs, attempts, and target outcomes from the backend.
+          </p>
+        </header>
+      )}
 
       <article className="wb-panel space-y-3">
         <h3 className="text-sm font-semibold tracking-tight">Create Distribution Job</h3>

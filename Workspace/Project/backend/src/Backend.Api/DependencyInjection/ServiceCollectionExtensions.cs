@@ -6,6 +6,7 @@ using Backend.Infrastructure.Configuration;
 using Backend.Infrastructure.DependencyInjection;
 using Backend.Infrastructure.Persistence;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -34,7 +35,13 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddControllers();
-        services.AddDataProtection();
+        var legacyPipelineOptions = configuration.GetSection(LegacyScanPipelineOptions.SectionName).Get<LegacyScanPipelineOptions>()
+            ?? new LegacyScanPipelineOptions();
+        var dataProtectionKeyRingDirectory = ResolveConfiguredPath(legacyPipelineOptions.DataProtectionKeyRingDirectory);
+        Directory.CreateDirectory(dataProtectionKeyRingDirectory);
+        services
+            .AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyRingDirectory));
         services.AddFluentValidationAutoValidation();
         services.AddEndpointsApiExplorer();
         services.AddOpenApiDocumentation();
@@ -98,13 +105,22 @@ public static class ServiceCollectionExtensions
         services
             .AddOptions<PowerBiVisualizationOptions>()
             .Bind(configuration.GetSection(PowerBiVisualizationOptions.SectionName));
+        services
+            .AddOptions<LegacyScanPipelineOptions>()
+            .Bind(configuration.GetSection(LegacyScanPipelineOptions.SectionName))
+            .ValidateOnStart();
 
         services.AddScoped<IAuthSensitiveAuditService, AuthSensitiveAuditService>();
+        services.AddScoped<ILegacyScanPipelineSchemaInitializer, LegacyScanPipelineSchemaInitializer>();
+        services.AddScoped<LegacyScanPipelineService>();
+        services.AddScoped<ILegacyScanPipelineService>(provider => provider.GetRequiredService<LegacyScanPipelineService>());
         services.AddSingleton<IPowerBiVisualizationCatalogService, PowerBiVisualizationCatalogService>();
         services.AddScoped<IRuleRevisionValidationPipeline, RuleRevisionValidationPipeline>();
         services.AddScoped<IResultIngestionService, ResultIngestionService>();
         services.AddSingleton<ILegacyScannerResultExtractor, LegacyScannerResultExtractor>();
         services.AddSingleton<TargetServerConnectionSecretProtector>();
+        services.AddSingleton<LegacyNetworkSshPasswordProtector>();
+        services.AddSingleton<LegacySnortQuarantineSessionManager>();
         services.AddSingleton<DiscoveryTargetRangeParser>();
         services.AddSingleton<IDiscoveryObservationProvider, DiscoveryObservationProvider>();
         services.AddSingleton<IDiscoveryRunQueue, DiscoveryRunQueue>();
@@ -121,6 +137,7 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<RuleDistributionWorker>();
             services.AddHostedService<ScanPlanExecutionWorker>();
         }
+        services.AddHostedService<LegacyScanPipelineWorker>();
         services.AddApiRateLimiting(configuration);
 
         services.AddApplication();
@@ -228,5 +245,15 @@ public static class ServiceCollectionExtensions
     private static bool ValidatePolicy(ApiRateLimitPolicyOptions policy)
     {
         return policy.PermitLimit > 0 && policy.WindowSeconds > 0 && policy.QueueLimit >= 0;
+    }
+
+    private static string ResolveConfiguredPath(string path)
+    {
+        if (Path.IsPathRooted(path))
+        {
+            return path;
+        }
+
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", path));
     }
 }

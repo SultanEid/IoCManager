@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 import { motion } from "framer-motion"
+import { PowerBiVisualAnalyticsPanel } from "@/components/workbench/dashboard/power-bi-visual-analytics-panel"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import type { V2AlertResponse } from "@/shared/api/schemas"
 import { classifyUiError } from "@/shared/api/error-classification"
@@ -101,9 +102,9 @@ export default function OverviewPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="wb-kicker">Overview</p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight">Live posture across alerts, servers, detections, and reports</h2>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight">Live posture, report output, and embedded visual analytics</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Overview cards only show totals backed by current ASP.NET contracts. Recent alerts below come from the first live result page.
+              Dashboard cards show current backend totals, and the visual analytics section below hosts the Power BI embedded catalog inside the main shell.
             </p>
           </div>
           {isMockMode ? <SimulatedBadge /> : null}
@@ -132,6 +133,8 @@ export default function OverviewPage() {
           description={reportsQuery.isSuccess ? "Generated report artifacts." : "Reporting index temporarily unavailable."}
         />
       </motion.article>
+
+      <PowerBiVisualAnalyticsPanel />
 
       <motion.article className="wb-panel" variants={panelMotion}>
         <div className="mb-3 flex items-center justify-between gap-2">

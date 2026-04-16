@@ -36,8 +36,10 @@ param(
   [Parameter(Mandatory = $true)]
   [string] $User,
 
-  [Parameter(Mandatory = $true)]
+  [Parameter()]
   [string] $KeyPath,
+
+  [switch] $UseEnvironmentPassword,
 
   [ValidateSet("auto", "windows", "linux")]
   [string] $RemoteOS = "auto",
@@ -69,10 +71,12 @@ param(
 # =========================
 if ([string]::IsNullOrWhiteSpace($Target))  { throw "Target cannot be empty." }
 if ([string]::IsNullOrWhiteSpace($User))    { throw "User cannot be empty." }
-if ([string]::IsNullOrWhiteSpace($KeyPath)) { throw "KeyPath cannot be empty." }
-
-if (!(Test-Path -LiteralPath $KeyPath)) {
+if (-not [string]::IsNullOrWhiteSpace($KeyPath) -and !(Test-Path -LiteralPath $KeyPath)) {
     throw "SSH private key not found: $KeyPath"
+}
+$SshPassword = if ($UseEnvironmentPassword) { $env:IOC_MANAGER_SSH_PASSWORD } else { "" }
+if ([string]::IsNullOrWhiteSpace($KeyPath) -and [string]::IsNullOrWhiteSpace($SshPassword)) {
+    throw "Provide either KeyPath or a subnet SSH password."
 }
 
 if (-not [string]::IsNullOrWhiteSpace($Rule) -and -not [string]::IsNullOrWhiteSpace($CustomRule)) {
@@ -129,17 +133,63 @@ New-Item -ItemType Directory -Force -Path $LocalOutDir | Out-Null
 #  Helper functions
 # =========================
 function Get-SshCommonArgs {
+    $usePasswordAuth = -not [string]::IsNullOrWhiteSpace($SshPassword) -and [string]::IsNullOrWhiteSpace($KeyPath)
     $args = @(
-        '-q',
-        '-i', $KeyPath,
-        '-o', 'BatchMode=yes'
+        '-q'
     )
+    if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
+        $args += @('-i', $KeyPath, '-o', 'IdentitiesOnly=yes')
+    }
+    if ($usePasswordAuth) {
+        $args += @('-o', 'BatchMode=no', '-o', 'PreferredAuthentications=password,keyboard-interactive', '-o', 'PubkeyAuthentication=no', '-o', 'PasswordAuthentication=yes')
+    }
+    else {
+        $args += @('-o', 'BatchMode=yes')
+    }
 
     if ($AcceptNewHostKey) {
         $args += @('-o', 'StrictHostKeyChecking=accept-new')
     }
 
     return $args
+}
+
+function Invoke-OpenSshCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Executable,
+
+        [Parameter(Mandatory = $true)]
+        [string[]] $Arguments
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SshPassword) -or -not [string]::IsNullOrWhiteSpace($KeyPath)) {
+        $output = & $Executable @Arguments 2>&1
+        return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+    }
+
+    $askpass = Join-Path $env:TEMP ("askpass_{0}.cmd" -f ([guid]::NewGuid().ToString("N")))
+    $askpassScript = @'
+@echo off
+powershell -NoProfile -NonInteractive -Command "[Console]::Out.Write([Environment]::GetEnvironmentVariable('IOC_MANAGER_SSH_PASSWORD'))"
+'@
+    Set-Content -LiteralPath $askpass -Encoding ascii -Value $askpassScript
+    $oldAsk = $env:SSH_ASKPASS
+    $oldReq = $env:SSH_ASKPASS_REQUIRE
+    $oldDisplay = $env:DISPLAY
+    try {
+        $env:SSH_ASKPASS = $askpass
+        $env:SSH_ASKPASS_REQUIRE = "force"
+        $env:DISPLAY = "1"
+        $output = & $Executable @Arguments 2>&1
+        return [pscustomobject]@{ Output = $output; ExitCode = $LASTEXITCODE }
+    }
+    finally {
+        $env:SSH_ASKPASS = $oldAsk
+        $env:SSH_ASKPASS_REQUIRE = $oldReq
+        $env:DISPLAY = $oldDisplay
+        Remove-Item -LiteralPath $askpass -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Invoke-RemotePS {
@@ -169,8 +219,9 @@ catch {
     $args += "$User@$Target"
     $args += "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc"
 
-    $output = & $SSH @args 2>&1
-    $exitCode = $LASTEXITCODE
+    $result = Invoke-OpenSshCommand -Executable $SSH -Arguments $args
+    $output = $result.Output
+    $exitCode = $result.ExitCode
 
     if ($exitCode -ne 0) {
         $detail = if ($output) { ($output -join [Environment]::NewLine).Trim() } else { "No additional error details." }
@@ -196,8 +247,9 @@ function Invoke-ScpUpload {
     if ($Recursive) { $args += '-r' }
     $args += @($LocalPath, "$User@${Target}:$RemotePath")
 
-    $output = & $SCP @args 2>&1
-    $exitCode = $LASTEXITCODE
+    $result = Invoke-OpenSshCommand -Executable $SCP -Arguments $args
+    $output = $result.Output
+    $exitCode = $result.ExitCode
 
     if ($exitCode -ne 0) {
         $detail = if ($output) { ($output -join [Environment]::NewLine).Trim() } else { "No additional error details." }
@@ -218,8 +270,9 @@ function Invoke-ScpDownload {
     $args += Get-SshCommonArgs
     $args += @("$User@${Target}:$RemotePath", $LocalPath)
 
-    $output = & $SCP @args 2>&1
-    $exitCode = $LASTEXITCODE
+    $result = Invoke-OpenSshCommand -Executable $SCP -Arguments $args
+    $output = $result.Output
+    $exitCode = $result.ExitCode
 
     if ($exitCode -ne 0) {
         $detail = if ($output) { ($output -join [Environment]::NewLine).Trim() } else { "No additional error details." }
@@ -371,17 +424,16 @@ function Invoke-LinuxSigmaHunt {
         [object[]] $RuleDefinitions,
 
         [Parameter(Mandatory = $true)]
-        [string] $RemoteResultFile,
+        [string] $EffectiveLogPath,
 
         [Parameter(Mandatory = $true)]
-        [string] $EffectiveLogPath
+        [string] $LocalResultFile
     )
 
     $definitionsJson = $RuleDefinitions | ConvertTo-Json -Depth 10 -Compress
     $definitionsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($definitionsJson))
     $sinceIso = (Get-Date).ToUniversalTime().AddMinutes(-$MinutesBack).ToString('O')
     $logPathBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($EffectiveLogPath))
-    $remoteResultBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($RemoteResultFile))
 
     $pythonScript = @'
 import base64
@@ -391,36 +443,30 @@ import re
 import subprocess
 import sys
 
-rules = json.loads(base64.b64decode(sys.argv[1]).decode('utf-8'))
+rules = json.loads(base64.b64decode(sys.argv[2]).decode('utf-8'))
 if isinstance(rules, dict):
     rules = [rules]
-since_iso = sys.argv[2]
-log_path = base64.b64decode(sys.argv[3]).decode('utf-8')
-result_path = base64.b64decode(sys.argv[4]).decode('utf-8')
+since_iso = sys.argv[3]
+log_path = base64.b64decode(sys.argv[4]).decode('utf-8')
 
 since = datetime.datetime.fromisoformat(since_iso.replace('Z', '+00:00'))
-
-cmd = ['journalctl', '--since', since.strftime('%Y-%m-%d %H:%M:%S'), '--no-pager', '-o', 'short-iso']
-proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False)
-raw_lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-
-if not raw_lines and log_path:
-    try:
-        with open(log_path, 'r', encoding='utf-8', errors='replace') as handle:
-            raw_lines = [line.rstrip('\n') for line in handle if line.strip()]
-    except OSError:
-        raw_lines = []
 
 def is_sysmon_line(line):
     lowered = line.lower()
     return '<event>' in lowered or ' sysmon[' in lowered
 
-lines = [line for line in raw_lines if is_sysmon_line(line)]
-
 detections = []
 command_line_pattern = re.compile(r"""<Data\s+Name=(['"])CommandLine\1>(.*?)</Data>""", re.IGNORECASE)
 logger_pattern = re.compile(r"""(?i)(?:^|\s)(?:/usr/bin/)?(?:bash|sh|dash)\s+-c\s+logger\s+(.+)$|(?:^|\s)(?:/usr/bin/)?logger\s+(.+)$""")
 seen_detections = set()
+compiled_rules = []
+all_keywords = set()
+
+for rule in rules:
+    keywords = [keyword.lower() for keyword in rule.get('keywords', []) if keyword]
+    compiled_rules.append((rule, keywords))
+    for keyword in keywords:
+        all_keywords.add(keyword)
 
 def extract_command_line(line):
     match = command_line_pattern.search(line)
@@ -454,10 +500,9 @@ def normalize_command_line(command_line):
         normalized = f"logger {message.strip()}".strip()
     return normalized
 
-for line in lines:
+def process_line(line):
     line_lower = line.lower()
-    for rule in rules:
-        keywords = [keyword.lower() for keyword in rule.get('keywords', [])]
+    for rule, keywords in compiled_rules:
         if all(keyword in line_lower for keyword in keywords):
             command_line = normalize_command_line(extract_command_line(line))
             detection_key = (rule.get('id'), command_line)
@@ -485,45 +530,60 @@ for line in lines:
                 }
             })
 
-with open(result_path, 'w', encoding='utf-8') as handle:
-    json.dump(detections, handle)
+cmd = ['journalctl', '--since', since.strftime('%Y-%m-%d %H:%M:%S'), '--no-pager', '-o', 'short-iso']
+if all_keywords:
+    grep_pattern = '(?i)(' + '|'.join(re.escape(keyword) for keyword in sorted(all_keywords)) + ')'
+    cmd += ['--grep', grep_pattern]
+used_journalctl = False
+try:
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace') as proc:
+        if proc.stdout is not None:
+            used_journalctl = True
+            for raw_line in proc.stdout:
+                line = raw_line.strip()
+                if not line or not is_sysmon_line(line):
+                    continue
+                process_line(line)
+        proc.wait()
+except OSError:
+    used_journalctl = False
+
+if not used_journalctl and log_path:
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as handle:
+            for raw_line in handle:
+                line = raw_line.rstrip('\n')
+                if not line or not is_sysmon_line(line):
+                    continue
+                process_line(line)
+    except OSError:
+        pass
+
+sys.stdout.write(json.dumps(detections))
 '@
 
-    $localPythonPath = Join-Path $env:TEMP ("detechtive_sigma_{0}.py" -f ([Guid]::NewGuid().ToString("N")))
-    $remotePythonPath = "/tmp/detechtive_sigma_$([Guid]::NewGuid().ToString('N')).py"
+    $pythonScriptBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pythonScript))
+    $quotedDefinitions = Quote-PosixArg $definitionsBase64
+    $quotedSince = Quote-PosixArg $sinceIso
+    $quotedLogPath = Quote-PosixArg $logPathBase64
+    $quotedPythonScript = Quote-PosixArg $pythonScriptBase64
+    $quotedPythonRunner = Quote-PosixArg "import base64, sys; exec(compile(base64.b64decode(sys.argv[1]).decode('utf-8'), '<sigma>', 'exec'))"
+    $remoteCommand = "python3 -c $quotedPythonRunner $quotedPythonScript $quotedDefinitions $quotedSince $quotedLogPath"
 
-    try {
-        Set-Content -LiteralPath $localPythonPath -Value $pythonScript -Encoding UTF8
-        Invoke-ScpUpload -LocalPath $localPythonPath -RemotePath $remotePythonPath
+    $sshArgs = @()
+    $sshArgs += Get-SshCommonArgs
+    $sshArgs += "$User@$Target"
+    $sshArgs += $remoteCommand
 
-        $quotedRemotePython = Quote-PosixArg $remotePythonPath
-        $quotedDefinitions = Quote-PosixArg $definitionsBase64
-        $quotedSince = Quote-PosixArg $sinceIso
-        $quotedLogPath = Quote-PosixArg $logPathBase64
-        $quotedResultPath = Quote-PosixArg $remoteResultBase64
-        $remoteCommand = "python3 $quotedRemotePython $quotedDefinitions $quotedSince $quotedLogPath $quotedResultPath"
-
-        $sshArgs = @()
-        $sshArgs += Get-SshCommonArgs
-        $sshArgs += "$User@$Target"
-        $sshArgs += $remoteCommand
-
-        $output = & $SSH @sshArgs 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            $detail = if ($output) { ($output -join [Environment]::NewLine).Trim() } else { "No additional error details." }
-            throw "Remote Linux Sigma scan failed.`n$detail"
-        }
+    $result = Invoke-OpenSshCommand -Executable $SSH -Arguments $sshArgs
+    $output = $result.Output
+    if ($result.ExitCode -ne 0) {
+        $detail = if ($output) { ($output -join [Environment]::NewLine).Trim() } else { "No additional error details." }
+        throw "Remote Linux Sigma scan failed.`n$detail"
     }
-    finally {
-        Remove-Item -LiteralPath $localPythonPath -Force -ErrorAction SilentlyContinue
-        if ($remotePythonPath) {
-            $cleanupArgs = @()
-            $cleanupArgs += Get-SshCommonArgs
-            $cleanupArgs += "$User@$Target"
-            $cleanupArgs += "rm -f -- $(Quote-PosixArg $remotePythonPath)"
-            & $SSH @cleanupArgs 2>$null | Out-Null
-        }
-    }
+
+    $jsonOutput = if ($output) { ($output -join [Environment]::NewLine).Trim() } else { "[]" }
+    Set-Content -LiteralPath $LocalResultFile -Value $jsonOutput -Encoding UTF8
 }
 
 if ($EffectiveOs -eq 'linux' -and -not $CustomRulesOnly) {
@@ -636,7 +696,17 @@ if (-not $injectDanger) {
 `$chainsawExit = `$LASTEXITCODE
 
 if (`$chainsawExit -ne 0) {
-    throw "Chainsaw exited with code `$chainsawExit"
+    if (Test-Path `$outFile) {
+        `$outputInfo = Get-Item `$outFile
+        if (`$outputInfo.Length -eq 0) {
+            Set-Content -LiteralPath `$outFile -Encoding UTF8 -Value '[]'
+            `$chainsawExit = 0
+        } else {
+            throw "Chainsaw exited with code `$chainsawExit"
+        }
+    } else {
+        throw "Chainsaw exited with code `$chainsawExit"
+    }
 }
 
 if (!(Test-Path `$outFile)) {
@@ -659,10 +729,11 @@ Write-Output "RESULT_EXITCODE:`$chainsawExit"
 else {
     if ($Interactive) { Write-Host "[*] Running Linux Sigma hunt on target..." }
     $linuxRules = Get-LinuxSigmaRuleDefinitions -RuleRoot $RulesPath
-    $remoteOut = "/tmp/detechtive_sigma_$((Get-Date).ToString('yyyyMMdd_HHmmss')).json"
+    $remoteOut = "linux-inline-result"
     $remoteExitLine = "0"
     $effectiveLinuxLogPath = if ([string]::IsNullOrWhiteSpace($LinuxLogPath)) { "/var/log/syslog" } else { $LinuxLogPath }
-    Invoke-LinuxSigmaHunt -RuleDefinitions $linuxRules -RemoteResultFile $remoteOut -EffectiveLogPath $effectiveLinuxLogPath
+    $LocalFile = Join-Path $LocalOutDir ("sigma_{0}_{1}.json" -f $Target, (Get-Date).ToString('yyyyMMdd_HHmmss'))
+    Invoke-LinuxSigmaHunt -RuleDefinitions $linuxRules -EffectiveLogPath $effectiveLinuxLogPath -LocalResultFile $LocalFile
 }
 
 [int]$ChainsawExitCode = 0
@@ -677,10 +748,12 @@ if ($Interactive) { Write-Host "[+] Remote output file: $remoteOut" }
 # =========================
 if ($Interactive) { Write-Host "[*] Pulling result back (scp)..." }
 
-$remoteOutScp = ($remoteOut -replace "\\", "/")
-$LocalFile    = Join-Path $LocalOutDir (Split-Path $remoteOutScp -Leaf)
+if ($EffectiveOs -eq 'windows') {
+    $remoteOutScp = ($remoteOut -replace "\\", "/")
+    $LocalFile    = Join-Path $LocalOutDir (Split-Path $remoteOutScp -Leaf)
 
-Invoke-ScpDownload -RemotePath $remoteOutScp -LocalPath $LocalOutDir
+    Invoke-ScpDownload -RemotePath $remoteOutScp -LocalPath $LocalOutDir
+}
 
 if (!(Test-Path -LiteralPath $LocalFile)) {
     throw "Expected local result file was not found after download: $LocalFile"
@@ -704,11 +777,7 @@ if (Test-Path '$remoteRulesRoot') {
         Invoke-RemotePS -ScriptText $CleanupPS -FailureMessage "Remote cleanup failed." | Out-Null
     }
     else {
-        $cleanupArgs = @()
-        $cleanupArgs += Get-SshCommonArgs
-        $cleanupArgs += "$User@$Target"
-        $cleanupArgs += "rm -f -- $(Quote-PosixArg $remoteOut)"
-        & $SSH @cleanupArgs 2>$null | Out-Null
+        # Linux mode now executes inline and writes results locally, so there is no remote artifact to clean up.
     }
 }
 

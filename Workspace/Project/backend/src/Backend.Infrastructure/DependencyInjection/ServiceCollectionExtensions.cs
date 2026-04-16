@@ -18,7 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 using Backend.Application.Abstractions.Services;
-using Backend.Infrastructure.Services;
 
 namespace Backend.Infrastructure.DependencyInjection;
 
@@ -55,6 +54,12 @@ public static class ServiceCollectionExtensions
         services
             .AddOptions<LegacyAzureCompatibilityOptions>()
             .Bind(configuration.GetSection(LegacyAzureCompatibilityOptions.SectionName))
+            .ValidateOnStart();
+        services
+            .AddOptions<LegacyScanPipelineOptions>()
+            .Bind(configuration.GetSection(LegacyScanPipelineOptions.SectionName))
+            .Validate(options => options.MaxTargetsPerExecution is > 0 and <= 25, "LegacyScanPipeline:MaxTargetsPerExecution must be between 1 and 25.")
+            .Validate(options => options.MaxParallelTargetExecutions is > 0 and <= 8, "LegacyScanPipeline:MaxParallelTargetExecutions must be between 1 and 8.")
             .ValidateOnStart();
 
         services
@@ -94,6 +99,17 @@ public static class ServiceCollectionExtensions
                     }
                 }));
 
+        services.AddDbContext<LegacyScanPipelineDbContext>(options =>
+            options.UseSqlServer(
+                connectionString,
+                sqlServer =>
+                {
+                    if (allowSqlRetries)
+                    {
+                        sqlServer.EnableRetryOnFailure();
+                    }
+                }));
+
         var identityOptions = configuration.GetSection(IdentitySecurityOptions.SectionName).Get<IdentitySecurityOptions>()
             ?? new IdentitySecurityOptions();
 
@@ -119,6 +135,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<CtiDbContext>());
         services.AddScoped<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddScoped<ILegacyAzureCompatibilityReader, LegacyAzureCompatibilityReader>();
+        services.AddScoped<SqlUserTableDirectoryService>();
         if (sqlUserTableAuthOptions.Enabled)
         {
             services.AddScoped<IAuthService, SqlUserTableAuthService>();

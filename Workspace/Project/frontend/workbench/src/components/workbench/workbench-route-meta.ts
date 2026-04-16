@@ -4,12 +4,10 @@ import {
   Clock3,
   FileSearch,
   FileText,
-  ListChecks,
   Radar,
   SearchCode,
   Server,
   Settings,
-  Share2,
   Workflow,
 } from "lucide-react"
 
@@ -82,75 +80,31 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     module: "Core",
     label: "Dashboard",
     title: "Dashboard",
-    subtitle: "Operational posture across ingestion, scans, alerts, and rule lifecycle activity.",
+    subtitle: "Operational posture, embedded visual analytics, and current activity across alerts, scans, and reporting.",
     icon: Radar,
-    commandAliases: ["Dashboard", "Overview", "Operations Overview"],
-  },
-  {
-    id: "queue",
-    href: "/queue",
-    aliases: ["/problematic-queue"],
-    module: "Core",
-    label: "Alert Queue",
-    title: "Alert Queue",
-    subtitle: "Priority-ordered alert queue for analyst triage and approval flow.",
-    icon: ListChecks,
-    commandAliases: ["Alert Queue", "Queue", "Triage Queue"],
+    commandAliases: ["Dashboard", "Overview", "Operations Overview", "Visual Analytics"],
   },
   {
     id: "alerts",
     href: "/alerts",
-    aliases: ["/cases", "/matches", "/investigations", "/graph-relationships"],
+    aliases: ["/queue", "/problematic-queue", "/cases", "/matches", "/investigations", "/graph-relationships"],
     module: "Core",
     label: "Alerts",
     title: "Alert Registry",
     subtitle: "Alert registry with current status, priority, and deployment context.",
     icon: Activity,
-    commandAliases: ["Alerts", "Alert Registry"],
-  },
-  {
-    id: "rules",
-    href: "/rules",
-    aliases: ["/detection-studio", "/rules-studio"],
-    module: "Operations",
-    label: "Rules Management",
-    title: "Rules Management",
-    subtitle: "YARA, Sigma, Snort, and Suricata rule authoring, review, simulation, and release controls.",
-    icon: SearchCode,
-    commandAliases: ["Rules Management", "Rule Repository", "Rules", "Rule Management"],
+    commandAliases: ["Alerts", "Alert Registry", "Alert Queue", "Queue", "Triage Queue"],
   },
   {
     id: "servers",
     href: "/servers",
     aliases: ["/operations"],
     module: "Operations",
-    label: "Targets / Servers",
-    title: "Targets / Servers",
+    label: "Servers",
+    title: "Servers",
     subtitle: "Server discovery, health, scanner coverage, and operational management.",
     icon: Server,
-    commandAliases: ["Targets / Servers", "Servers", "Server Management", "Server Discovery"],
-  },
-  {
-    id: "distribution",
-    href: "/distribution",
-    aliases: ["/deployments"],
-    module: "Operations",
-    label: "Rule Distribution",
-    title: "Rule Distribution",
-    subtitle: "Controlled distribution and staged promotion of approved detection rules.",
-    icon: Share2,
-    commandAliases: ["Rule Distribution", "Distribution", "Deployments"],
-  },
-  {
-    id: "ioc-ingestion",
-    href: "/ioc-ingestion",
-    aliases: ["/ingestion-feeds", "/threat-intel"],
-    module: "Operations",
-    label: "IOCs Explorer",
-    title: "IOCs Explorer",
-    subtitle: "Explore normalized IoC data, feed quality, and source-level processing state.",
-    icon: FileSearch,
-    commandAliases: ["IOCs Explorer", "IoC Ingestion", "Ingestion", "Feeds"],
+    commandAliases: ["Servers", "Targets", "Server Management", "Server Discovery"],
   },
   {
     id: "results-ingestion",
@@ -175,15 +129,37 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     commandAliases: ["Scan Plan", "Scan Plans", "Plan Scheduler", "Scheduled Scans"],
   },
   {
-    id: "reporting",
-    href: "/reporting",
-    aliases: ["/reports", "/ioc-registry", "/coverage", "/coverage-pain-analysis"],
+    id: "rules",
+    href: "/rules",
+    aliases: ["/distribution", "/deployments", "/detection-studio", "/rules-studio"],
+    module: "Operations",
+    label: "Rules Management",
+    title: "Rules Management",
+    subtitle: "YARA, Sigma, Snort, and Suricata rule authoring, review, simulation, and release controls.",
+    icon: SearchCode,
+    commandAliases: ["Rules Management", "Rule Repository", "Rules", "Rule Management", "Rule Distribution", "Distribution", "Deployments"],
+  },
+  {
+    id: "ioc-ingestion",
+    href: "/ioc-ingestion",
+    aliases: ["/ingestion-feeds", "/threat-intel"],
+    module: "Operations",
+    label: "IOCs Explorer",
+    title: "IOCs Explorer",
+    subtitle: "Explore normalized IoC data, feed quality, and source-level processing state.",
+    icon: FileSearch,
+    commandAliases: ["IOCs Explorer", "IoC Ingestion", "Ingestion", "Feeds"],
+  },
+  {
+    id: "reports",
+    href: "/reports",
+    aliases: ["/ioc-registry", "/coverage", "/coverage-pain-analysis"],
     module: "Operations",
     label: "Reports",
     title: "Reports",
-    subtitle: "Operational reporting, visual analytics, audit views, and result-driven summaries.",
+    subtitle: "Generate management and technical summaries with preview, history, and future export paths.",
     icon: FileText,
-    commandAliases: ["Reports", "Reporting", "Audit Reports"],
+    commandAliases: ["Reports", "Report Generation", "Export History", "Executive Summary"],
   },
   {
     id: "settings",
@@ -282,7 +258,7 @@ const SERVERS_SUBROUTE_BY_SUFFIX = new Map<string, ServersSubrouteMeta>([
     "",
     {
       label: "Server Inventory",
-      title: "Targets / Servers",
+      title: "Servers",
       subtitle: "Server inventory, health, and scanner assignment posture.",
     },
   ],
@@ -414,7 +390,7 @@ function parseDistributionPath(pathname: string): boolean {
 }
 
 function parseReportingPath(pathname: string): boolean {
-  return /^\/(?:reporting|reports|ioc-registry|coverage|coverage-pain-analysis)(?:\/.*)?$/.test(pathname)
+  return /^\/(?:reports|ioc-registry|coverage|coverage-pain-analysis)(?:\/.*)?$/.test(pathname)
 }
 
 function toAlertLabel(caseId: string) {
@@ -636,13 +612,13 @@ export function resolveWorkbenchRoute(pathname: string): ResolvedWorkbenchRoute 
   }
 
   if (parseReportingPath(normalized)) {
-    const route = ROUTE_BY_HREF.get("/reporting") ?? null
+    const route = ROUTE_BY_HREF.get("/reports") ?? null
     return {
       pathname: normalized,
-      canonicalPath: "/reporting",
+      canonicalPath: "/reports",
       module: "Operations",
       title: route?.title ?? "Reports",
-      subtitle: route?.subtitle ?? "Operational reporting and audit summaries.",
+      subtitle: route?.subtitle ?? "Generated management and technical summaries.",
       breadcrumbs: buildRouteBreadcrumbs(route ?? WORKBENCH_ROUTES[0]),
       route,
       caseRoute: null,
@@ -713,7 +689,7 @@ export function isWorkbenchNavActive(pathname: string, href: string) {
     return true
   }
 
-  if (href === "/reporting" && resolved.canonicalPath.startsWith("/reporting")) {
+  if (href === "/reports" && resolved.canonicalPath.startsWith("/reports")) {
     return true
   }
 

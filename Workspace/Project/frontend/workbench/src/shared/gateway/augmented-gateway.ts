@@ -30,6 +30,7 @@ import type {
   CreateRuleProposalInput,
   DetectionListQuery,
   Gateway,
+  GenerateReportInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -146,6 +147,10 @@ export class AugmentedGateway implements Gateway {
 
   listReports(query?: ReportListQuery, signal?: AbortSignal) {
     return this.source.listReports(query, signal)
+  }
+
+  generateReport(input: GenerateReportInput) {
+    return this.source.generateReport(input)
   }
 
   getPowerBiVisualizationCatalog(signal?: AbortSignal) {

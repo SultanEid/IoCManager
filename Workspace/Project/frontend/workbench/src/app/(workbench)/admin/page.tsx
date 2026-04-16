@@ -98,7 +98,7 @@ export default function AdminPage() {
     email: "",
     displayName: "",
     password: "",
-    roles: ["Analyst"] as string[],
+    role: "Analyst",
   })
   const [busy, setBusy] = useState<"retrain" | null>(null)
   const canAdmin = canAccessAdminActions(session)
@@ -147,16 +147,15 @@ export default function AdminPage() {
     }
 
     setNewUser((previous) => {
-      const validRoles = previous.roles.filter((roleName) => roleOptions.some((role) => role.name === roleName))
-      const nextRoles = validRoles.length > 0 ? validRoles : [defaultRoleName]
+      const nextRole = roleOptions.some((role) => role.name === previous.role) ? previous.role : defaultRoleName
 
-      if (nextRoles.length === previous.roles.length && nextRoles.every((roleName, index) => roleName === previous.roles[index])) {
+      if (nextRole === previous.role) {
         return previous
       }
 
       return {
         ...previous,
-        roles: nextRoles,
+        role: nextRole,
       }
     })
   }, [defaultRoleName, roleOptions])
@@ -182,14 +181,11 @@ export default function AdminPage() {
     }
   }
 
-  function toggleRole(roleName: string) {
-    setNewUser((previous) => {
-      const exists = previous.roles.includes(roleName)
-      return {
-        ...previous,
-        roles: exists ? previous.roles.filter((value) => value !== roleName) : [...previous.roles, roleName],
-      }
-    })
+  function selectRole(roleName: string) {
+    setNewUser((previous) => ({
+      ...previous,
+      role: roleName,
+    }))
   }
 
   async function createUser() {
@@ -208,9 +204,9 @@ export default function AdminPage() {
       !newUser.email.trim() ||
       !newUser.displayName.trim() ||
       !newUser.password.trim() ||
-      newUser.roles.length === 0
+      !newUser.role.trim()
     ) {
-      setUserMessage("Username, email, display name, password, and at least one role are required.")
+      setUserMessage("Username, email, display name, password, and one role are required.")
       return
     }
 
@@ -223,7 +219,7 @@ export default function AdminPage() {
         email: newUser.email.trim(),
         displayName: newUser.displayName.trim(),
         password: newUser.password,
-        roles: newUser.roles,
+        roles: [newUser.role],
       })
 
       await usersQuery.refetch()
@@ -232,7 +228,7 @@ export default function AdminPage() {
         email: "",
         displayName: "",
         password: "",
-        roles: defaultRoleName ? [defaultRoleName] : [],
+        role: defaultRoleName,
       })
       setUserMessage("User created successfully.")
     } catch (error) {
@@ -465,7 +461,7 @@ export default function AdminPage() {
 
       <motion.article className="wb-panel" variants={panelMotion}>
         <h2 className="text-sm font-semibold tracking-tight">User Management</h2>
-        <p className="mt-1 text-xs text-muted-foreground">Contract-backed Admin controls for account provisioning.</p>
+        <p className="mt-1 text-xs text-muted-foreground">dbo.User-backed account provisioning and user visibility.</p>
 
         {!canAdmin ? <p className="mt-3 text-xs text-amber-200">Admin role required for user management.</p> : null}
 
@@ -520,12 +516,12 @@ export default function AdminPage() {
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {roleOptions.map((role) => {
-                  const selected = newUser.roles.includes(role.name)
+                  const selected = newUser.role === role.name
                   return (
                     <button
                       key={role.id}
                       type="button"
-                      onClick={() => toggleRole(role.name)}
+                      onClick={() => selectRole(role.name)}
                       className={`rounded-full border px-2 py-1 text-[11px] ${
                         selected
                           ? "border-primary/45 bg-primary/12 text-foreground"
@@ -537,6 +533,7 @@ export default function AdminPage() {
                   )
                 })}
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">Users in `dbo.User` carry one role value per account.</p>
               <div className="mt-3 flex items-center gap-2">
                 <Button size="sm" disabled={creatingUser || roleOptions.length === 0} onClick={createUser}>
                   {creatingUser ? "Creating..." : "Create User"}
@@ -558,6 +555,7 @@ export default function AdminPage() {
                         {user.userName}
                         {user.email ? ` | ${user.email}` : ""}
                       </p>
+                      <p className="text-muted-foreground">Role: {roleLabel(user.role)}</p>
                     </div>
                   ))
                 )}

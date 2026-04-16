@@ -209,6 +209,10 @@ public enum ReportType
     Operational = 1,
     Executive = 2,
     Compliance = 3,
+    ExecutiveSummary = 4,
+    DetailedIocReport = 5,
+    TargetExposureSummary = 6,
+    ScanActivitySummary = 7,
 }
 
 public enum RetentionDataType

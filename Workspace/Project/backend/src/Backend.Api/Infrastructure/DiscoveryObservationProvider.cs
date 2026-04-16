@@ -11,6 +11,7 @@ namespace Backend.Api.Infrastructure;
 public sealed record DiscoveryObservation(
     string IpAddress,
     string? Hostname,
+    string? TargetOsType,
     DiscoveredHostReachability Reachability,
     DateTimeOffset CheckedAtUtc);
 
@@ -121,12 +122,22 @@ public sealed class DiscoveryObservationProvider : IDiscoveryObservationProvider
             foreach (var row in rows)
             {
                 var reachable = string.Equals(row.Status, "Online", StringComparison.OrdinalIgnoreCase);
-                var hostname = reachable
-                    ? await ResolveHostNameAsync(row.IPAddress, options.DnsLookupTimeoutMilliseconds, cancellationToken)
-                    : null;
+                string? hostname = null;
+                string? targetOsType = null;
+                if (reachable)
+                {
+                    hostname = await ResolveHostNameAsync(row.IPAddress, options.DnsLookupTimeoutMilliseconds, cancellationToken);
+                    if (IPAddress.TryParse(row.IPAddress, out var parsedAddress))
+                    {
+                        var probeResult = await _probe.ProbeAsync(parsedAddress, TimeSpan.FromMilliseconds(options.TimeoutMilliseconds), cancellationToken);
+                        targetOsType = LegacyScanPipelineHelpers.InferTargetOsType(hostname, null, probeResult.Ttl);
+                    }
+                }
+
                 observations.Add(new DiscoveryObservation(
                     row.IPAddress,
                     hostname,
+                    targetOsType,
                     reachable ? DiscoveredHostReachability.Reachable : DiscoveredHostReachability.Unreachable,
                     DateTimeOffset.UtcNow));
             }
@@ -165,6 +176,7 @@ public sealed class DiscoveryObservationProvider : IDiscoveryObservationProvider
                 observations[index] = new DiscoveryObservation(
                     ipAddress.ToString(),
                     hostname == ipAddress.ToString() ? null : hostname,
+                    result.Reachable ? LegacyScanPipelineHelpers.InferTargetOsType(hostname, null, result.Ttl) : null,
                     result.Reachable ? DiscoveredHostReachability.Reachable : DiscoveredHostReachability.Unreachable,
                     DateTimeOffset.UtcNow);
             });

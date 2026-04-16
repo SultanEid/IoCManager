@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Bell,
-  Clock3,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -15,7 +14,6 @@ import {
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { WorkbenchCommandPalette } from "@/components/workbench/command-palette"
-import { QUEUE_FOCUS_ITEMS } from "@/components/workbench/nav"
 import {
   WorkbenchInspectorDrawer,
   useWorkbenchInspector,
@@ -27,13 +25,9 @@ import {
 } from "@/components/workbench/workbench-route-meta"
 import {
   type PinnedWorkbenchItem,
-  type RecentWorkbenchItem,
-  pushRecentWorkbenchItem,
   readPinnedWorkbenchItems,
-  readRecentWorkbenchItems,
   togglePinnedAlert,
   writePinnedWorkbenchItems,
-  writeRecentWorkbenchItems,
 } from "@/components/workbench/workbench-shell-storage"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -63,7 +57,6 @@ type SidebarNavProps = {
 type SidebarWorkAreaProps = {
   collapsed: boolean
   pinned: PinnedWorkbenchItem[]
-  recent: RecentWorkbenchItem[]
   onTogglePin: (alertId: string) => void
 }
 
@@ -104,7 +97,7 @@ function SidebarNav({ collapsed, pathname, onNavigate }: SidebarNavProps) {
   )
 }
 
-function SidebarWorkArea({ collapsed, pinned, recent, onTogglePin }: SidebarWorkAreaProps) {
+function SidebarWorkArea({ collapsed, pinned, onTogglePin }: SidebarWorkAreaProps) {
   const alertsQuery = useWorkbenchQuery(["shell", "sidebar", "alerts"], (signal) => gateway.listAlerts(signal))
 
   const pinnedRows = useMemo(() => {
@@ -159,27 +152,6 @@ function SidebarWorkArea({ collapsed, pinned, recent, onTogglePin }: SidebarWork
           </div>
         ) : null}
       </section>
-
-      <section>
-        <div className="mb-2 px-2">
-          <p className="wb-kicker inline-flex items-center gap-1">
-            <Clock3 className="h-3.5 w-3.5" /> Recent
-          </p>
-        </div>
-
-        {recent.length === 0 ? <CompactEmptyState label="No recent items yet." /> : null}
-
-        {recent.length > 0 ? (
-          <div className="space-y-1.5">
-            {recent.slice(0, 5).map((item) => (
-              <Link key={item.key} href={item.href} className="block rounded-md border border-border/70 bg-surface-2/55 px-2 py-1.5 transition-colors hover:border-primary/35">
-                <p className="truncate text-[12px] font-medium">{item.label}</p>
-                <p className="truncate text-[10px] text-muted-foreground">{item.subtitle}</p>
-              </Link>
-            ))}
-          </div>
-        ) : null}
-      </section>
     </div>
   )
 }
@@ -189,13 +161,12 @@ function SidebarContent({
   pathname,
   onNavigate,
   pinned,
-  recent,
   onTogglePin,
 }: SidebarNavProps & SidebarWorkAreaProps) {
   return (
     <ScrollArea className="h-full px-2 pb-4 pt-3">
       <SidebarNav collapsed={collapsed} pathname={pathname} onNavigate={onNavigate} />
-      <SidebarWorkArea collapsed={collapsed} pinned={pinned} recent={recent} onTogglePin={onTogglePin} />
+      <SidebarWorkArea collapsed={collapsed} pinned={pinned} onTogglePin={onTogglePin} />
     </ScrollArea>
   )
 }
@@ -253,8 +224,6 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const [commandOpen, setCommandOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [pinned, setPinned] = useState<PinnedWorkbenchItem[]>([])
-  const [recent, setRecent] = useState<RecentWorkbenchItem[]>([])
-  const [storageReady, setStorageReady] = useState(false)
 
   const resolvedRoute = useMemo(() => resolveWorkbenchRoute(pathname), [pathname])
 
@@ -291,31 +260,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setPinned(readPinnedWorkbenchItems())
-    setRecent(readRecentWorkbenchItems())
-    setStorageReady(true)
   }, [])
-
-  useEffect(() => {
-    if (!storageReady) {
-      return
-    }
-
-    const routeLabel = resolvedRoute.caseId ? `Alert ${resolvedRoute.caseId.slice(0, 8)}` : resolvedRoute.title
-    const entry: RecentWorkbenchItem = {
-      key: resolvedRoute.caseId ? `alert:${resolvedRoute.canonicalPath}` : `route:${resolvedRoute.canonicalPath}`,
-      kind: resolvedRoute.caseId ? "alert" : "route",
-      href: resolvedRoute.canonicalPath,
-      label: routeLabel,
-      subtitle: resolvedRoute.title,
-      visitedAtUtc: new Date().toISOString(),
-    }
-
-    setRecent((previous) => {
-      const next = pushRecentWorkbenchItem(previous, entry, 10)
-      writeRecentWorkbenchItems(next)
-      return next
-    })
-  }, [resolvedRoute, storageReady])
 
   useEffect(() => {
     closeInspector()
@@ -337,12 +282,12 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen grid-cols-1 md:grid-cols-[auto_1fr]">
         <motion.aside
-          animate={{ width: collapsed ? 86 : 292 }}
+          animate={{ width: collapsed ? 96 : 292 }}
           transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
           className="hidden border-r border-border/70 bg-shell-sidebar shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)] backdrop-blur md:flex md:flex-col"
         >
-          <div className="flex h-16 items-center justify-between px-3">
-            <div className={cn("flex items-center gap-2", collapsed && "justify-center")}>
+          <div className={cn("px-3", collapsed ? "flex flex-col items-center gap-2 py-3" : "flex h-16 items-center justify-between")}>
+            <div className={cn("flex items-center gap-2", collapsed && "w-full justify-center")}>
               <div className="grid h-8 w-8 place-items-center rounded-lg border border-primary/40 bg-primary/15 text-primary">
                 <span className="text-[11px] font-semibold tracking-[0.14em]">IOC</span>
               </div>
@@ -356,6 +301,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             <Button
               size="icon-sm"
               variant="ghost"
+              className={cn(collapsed && "h-8 w-8 shrink-0")}
               onClick={() => setCollapsed((previous) => !previous)}
               aria-label="Toggle sidebar"
             >
@@ -367,7 +313,6 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             collapsed={collapsed}
             pathname={pathname}
             pinned={pinned}
-            recent={recent}
             onTogglePin={handleTogglePin}
           />
         </motion.aside>
@@ -393,7 +338,6 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                     pathname={pathname}
                     onNavigate={() => setMobileOpen(false)}
                     pinned={pinned}
-                    recent={recent}
                     onTogglePin={handleTogglePin}
                   />
                 </SheetContent>
@@ -465,7 +409,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="border-t border-border/70 px-3 py-2 sm:px-4 md:px-6">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <nav className="flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="shell-breadcrumbs">
                   {resolvedRoute.breadcrumbs.map((item, index) => (
                     <span key={`${item.label}:${index}`} className="inline-flex items-center gap-1">
@@ -480,18 +424,6 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                     </span>
                   ))}
                 </nav>
-
-                <div className="hidden flex-wrap items-center gap-1.5 lg:flex">
-                  {QUEUE_FOCUS_ITEMS.slice(0, 3).map((item) => (
-                    <Link
-                      key={item.key}
-                      href={item.href}
-                      className="inline-flex h-7 items-center rounded-full border border-border/70 bg-surface-2/65 px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/35 hover:text-foreground"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
               </div>
             </div>
           </header>

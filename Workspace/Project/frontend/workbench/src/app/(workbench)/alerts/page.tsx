@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
 import { motion } from "framer-motion"
+import { AlertQueuePanel } from "@/components/workbench/alerts/alert-queue-panel"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -190,9 +191,9 @@ export default function AlertsPage() {
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
       <motion.header className="wb-page-header" variants={panelMotion}>
         <p className="wb-kicker">Alert Posture</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-tight">Search live alerts without dropping triage context</h2>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight">Registry and queue in one alert workspace</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Indexed filters cover severity, status, related detection family, related server, and last-seen time range.
+          Search live alerts, keep the triage queue visible, and work from one operational alert surface.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
@@ -332,6 +333,10 @@ export default function AlertsPage() {
           </div>
         </div>
       </motion.article>
+
+      <motion.div variants={panelMotion}>
+        <AlertQueuePanel />
+      </motion.div>
     </motion.section>
   )
 }

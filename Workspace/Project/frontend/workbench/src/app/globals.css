@@ -133,19 +133,19 @@
 
 @layer components {
   .wb-page {
-    @apply space-y-4 md:space-y-5;
+    @apply space-y-5 lg:space-y-6;
   }
 
   .wb-page-header {
-    @apply rounded-xl border border-border/70 bg-surface-1/90 px-4 py-4 md:px-5;
+    @apply max-w-4xl space-y-1 px-0 py-0 lg:max-w-3xl;
   }
 
   .wb-panel {
-    @apply rounded-xl border border-border/75 bg-surface-1/85 p-4 shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_4%,transparent)_inset];
+    @apply rounded-xl border border-border/75 bg-surface-1/85 p-4 shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_4%,transparent)_inset] md:p-5;
   }
 
   .wb-panel-muted {
-    @apply rounded-xl border border-border/60 bg-surface-2/75 p-4;
+    @apply rounded-xl border border-border/60 bg-surface-2/75 p-4 md:p-5;
   }
 
   .wb-kicker {
@@ -157,7 +157,7 @@
   }
 
   .wb-shell-main {
-    @apply mx-auto w-full max-w-[1540px] px-3 pb-6 pt-4 sm:px-4 md:px-6 md:pt-5;
+    @apply mx-auto w-full max-w-[1700px] px-3 pb-7 pt-4 sm:px-4 md:px-6 md:pt-5 xl:px-8;
   }
 }
 

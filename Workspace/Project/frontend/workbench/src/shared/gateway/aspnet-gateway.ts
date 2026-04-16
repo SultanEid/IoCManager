@@ -20,6 +20,7 @@ import {
   managedServerResponseSchema,
   managedServerScannerAssignmentResponseSchema,
   powerBiVisualizationCatalogResponseSchema,
+  generatedReportResponseSchema,
   reportListResponseSchema,
   scanJobResponseSchema,
   scanJobTargetExecutionResponseSchema,
@@ -63,6 +64,7 @@ import {
   type ManagedServerInventoryResponse,
   type ManagedServerResponse,
   type FeedSourceResponse,
+  type GeneratedReportResponse,
   type IocListResponse,
   type PowerBiVisualizationCatalogResponse,
   type ReportListResponse,
@@ -124,6 +126,7 @@ import type {
   RestoreRuleInput,
   RuleRepositoryListQuery,
   RotateManagedServerConnectionSecretInput,
+  GenerateReportInput,
   ReportListQuery,
   ReviewRuleProposalInput,
   SettingsAdminVM,
@@ -322,6 +325,26 @@ export class AspNetGateway {
       () => requestJson(`/api/v2/reports${suffix}`, reportListResponseSchema, { signal }),
       () => emptyPagedItems(query.page, query.pageSize),
     )
+  }
+
+  async generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse> {
+    return requestJson("/api/v2/reports/generate", generatedReportResponseSchema, {
+      method: "POST",
+      body: {
+        reportType: input.reportType,
+        title: input.title ?? null,
+        fromUtc: input.fromUtc ?? null,
+        toUtc: input.toUtc ?? null,
+        targetServerId: input.targetServerId ?? null,
+        scannerFamily: input.scannerFamily ?? null,
+        severity: input.severity ?? null,
+        status: input.status ?? null,
+        iocType: input.iocType ?? null,
+        source: input.source ?? null,
+        persist: input.persist ?? false,
+        actorUserId: input.actorUserId,
+      },
+    })
   }
 
   async getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse> {

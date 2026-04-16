@@ -8,7 +8,8 @@ public sealed record DiscoveryTargetRange(
     string RequestedCidr,
     string? RangeStartIp,
     string? RangeEndIp,
-    IReadOnlyList<IPAddress> Targets);
+    IReadOnlyList<IPAddress> Targets,
+    IReadOnlyList<IPAddress> ExcludedTargets);
 
 public sealed class DiscoveryTargetRangeParser
 {
@@ -39,10 +40,6 @@ public sealed class DiscoveryTargetRangeParser
 
         var baseAddress = ParseIpv4(rawAddress, nameof(subnetCidr));
         var baseValue = ToUInt32(baseAddress);
-        if (!IsPrivateRfc1918(baseValue))
-        {
-            throw new ArgumentException("Only private RFC1918 IPv4 CIDR blocks are allowed for lab discovery.", nameof(subnetCidr));
-        }
 
         var mask = prefixLength == 0 ? 0u : uint.MaxValue << (32 - prefixLength);
         var networkValue = baseValue & mask;
@@ -73,11 +70,6 @@ public sealed class DiscoveryTargetRangeParser
             rangeStartValue = ToUInt32(parsedRangeStart);
             rangeEndValue = ToUInt32(parsedRangeEnd);
 
-            if (!IsPrivateRfc1918(rangeStartValue) || !IsPrivateRfc1918(rangeEndValue))
-            {
-                throw new ArgumentException("Only private RFC1918 IPv4 ranges are allowed for lab discovery.");
-            }
-
             if (rangeStartValue > rangeEndValue)
             {
                 throw new ArgumentException("Range start IP must be less than or equal to range end IP.");
@@ -105,17 +97,31 @@ public sealed class DiscoveryTargetRangeParser
 
         if (totalHosts > _options.MaxHostsPerRun)
         {
-            throw new ArgumentException($"Requested discovery range includes {totalHosts} hosts, exceeding the lab safety limit of {_options.MaxHostsPerRun}.");
+            throw new ArgumentException($"Requested discovery range includes {totalHosts} hosts, exceeding the configured safety limit of {_options.MaxHostsPerRun}.");
         }
 
-        var targets = new IPAddress[totalHosts];
+        var gatewayCandidate = prefixLength < 31 ? networkValue + 1 : (uint?)null;
+        var targets = new List<IPAddress>(totalHosts);
+        var excludedTargets = new List<IPAddress>(1);
         for (var index = 0; index < totalHosts; index++)
         {
-            targets[index] = FromUInt32(rangeStartValue + (uint)index);
+            var targetValue = rangeStartValue + (uint)index;
+            if (gatewayCandidate.HasValue && targetValue == gatewayCandidate.Value)
+            {
+                excludedTargets.Add(FromUInt32(targetValue));
+                continue;
+            }
+
+            targets.Add(FromUInt32(targetValue));
+        }
+
+        if (targets.Count == 0)
+        {
+            throw new ArgumentException("Requested discovery range only contains the excluded subnet gateway address.");
         }
 
         var requestedCidr = $"{FromUInt32(networkValue)}/{prefixLength}";
-        return new DiscoveryTargetRange(requestedCidr, normalizedRangeStart, normalizedRangeEnd, targets);
+        return new DiscoveryTargetRange(requestedCidr, normalizedRangeStart, normalizedRangeEnd, targets, excludedTargets);
     }
 
     private static (uint HostMin, uint HostMax) ComputeHostRange(uint networkValue, uint broadcastValue, int prefixLength)
@@ -157,15 +163,5 @@ public sealed class DiscoveryTargetRangeParser
             (byte)value,
         ];
         return new IPAddress(bytes);
-    }
-
-    private static bool IsPrivateRfc1918(uint value)
-    {
-        var firstOctet = (byte)(value >> 24);
-        var secondOctet = (byte)(value >> 16);
-
-        return firstOctet == 10
-               || (firstOctet == 172 && secondOctet is >= 16 and <= 31)
-               || (firstOctet == 192 && secondOctet == 168);
     }
 }

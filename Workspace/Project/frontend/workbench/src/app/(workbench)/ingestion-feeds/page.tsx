@@ -125,7 +125,6 @@ export default function IngestionFeedsPage() {
 
   const healthQuery = useWorkbenchQuery(["ingestion", "health"], (signal) => gateway.getHealthInfo(signal))
   const readinessQuery = useWorkbenchQuery(["ingestion", "ready"], (signal) => gateway.getHealthReady(signal))
-  const jobsQuery = useWorkbenchQuery(["ingestion", "jobs"], (signal) => gateway.listJobRuns(signal))
   const feedSourcesQuery = useWorkbenchQuery(["ingestion", "feed-sources"], (signal) => gateway.listFeedSources(signal))
   const iocsQuery = useWorkbenchQuery(
     ["ingestion", "iocs", parsedFilters],
@@ -174,7 +173,6 @@ export default function IngestionFeedsPage() {
   if (
     healthQuery.isLoading ||
     readinessQuery.isLoading ||
-    jobsQuery.isLoading ||
     feedSourcesQuery.isLoading ||
     iocsQuery.isLoading
   ) {
@@ -187,10 +185,6 @@ export default function IngestionFeedsPage() {
 
   if (readinessQuery.isError || !readinessQuery.data) {
     return <ClassifiedFailureState failure={classifyUiError(readinessQuery.error)} fallbackTitle="IOCs Explorer unavailable" />
-  }
-
-  if (jobsQuery.isError || !jobsQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(jobsQuery.error)} fallbackTitle="IOCs Explorer unavailable" />
   }
 
   if (feedSourcesQuery.isError) {
@@ -378,27 +372,6 @@ export default function IngestionFeedsPage() {
             </Button>
           </div>
         </div>
-      </motion.article>
-
-      <motion.article className="wb-panel" variants={panelMotion}>
-        <h3 className="mb-3 text-sm font-semibold tracking-tight">Recent Job Runs</h3>
-        {jobsQuery.data.length === 0 ? (
-          <EmptyState title="No ingestion jobs" description="No recent admin job runs were returned by the backend." />
-        ) : (
-          <div className="space-y-2">
-            {jobsQuery.data.slice(0, 8).map((job) => (
-              <div key={job.id} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2 text-sm">
-                <p className="font-medium">
-                  {job.jobType} | {job.status}
-                </p>
-                <p className="text-xs text-muted-foreground">{job.details || "No detail"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Triggered by {job.triggeredBy} | {new Date(job.startedAtUtc).toLocaleString()}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
       </motion.article>
     </motion.section>
   )

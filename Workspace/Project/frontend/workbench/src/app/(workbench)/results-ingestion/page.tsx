@@ -1,416 +1,966 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { type ColumnDef } from "@tanstack/react-table"
-import { motion } from "framer-motion"
-import { StatusBadge } from "@/components/workbench/status-badge"
+import { useMemo, useState } from "react"
+import { Bug, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileSearch, FolderSearch, ShieldAlert, Waypoints } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ApiError } from "@/shared/api/error"
 import { classifyUiError } from "@/shared/api/error-classification"
-import type { DetectionHistoryItemResponse, RuleFamily } from "@/shared/api/schemas"
-import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
-import type { DetectionListQuery } from "@/shared/gateway/types"
+import { useAuth } from "@/shared/auth/auth-provider"
+import {
+  createLegacyCustomScan,
+  listLegacyJobs,
+  listLegacyNetworks,
+  listLegacyResults,
+  listLegacyTargets,
+  stopLegacyJob,
+} from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
-import { DataGrid } from "@/shared/ui/data-grid"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
-import { panelMotion, staggerMotion } from "@/shared/ui/motion"
-import { EmptyState, LoadingState, SearchEmptyState, SimulatedBadge } from "@/shared/ui/state-panels"
+import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
 
-const FAMILY_OPTIONS = ["yara", "sigma", "snort", "suricata"] as const
-const PAGE_SIZE = 20
+const FAMILIES = ["yara", "sigma", "snort", "suricata"] as const
 
-type DetectionFiltersState = {
-  q: string
-  family: string
-  status: string
-  source: string
-  serverId: string
-  fromUtc: string
-  toUtc: string
-  page: number
+const SCANNER_METADATA = {
+  yara: {
+    title: "YARA",
+    description: "File and malware signature sweep",
+    executionHint: "SSH / host",
+    icon: Bug,
+  },
+  sigma: {
+    title: "SIGMA",
+    description: "Windows EVTX and constrained Linux log detection",
+    executionHint: "SSH / host",
+    icon: FileSearch,
+  },
+  snort: {
+    title: "SNORT",
+    description: "Sensor hunt, live watch, and offline PCAP analysis",
+    executionHint: "Network",
+    icon: ShieldAlert,
+  },
+  suricata: {
+    title: "SURICATA",
+    description: "Network traffic detection",
+    executionHint: "Network",
+    icon: Waypoints,
+  },
+} as const
+
+type ResolvedTargetOs = "windows" | "linux"
+
+function normalizeTargetOs(value: string | null | undefined): ResolvedTargetOs | null {
+  const normalized = value?.trim().toLowerCase()
+  return normalized === "windows" || normalized === "linux" ? normalized : null
 }
 
-const columns: ColumnDef<DetectionHistoryItemResponse>[] = [
-  {
-    accessorKey: "fingerprint",
-    header: "Detection",
-    cell: ({ row }) => (
-      <div>
-        <p className="font-medium">{row.original.ruleName || row.original.iocValue || row.original.fingerprint.slice(0, 12)}</p>
-        <p className="line-clamp-1 text-xs text-muted-foreground">{row.original.fingerprint}</p>
-      </div>
-    ),
-  },
-  {
-    accessorKey: "scannerFamily",
-    header: "Family",
-    cell: ({ row }) => <StatusBadge value={row.original.scannerFamily} />,
-  },
-  {
-    accessorKey: "disposition",
-    header: "Status",
-    cell: ({ row }) => <StatusBadge value={row.original.disposition} />,
-  },
-  {
-    accessorKey: "serverHostname",
-    header: "Server",
-    cell: ({ row }) => (
-      <span className="text-xs text-muted-foreground">{row.original.serverHostname || row.original.serverId.slice(0, 8)}</span>
-    ),
-  },
-  {
-    accessorKey: "lastObservedAtUtc",
-    header: "Last Seen",
-    cell: ({ row }) => new Date(row.original.lastObservedAtUtc).toLocaleString(),
-  },
-]
+export default function ScansPage() {
+  const { session } = useAuth()
+  const actorUserId = session?.userId ?? session?.username ?? "team-dev"
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
+  const [historyExpanded, setHistoryExpanded] = useState(false)
+  const [expandedJobIds, setExpandedJobIds] = useState<string[]>([])
+  const [resultFilters, setResultFilters] = useState({
+    scannerFamily: "all",
+    status: "all",
+  })
+  const [message, setMessage] = useState<string | null>(null)
+  const [errorText, setErrorText] = useState<string | null>(null)
+  const [stoppingJobId, setStoppingJobId] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    selectedFamilies: ["yara"] as string[],
+    ruleInputMode: "hostPath" as "hostPath" | "upload",
+    rulePath: "",
+    minutesBack: "60",
+    snortMode: "hunt" as "hunt" | "quarantine" | "pcap",
+    quarantineDurationMinutes: "15",
+    pcapInputMode: "upload" as "upload" | "hostPath",
+    pcapPath: "",
+    pcapFile: null as File | null,
+    windowsScanPath: "",
+    linuxScanPath: "",
+    selectedNetworkIds: [] as string[],
+    selectedTargetIds: [] as string[],
+    targetOsOverrides: {} as Record<string, ResolvedTargetOs>,
+    files: [] as File[],
+  })
 
-function parseFilters(searchParams: URLSearchParams): DetectionFiltersState {
-  const pageRaw = Number(searchParams.get("page") ?? "1")
-  return {
-    q: searchParams.get("q") ?? "",
-    family: searchParams.get("family") ?? "",
-    status: searchParams.get("status") ?? "",
-    source: searchParams.get("source") ?? "",
-    serverId: searchParams.get("serverId") ?? "",
-    fromUtc: searchParams.get("fromUtc") ?? "",
-    toUtc: searchParams.get("toUtc") ?? "",
-    page: Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1,
-  }
-}
-
-function buildQuery(filters: DetectionFiltersState): string {
-  const params = new URLSearchParams()
-  if (filters.q) {
-    params.set("q", filters.q)
-  }
-  if (filters.family) {
-    params.set("family", filters.family)
-  }
-  if (filters.status) {
-    params.set("status", filters.status)
-  }
-  if (filters.source) {
-    params.set("source", filters.source)
-  }
-  if (filters.serverId) {
-    params.set("serverId", filters.serverId)
-  }
-  if (filters.fromUtc) {
-    params.set("fromUtc", filters.fromUtc)
-  }
-  if (filters.toUtc) {
-    params.set("toUtc", filters.toUtc)
-  }
-  if (filters.page > 1) {
-    params.set("page", String(filters.page))
-  }
-  return params.toString()
-}
-
-export default function ResultsIngestionPage() {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-
-  if (!isModeConfigured) {
-    const failure = classifyUiError(null, { modeMisconfigured: true })
-    return <ClassifiedFailureState failure={failure} fallbackTitle="Result ingestion unavailable" />
-  }
-
-  const parsedFilters = useMemo(() => parseFilters(new URLSearchParams(searchParams.toString())), [searchParams])
-  const [filters, setFilters] = useState(parsedFilters)
-
-  useEffect(() => {
-    setFilters(parsedFilters)
-  }, [parsedFilters])
-
-  const healthQuery = useWorkbenchQuery(["results-ingestion", "health"], (signal) => gateway.getHealthInfo(signal))
-  const readinessQuery = useWorkbenchQuery(["results-ingestion", "ready"], (signal) => gateway.getHealthReady(signal))
-  const jobsQuery = useWorkbenchQuery(["results-ingestion", "jobs"], (signal) => gateway.listJobRuns(signal))
-  const serversQuery = useWorkbenchQuery(["results-ingestion", "servers"], (signal) => gateway.listTargetServers(undefined, signal))
-  const detectionsQuery = useWorkbenchQuery(
-    ["results-ingestion", "detections", parsedFilters],
+  const networksQuery = useWorkbenchQuery(["legacy-pipeline", "scan-networks"], (signal) => listLegacyNetworks(signal))
+  const targetsQuery = useWorkbenchQuery(["legacy-pipeline", "scan-targets"], (signal) => listLegacyTargets(undefined, signal))
+  const jobsQuery = useWorkbenchQuery(["legacy-pipeline", "scan-jobs", refreshKey], (signal) => listLegacyJobs(signal))
+  const resultsQuery = useWorkbenchQuery(
+    [
+      "legacy-pipeline",
+      "scan-results",
+      refreshKey,
+      historyExpanded ? "expanded" : "compact",
+    ],
     (signal) =>
-      gateway.listDetections(
+      listLegacyResults(
         {
-          q: parsedFilters.q || undefined,
-          family: parsedFilters.family as RuleFamily | undefined,
-          status: parsedFilters.status || undefined,
-          source: parsedFilters.source || undefined,
-          serverId: parsedFilters.serverId || undefined,
-          fromUtc: parsedFilters.fromUtc || undefined,
-          toUtc: parsedFilters.toUtc || undefined,
-          page: parsedFilters.page,
-          pageSize: PAGE_SIZE,
-        } satisfies DetectionListQuery,
+          limit: historyExpanded ? 160 : 40,
+          includeOrphaned: false,
+        },
         signal,
       ),
   )
+  const networks = networksQuery.data ?? []
+  const targets = targetsQuery.data ?? []
+  const jobs = jobsQuery.data ?? []
+  const results = resultsQuery.data ?? []
 
-  const applyFilters = () => {
-    const next = buildQuery(filters)
-    router.replace(next ? `${pathname}?${next}` : pathname)
-  }
+  const selectedTargets = useMemo(() => {
+    const selectedNetworkIds = new Set(form.selectedNetworkIds)
+    const selectedTargetIds = new Set(form.selectedTargetIds)
+    return (targetsQuery.data ?? []).filter((target) => selectedTargetIds.has(target.id) || selectedNetworkIds.has(target.networkId))
+  }, [targetsQuery.data, form.selectedNetworkIds, form.selectedTargetIds])
 
-  const clearFilters = () => {
-    const cleared: DetectionFiltersState = {
-      q: "",
-      family: "",
-      status: "",
-      source: "",
-      serverId: "",
-      fromUtc: "",
-      toUtc: "",
-      page: 1,
+  const selectedFamilies = form.selectedFamilies as Array<(typeof FAMILIES)[number]>
+  const offlineSelectedTargets = selectedTargets.filter((target) => target.status === "Offline")
+  const yaraSelected = selectedFamilies.includes("yara")
+  const sigmaSelected = selectedFamilies.includes("sigma")
+  const selectedYaraTargets = useMemo(
+    () =>
+      selectedTargets.map((target) => {
+        const storedOs = normalizeTargetOs(target.targetOsType)
+        const overrideOs = form.targetOsOverrides[target.id]
+        return {
+          target,
+          storedOs,
+          overrideOs,
+          effectiveOs: storedOs ?? overrideOs ?? null,
+        }
+      }),
+    [selectedTargets, form.targetOsOverrides],
+  )
+  const yaraUnknownTargets = yaraSelected ? selectedYaraTargets.filter((item) => !item.effectiveOs) : []
+  const yaraKnownOs = Array.from(
+    new Set(
+      (yaraSelected ? selectedYaraTargets : [])
+        .map((item) => item.effectiveOs)
+        .filter((value): value is ResolvedTargetOs => value === "windows" || value === "linux"),
+    ),
+  )
+  const requiresWindowsYaraPath = yaraSelected && yaraKnownOs.includes("windows")
+  const requiresLinuxYaraPath = yaraSelected && yaraKnownOs.includes("linux")
+  const sigmaKnownOs = Array.from(
+    new Set(
+      (sigmaSelected ? selectedTargets : [])
+        .map((target) => normalizeTargetOs(target.targetOsType))
+        .filter((value): value is ResolvedTargetOs => value === "windows" || value === "linux"),
+    ),
+  )
+  const sigmaUnknownTargets = sigmaSelected
+    ? selectedTargets.filter((target) => !normalizeTargetOs(target.targetOsType))
+    : []
+  const sigmaIncludesLinux = sigmaSelected && sigmaKnownOs.includes("linux")
+  const sigmaMixedScope = sigmaSelected && sigmaKnownOs.includes("windows") && sigmaKnownOs.includes("linux")
+  const snortSelected = selectedFamilies.includes("snort")
+  const snortMode = form.snortMode
+  const snortHuntSelected = snortSelected && snortMode === "hunt"
+  const snortQuarantineSelected = snortSelected && snortMode === "quarantine"
+  const snortPcapSelected = snortSelected && snortMode === "pcap"
+  const minutesBackIsValid = Number.isInteger(Number(form.minutesBack)) && Number(form.minutesBack) > 0
+  const quarantineDurationIsValid = Number.isInteger(Number(form.quarantineDurationMinutes)) && Number(form.quarantineDurationMinutes) > 0 && Number(form.quarantineDurationMinutes) <= 120
+  const hasSnortPcapUpload = !!form.pcapFile
+  const hasSnortPcapHostPath = form.pcapPath.trim().length > 0
+  const missingScope = form.selectedNetworkIds.length === 0 && form.selectedTargetIds.length === 0
+  const missingRulePath = form.ruleInputMode === "hostPath" && !form.rulePath.trim()
+  const missingUploadFiles = form.ruleInputMode === "upload" && form.files.length === 0
+  const submitValidationMessages = [
+    ...(selectedFamilies.length === 0 ? ["Select at least one scanner."] : []),
+    ...(missingScope ? ["Choose a subnet or at least one explicit target."] : []),
+    ...(missingRulePath ? ["Enter a rule path on IOC_MGR or switch to upload mode."] : []),
+    ...(missingUploadFiles ? ["Upload at least one rule file or zip bundle."] : []),
+    ...(snortHuntSelected && !minutesBackIsValid ? ["Snort Hunt mode requires Minutes back to be a positive integer."] : []),
+    ...(snortQuarantineSelected && !quarantineDurationIsValid ? ["Snort Quarantine mode requires a watch duration between 1 and 120 minutes."] : []),
+    ...(snortSelected && snortMode !== "hunt" && selectedFamilies.length > 1 ? ["Snort Quarantine and PCAP runs must be queued on their own in v1."] : []),
+    ...(snortPcapSelected && hasSnortPcapUpload && hasSnortPcapHostPath ? ["Choose either a PCAP upload or a PCAP path on IOC_MGR, not both."] : []),
+    ...(snortPcapSelected && !hasSnortPcapUpload && !hasSnortPcapHostPath ? ["Snort PCAP mode requires one PCAP source via upload or IOC_MGR host path."] : []),
+    ...(yaraSelected && yaraUnknownTargets.length > 0 ? ["Choose Windows or Linux for each selected YARA target whose OS is still unknown."] : []),
+    ...(sigmaSelected && sigmaUnknownTargets.length > 0 ? ["Sigma requires every selected target to have a discovered OS before the run can be queued."] : []),
+    ...(requiresWindowsYaraPath && !form.windowsScanPath.trim() ? ["Windows YARA scope requires a Windows scan path like C:\\IOC\\."] : []),
+    ...(requiresLinuxYaraPath && !form.linuxScanPath.trim() ? ["Linux YARA scope requires a POSIX scan path like /opt/ioc/."] : []),
+  ]
+  const canSubmit = submitValidationMessages.length === 0
+  const filteredJobs = jobs.filter((job) => {
+    if (resultFilters.scannerFamily !== "all" && job.scannerFamily !== resultFilters.scannerFamily) {
+      return false
     }
-    setFilters(cleared)
-    router.replace(pathname)
+
+    if (resultFilters.status !== "all" && job.status !== resultFilters.status) {
+      return false
+    }
+
+    return true
+  })
+  const visibleJobs = historyExpanded ? filteredJobs : filteredJobs.slice(0, 4)
+  const resultsByJobId = useMemo(() => {
+    const map = new Map<string, typeof results>()
+    for (const result of results) {
+      if (!result.jobId) {
+        continue
+      }
+
+      const existing = map.get(result.jobId) ?? []
+      existing.push(result)
+      map.set(result.jobId, existing)
+    }
+
+    return map
+  }, [results])
+
+  const toggleSelection = (values: string[], value: string, checked: boolean) =>
+    checked ? [...values, value] : values.filter((item) => item !== value)
+
+  const submitScan = async () => {
+    setSubmitting(true)
+    setMessage(null)
+    setErrorText(null)
+    try {
+      const options: Record<string, string | null> = {}
+      if (selectedFamilies.some((family) => family === "sigma" || family === "suricata") || snortHuntSelected) {
+        options.minutesBack = form.minutesBack
+      }
+      if (snortSelected) {
+        options.snortMode = form.snortMode
+        if (snortQuarantineSelected) {
+          options.quarantineDurationMinutes = form.quarantineDurationMinutes
+        }
+        if (snortPcapSelected && form.pcapInputMode === "hostPath") {
+          options.pcapPath = form.pcapPath.trim()
+        }
+      }
+
+      if (yaraSelected) {
+        if (requiresWindowsYaraPath) {
+          options.windowsScanPath = form.windowsScanPath.trim()
+        }
+
+        if (requiresLinuxYaraPath) {
+          options.linuxScanPath = form.linuxScanPath.trim()
+        }
+
+        if (yaraKnownOs.length === 1) {
+          options.scanPath = yaraKnownOs[0] === "windows" ? form.windowsScanPath.trim() : form.linuxScanPath.trim()
+        }
+      }
+
+      const targetOsOverrides = Object.fromEntries(
+        selectedYaraTargets
+          .filter((item) => !item.storedOs && item.overrideOs)
+          .map((item) => [item.target.id, item.overrideOs!]),
+      )
+
+      await createLegacyCustomScan({
+        actorUserId,
+        scannerFamilies: form.selectedFamilies,
+        ruleInputMode: form.ruleInputMode,
+        rulePath: form.ruleInputMode === "hostPath" ? form.rulePath : undefined,
+        networkIds: form.selectedNetworkIds,
+        targetIds: form.selectedTargetIds,
+        options,
+        targetOsOverrides,
+        files: form.files,
+        pcapFile: form.pcapFile,
+      })
+      setMessage("Custom scan queued.")
+      setRefreshKey((value) => value + 1)
+    } catch (error) {
+      const failure = classifyUiError(error)
+      setErrorText(failure.message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const movePage = (page: number) => {
-    const next = buildQuery({ ...parsedFilters, page: Math.max(1, page) })
-    router.replace(next ? `${pathname}?${next}` : pathname)
+  const stopJob = async (jobId: string) => {
+    setStoppingJobId(jobId)
+    setMessage(null)
+    setErrorText(null)
+    try {
+      await stopLegacyJob(jobId)
+      setMessage("Snort Quarantine session stopped.")
+      setRefreshKey((value) => value + 1)
+    } catch (error) {
+      const failure = classifyUiError(error)
+      setErrorText(failure.message)
+    } finally {
+      setStoppingJobId(null)
+    }
   }
 
-  if (
-    healthQuery.isLoading ||
-    readinessQuery.isLoading ||
-    jobsQuery.isLoading ||
-    serversQuery.isLoading ||
-    detectionsQuery.isLoading
-  ) {
+  if (networksQuery.isLoading || targetsQuery.isLoading || jobsQuery.isLoading || resultsQuery.isLoading) {
     return <LoadingState label="Loading scans" />
   }
 
-  if (healthQuery.isError || !healthQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(healthQuery.error)} fallbackTitle="Scans unavailable" />
+  if (networksQuery.isError || targetsQuery.isError || jobsQuery.isError || resultsQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(networksQuery.error ?? targetsQuery.error ?? jobsQuery.error ?? resultsQuery.error)} fallbackTitle="Scans unavailable" />
   }
 
-  if (readinessQuery.isError || !readinessQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(readinessQuery.error)} fallbackTitle="Scans unavailable" />
-  }
-
-  if (jobsQuery.isError || !jobsQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(jobsQuery.error)} fallbackTitle="Scans unavailable" />
-  }
-
-  if (serversQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(serversQuery.error)} fallbackTitle="Scans unavailable" />
-  }
-
-  if (detectionsQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(detectionsQuery.error)} fallbackTitle="Scans unavailable" />
-  }
-
-  if (readinessQuery.data.status !== "ready") {
-    const unavailableRequired = readinessQuery.data.components
-      .filter((component) => component.required && component.status !== "healthy")
-      .map((component) => component.name)
-    const detail =
-      unavailableRequired.length > 0
-        ? `Required backend dependencies are unavailable: ${unavailableRequired.join(", ")}.`
-        : "Required backend dependencies are unavailable."
-
-    return (
-      <ClassifiedFailureState
-        failure={classifyUiError(
-          new ApiError(detail, 503, readinessQuery.data, {
-            title: "Dependency Temporarily Unavailable",
-            detail,
-            dependency: unavailableRequired.join(",") || "required_dependencies",
-            condition: "not_ready",
-            dependencyType: "required",
-            retryable: true,
-          }),
-        )}
-        fallbackTitle="Scans unavailable"
-      />
-    )
-  }
-
-  const optionalDegradedComponents = readinessQuery.data.components.filter(
-    (component) => !component.required && component.status === "degraded",
-  )
-  const list = detectionsQuery.data
-  const items = list?.items ?? []
-  const total = list?.total ?? 0
-  const page = Math.floor((list?.skip ?? 0) / (list?.take || PAGE_SIZE)) + 1
-  const canMoveNext = (list?.skip ?? 0) + (list?.take ?? PAGE_SIZE) < total
-  const filteredOut = Object.values(parsedFilters).some((value) => value !== "" && value !== 1)
+  const toggleExpandedJob = (jobId: string) =>
+    setExpandedJobIds((current) => (current.includes(jobId) ? current.filter((value) => value !== jobId) : [...current, jobId]))
 
   return (
-    <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
-      <motion.header className="wb-page-header" variants={panelMotion}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="wb-page">
+      <header className="wb-page-header">
+        <p className="wb-kicker">Scans</p>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight">Run one-time custom scans</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Run YARA, Sigma, Snort, and Suricata scans against discovered targets with shared rule sources and scanner-specific runtime options.
+        </p>
+      </header>
+
+      <article className="wb-panel space-y-5">
+        <div className="space-y-3 rounded-xl border border-border/70 bg-surface-2/55 p-4">
           <div>
-            <p className="wb-kicker">Scans</p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight">Search scan results and normalized detections with backend filters</h2>
+            <p className="wb-kicker">Scanner Families</p>
+            <h3 className="mt-1 text-base font-semibold tracking-tight">Choose one or more scanners</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Service: {healthQuery.data.service} | Env: {healthQuery.data.environment}
+              Selected scanners unlock only the parameters they actually use, so the composer stays focused.
             </p>
           </div>
-          {isMockMode ? <SimulatedBadge /> : null}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(0,1fr))]">
+            {FAMILIES.map((family) => {
+              const meta = SCANNER_METADATA[family]
+              const selected = form.selectedFamilies.includes(family)
+              const Icon = meta.icon
+              return (
+                <button
+                  key={family}
+                  type="button"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      selectedFamilies: current.selectedFamilies.includes(family)
+                        ? current.selectedFamilies.filter((value) => value !== family)
+                        : [...current.selectedFamilies, family],
+                    }))
+                  }
+                  className={`rounded-2xl border p-4 text-left transition ${
+                    selected
+                      ? "border-cyan-300/60 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(103,232,249,0.2)]"
+                      : "border-border/70 bg-background/40 hover:border-border hover:bg-surface-1/70"
+                  }`}
+                  aria-pressed={selected}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`rounded-xl border p-2 ${selected ? "border-cyan-300/40 bg-cyan-400/10 text-cyan-100" : "border-border/70 bg-surface-1 text-muted-foreground"}`}>
+                        <Icon className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold">{meta.title}</p>
+                        <p className="text-xs text-muted-foreground">{meta.description}</p>
+                      </div>
+                    </div>
+                    {selected ? <CheckCircle2 className="mt-0.5 size-4 text-cyan-200" /> : null}
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <Badge variant={selected ? "secondary" : "outline"}>{meta.executionHint}</Badge>
+                    <span className="text-xs text-muted-foreground">{selected ? "Selected" : "Tap to add"}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         </div>
-        {optionalDegradedComponents.length > 0 ? (
-          <div
-            data-testid="results-ingestion-optional-degraded"
-            className="mt-3 rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
-          >
-            Optional dependency degraded:{" "}
-            {optionalDegradedComponents.map((component) => `${component.name} (${component.message})`).join(", ")}
+
+        <div className="space-y-3 rounded-xl border border-border/70 bg-surface-2/55 p-4">
+          <div>
+            <p className="wb-kicker">Rule Source</p>
+            <h3 className="mt-1 text-base font-semibold tracking-tight">Choose how this run gets its rules</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Rule source is shared for the whole submission. Each selected scanner resolves or stages the compatible files behind the scenes.
+            </p>
+          </div>
+          <div className="grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <select
+              className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+              value={form.ruleInputMode}
+              onChange={(event) => setForm((current) => ({ ...current, ruleInputMode: event.target.value as "hostPath" | "upload" }))}
+            >
+              <option value="hostPath">Host rule path</option>
+              <option value="upload">Upload file or zip</option>
+            </select>
+            <div className="space-y-2">
+              {form.ruleInputMode === "hostPath" ? (
+                <>
+                  <Input placeholder="Rule path on IOC_MGR" value={form.rulePath} onChange={(event) => setForm((current) => ({ ...current, rulePath: event.target.value }))} />
+                  <p className="text-xs text-muted-foreground">
+                    Use a path that exists on the backend host. Selected families will reuse this shared source where compatible.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Input type="file" multiple onChange={(event) => setForm((current) => ({ ...current, files: Array.from(event.target.files ?? []) }))} />
+                  <p className="text-xs text-muted-foreground">
+                    Upload one rule file or a zip bundle. The backend will stage only the compatible files for the selected scanners.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {selectedFamilies.length > 0 ? (
+          <div className="grid gap-3 2xl:grid-cols-2">
+            {selectedFamilies.map((family) => {
+              const meta = SCANNER_METADATA[family]
+              const Icon = meta.icon
+              const usesMinutesBack = family === "sigma" || family === "snort" || family === "suricata"
+              const usesScanPath = family === "yara"
+              return (
+                <div key={family} className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl border border-border/70 bg-surface-1 p-2 text-muted-foreground">
+                        <Icon className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold">{meta.title}</p>
+                        <p className="text-xs text-muted-foreground">{meta.description}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{meta.executionHint}</Badge>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {usesMinutesBack ? (
+                      family === "snort" ? (
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Snort mode</label>
+                            <select
+                              className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                              value={form.snortMode}
+                              onChange={(event) =>
+                                setForm((current) => ({
+                                  ...current,
+                                  snortMode: event.target.value as "hunt" | "quarantine" | "pcap",
+                                }))
+                              }
+                            >
+                              <option value="hunt">Hunt</option>
+                              <option value="quarantine">Quarantine</option>
+                              <option value="pcap">PCAP</option>
+                            </select>
+                            <p className="text-xs text-muted-foreground">
+                              Hunt searches recent sensor alerts, Quarantine runs a live watch, and PCAP analyzes one capture file against the selected target IPs.
+                            </p>
+                          </div>
+
+                          {form.snortMode === "hunt" ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Minutes back</label>
+                              <Input
+                                placeholder="Minutes back"
+                                value={form.minutesBack}
+                                onChange={(event) => setForm((current) => ({ ...current, minutesBack: event.target.value }))}
+                              />
+                              <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+                                Hunt syncs the shared `.rules` file to the remote sensor, then filters recent alert log entries where the selected target IP appears as source or destination.
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {form.snortMode === "quarantine" ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Watch duration (minutes)</label>
+                              <Input
+                                placeholder="15"
+                                value={form.quarantineDurationMinutes}
+                                onChange={(event) => setForm((current) => ({ ...current, quarantineDurationMinutes: event.target.value }))}
+                              />
+                              <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+                                Quarantine starts a live sensor watch that stays running until you stop it or the duration expires. Use Snort only for this run, and expect the selected target IPs to match as source or destination.
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {form.snortMode === "pcap" ? (
+                            <div className="space-y-3">
+                              <div className="space-y-2">
+                                <label className="text-sm font-medium">PCAP source</label>
+                                <select
+                                  className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                                  value={form.pcapInputMode}
+                                  onChange={(event) =>
+                                    setForm((current) => ({
+                                      ...current,
+                                      pcapInputMode: event.target.value as "upload" | "hostPath",
+                                      pcapFile: event.target.value === "hostPath" ? null : current.pcapFile,
+                                      pcapPath: event.target.value === "upload" ? "" : current.pcapPath,
+                                    }))
+                                  }
+                                >
+                                  <option value="upload">Upload PCAP</option>
+                                  <option value="hostPath">PCAP path on IOC_MGR</option>
+                                </select>
+                              </div>
+                              {form.pcapInputMode === "upload" ? (
+                                <div className="space-y-2">
+                                  <Input
+                                    type="file"
+                                    accept=".pcap,.pcapng"
+                                    onChange={(event) =>
+                                      setForm((current) => ({
+                                        ...current,
+                                        pcapFile: event.target.files?.[0] ?? null,
+                                      }))
+                                    }
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Upload one `.pcap` or `.pcapng` file. Findings count only when packet source or destination matches a selected target IP.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <Input
+                                    placeholder="C:\\Captures\\lab-snort-test.pcap"
+                                    value={form.pcapPath}
+                                    onChange={(event) => setForm((current) => ({ ...current, pcapPath: event.target.value }))}
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Point to one `.pcap` or `.pcapng` file that already exists on IOC_MGR.
+                                  </p>
+                                </div>
+                              )}
+                              <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+                                PCAP mode is offline analysis. The shared `.rules` source is applied locally, and unmatched packets are ignored because this workflow stays target-driven.
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Minutes back</label>
+                          <Input
+                            placeholder="Minutes back"
+                            value={form.minutesBack}
+                            onChange={(event) => setForm((current) => ({ ...current, minutesBack: event.target.value }))}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Shared across the selected log and network scanners to limit how far back the search window goes.
+                          </p>
+                          {family === "sigma" ? (
+                            <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+                              {sigmaMixedScope
+                                ? "Mixed Windows and Linux Sigma runs require a shared Linux-compatible custom Sigma YAML rule source using detection.selection.keywords."
+                                : sigmaIncludesLinux
+                                  ? "Linux Sigma mode is limited to custom Sigma YAML rules that use detection.selection.keywords."
+                                  : "Windows Sigma runs use the EVTX / Chainsaw path. Linux-compatible custom rules still work here, but they are only required when Linux targets are selected."}
+                            </div>
+                          ) : null}
+                        </div>
+                      )
+                    ) : null}
+                    {usesScanPath ? (
+                      <div className="space-y-2">
+                        {selectedTargets.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-border/60 bg-background/30 p-3 text-xs text-muted-foreground">
+                            Select a subnet or target first. The YARA scan path changes based on whether the selected hosts are Windows, Linux, or mixed.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {requiresWindowsYaraPath ? (
+                              <div className="space-y-2">
+                                <label className="text-sm font-medium">Windows scan path</label>
+                                <Input
+                                  placeholder="C:\\IOC\\"
+                                  value={form.windowsScanPath}
+                                  onChange={(event) => setForm((current) => ({ ...current, windowsScanPath: event.target.value }))}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  Used for every selected Windows host in this YARA run.
+                                </p>
+                              </div>
+                            ) : null}
+                            {requiresLinuxYaraPath ? (
+                              <div className="space-y-2">
+                                <label className="text-sm font-medium">Linux scan path</label>
+                                <Input
+                                  placeholder="/opt/ioc/"
+                                  value={form.linuxScanPath}
+                                  onChange={(event) => setForm((current) => ({ ...current, linuxScanPath: event.target.value }))}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  Used for every selected Linux host in this YARA run.
+                                </p>
+                              </div>
+                            ) : null}
+                            {yaraUnknownTargets.length > 0 ? (
+                              <div className="space-y-3 rounded-lg border border-amber-300/20 bg-amber-500/10 p-3">
+                                <div>
+                                  <p className="text-sm font-medium text-amber-50">Selected targets requiring OS</p>
+                                  <p className="text-xs text-amber-100/80">
+                                    Choose a one-time OS only for targets that are still unknown in discovery. This does not overwrite stored inventory.
+                                  </p>
+                                </div>
+                                <div className="space-y-2">
+                                  {yaraUnknownTargets.map(({ target, overrideOs }) => (
+                                    <div key={target.id} className="flex flex-col gap-2 rounded-lg border border-border/60 bg-background/35 p-3 md:flex-row md:items-center md:justify-between">
+                                      <div>
+                                        <p className="text-sm font-medium">{target.displayName ?? target.hostname ?? "Unknown host"}</p>
+                                        <p className="text-xs text-muted-foreground">{target.ipAddress}</p>
+                                      </div>
+                                      <select
+                                        className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm md:w-40"
+                                        value={overrideOs ?? ""}
+                                        onChange={(event) =>
+                                          setForm((current) => ({
+                                            ...current,
+                                            targetOsOverrides: {
+                                              ...current.targetOsOverrides,
+                                              [target.id]: event.target.value as ResolvedTargetOs,
+                                            },
+                                          }))
+                                        }
+                                      >
+                                        <option value="">Choose OS</option>
+                                        <option value="windows">Windows</option>
+                                        <option value="linux">Linux</option>
+                                      </select>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                    {!usesMinutesBack && !usesScanPath ? (
+                      <div className="rounded-lg border border-border/60 bg-background/30 p-3 text-xs text-muted-foreground">
+                        This scanner uses the shared rule source and target scope only. No extra runtime parameters are required in v1.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-border/70 bg-surface-2/35 p-4 text-sm text-muted-foreground">
+            Select a scanner family to reveal its runtime settings.
+          </div>
+        )}
+
+        <div className="space-y-3 rounded-xl border border-border/70 bg-surface-2/55 p-4">
+          <div>
+            <p className="wb-kicker">Scan Scope</p>
+            <h3 className="mt-1 text-base font-semibold tracking-tight">Pick a subnet first, then refine with explicit targets</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Subnets drive the main selection flow. Explicit targets stay available when you want to narrow or supplement the scope.
+            </p>
+          </div>
+          <div className="grid gap-4 2xl:grid-cols-[1.2fr_1fr]">
+            <div className="rounded-xl border border-border/70 bg-background/35 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="wb-kicker">Subnets</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Primary scope for discovery-backed scan runs.</p>
+                </div>
+                <FolderSearch className="size-4 text-muted-foreground" />
+              </div>
+              <div className="mt-4 grid gap-3">
+                {networks.map((network) => {
+                  const selected = form.selectedNetworkIds.includes(network.id)
+                  return (
+                    <button
+                      key={network.id}
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          selectedNetworkIds: current.selectedNetworkIds.includes(network.id)
+                            ? current.selectedNetworkIds.filter((value) => value !== network.id)
+                            : [...current.selectedNetworkIds, network.id],
+                        }))
+                      }
+                      className={`rounded-xl border p-4 text-left transition ${
+                        selected
+                          ? "border-cyan-300/60 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(103,232,249,0.18)]"
+                          : "border-border/70 bg-surface-1/70 hover:border-border hover:bg-surface-1"
+                      }`}
+                      aria-pressed={selected}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold">{network.name}</p>
+                          <p className="text-xs text-muted-foreground">{network.cidrBlock}</p>
+                        </div>
+                        <Badge variant={selected ? "secondary" : "outline"}>
+                          {network.onlineTargets}/{network.totalTargets} online
+                        </Badge>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <span>{network.sshUser ? `SSH: ${network.sshUser}` : "SSH defaults not set"}</span>
+                        <span>{selected ? "Included" : "Tap to include"}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/70 bg-background/35 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="wb-kicker">Explicit Targets</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Optional refinement when you only want specific hosts.</p>
+                </div>
+                <Clock3 className="size-4 text-muted-foreground" />
+              </div>
+              <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+                {targets.map((target) => {
+                  const selected = form.selectedTargetIds.includes(target.id)
+                  const targetName = target.displayName ?? target.hostname ?? "Unknown host"
+                  return (
+                    <button
+                      key={target.id}
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          selectedTargetIds: toggleSelection(current.selectedTargetIds, target.id, !selected),
+                        }))
+                      }
+                      className={`w-full rounded-xl border p-3 text-left transition ${
+                        selected
+                          ? "border-cyan-300/60 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(103,232,249,0.18)]"
+                          : "border-border/70 bg-surface-1/70 hover:border-border hover:bg-surface-1"
+                      } ${target.status === "Offline" ? "opacity-80" : ""}`}
+                      aria-pressed={selected}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold">{targetName}</p>
+                          <p className="text-xs text-muted-foreground">{target.ipAddress}</p>
+                        </div>
+                        <Badge variant={target.status === "Online" ? "secondary" : "outline"}>{target.status}</Badge>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <span>{target.networkName}</span>
+                        <span>{selected ? "Included" : "Optional"}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-4 xl:flex-nowrap xl:gap-6">
+            <div className="space-y-3">
+              <div>
+                <p className="wb-kicker">Ready To Run</p>
+                <p className="mt-1 text-sm text-muted-foreground">Review the final scope before submitting the job batch.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {selectedFamilies.length > 0 ? (
+                  selectedFamilies.map((family) => (
+                    <Badge key={family} variant="secondary">
+                      {SCANNER_METADATA[family].title}
+                    </Badge>
+                  ))
+                ) : (
+                  <Badge variant="outline">No scanners selected</Badge>
+                )}
+                <Badge variant="outline">{form.ruleInputMode === "hostPath" ? "Host rule path" : "Upload bundle"}</Badge>
+                {snortSelected ? <Badge variant="outline">Snort {form.snortMode}</Badge> : null}
+              </div>
+              <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-3">
+                <p>Selected subnets: <span className="font-medium text-foreground">{form.selectedNetworkIds.length}</span></p>
+                <p>Explicit targets: <span className="font-medium text-foreground">{form.selectedTargetIds.length}</span></p>
+                <p>Resolved targets: <span className="font-medium text-foreground">{selectedTargets.length}</span></p>
+              </div>
+            </div>
+            <div className="min-w-[260px] space-y-2 rounded-xl border border-border/70 bg-background/35 p-3 text-sm xl:max-w-[320px]">
+              <p className="font-medium">Run checks</p>
+              <div className="space-y-1 text-muted-foreground">
+                <p>{selectedFamilies.length > 0 ? "Scanners selected" : "No scanners selected yet"}</p>
+                <p>{missingScope ? "No scan scope selected yet" : "Scan scope selected"}</p>
+                <p>{missingRulePath ? "Rule path still required" : "Rule source configured"}</p>
+                {snortHuntSelected ? <p>{minutesBackIsValid ? "Snort Hunt window configured" : "Snort Hunt window still invalid"}</p> : null}
+                {snortQuarantineSelected ? <p>{quarantineDurationIsValid ? "Snort Quarantine duration configured" : "Snort Quarantine duration still invalid"}</p> : null}
+                {snortPcapSelected ? <p>{hasSnortPcapUpload || hasSnortPcapHostPath ? "Snort PCAP source configured" : "Snort PCAP source still required"}</p> : null}
+              </div>
+            </div>
+          </div>
+          {offlineSelectedTargets.length > 0 ? (
+            <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-500/10 p-3 text-xs text-amber-100">
+              {offlineSelectedTargets.length} selected target{offlineSelectedTargets.length === 1 ? "" : "s"} are offline. They remain selectable, but their executions may fail.
+            </div>
+          ) : null}
+          {snortSelected ? (
+            <div className="mt-4 rounded-xl border border-cyan-300/20 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+              {snortHuntSelected
+                ? "Snort Hunt reads the recent sensor alert log, not the target host. Traffic must cross the monitored segment, and the selected target can match as either source or destination IP inside the recent alert window."
+                : snortQuarantineSelected
+                  ? "Snort Quarantine starts a live session. The run stays in Running until you stop it or the watch duration expires, and matching traffic can hit either the source or destination side of a selected target IP."
+                  : "Snort PCAP analyzes one capture file offline on IOC_MGR. Findings only count when the packet source or destination matches a selected target IP."}
+            </div>
+          ) : null}
+          {submitValidationMessages.length > 0 ? (
+            <div className="mt-3 space-y-1 text-sm text-amber-200">
+              {submitValidationMessages.map((reason) => (
+                <p key={reason}>{reason}</p>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-4 flex items-center gap-3">
+            <Button onClick={submitScan} disabled={submitting || !canSubmit}>{submitting ? "Queuing..." : "Run Custom Scan"}</Button>
+            {message ? <p className="text-sm text-emerald-300">{message}</p> : null}
+            {errorText ? <p className="text-sm text-rose-300">{errorText}</p> : null}
+          </div>
+        </div>
+      </article>
+
+      <article className="wb-panel">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="wb-kicker">Scan History</p>
+            <h3 className="mt-1 text-base font-semibold tracking-tight">Recent Scan Runs</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {historyExpanded
+                ? "Showing the expanded run history. Open a run to inspect its per-target results."
+                : "The latest 4 runs are shown here by default. Expand a run to inspect its per-target results."}
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => setHistoryExpanded((value) => !value)}>
+            {historyExpanded ? "Collapse" : "Show More"}
+          </Button>
+        </div>
+
+        {historyExpanded ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <select
+              className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+              value={resultFilters.scannerFamily}
+              onChange={(event) => setResultFilters((current) => ({ ...current, scannerFamily: event.target.value }))}
+            >
+              <option value="all">All families</option>
+              {FAMILIES.map((family) => (
+                <option key={family} value={family}>
+                  {family.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <select
+              className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+              value={resultFilters.status}
+              onChange={(event) => setResultFilters((current) => ({ ...current, status: event.target.value }))}
+            >
+              <option value="all">All statuses</option>
+              <option value="Completed">Completed</option>
+              <option value="PartiallyCompleted">PartiallyCompleted</option>
+              <option value="Failed">Failed</option>
+              <option value="Queued">Queued</option>
+              <option value="Running">Running</option>
+              <option value="Stopped">Stopped</option>
+            </select>
           </div>
         ) : null}
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Matching Detections</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{total}</p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Visible This Page</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{items.length}</p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Sources In Page</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{new Set(items.map((item) => item.source || "unknown")).size}</p>
-          </div>
-        </div>
-      </motion.header>
 
-      <motion.article className="wb-panel space-y-4" variants={panelMotion}>
-        <div className="grid gap-3 md:grid-cols-4">
-          <Input
-            value={filters.q}
-            onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value, page: 1 }))}
-            placeholder="Search fingerprint, rule, or IoC"
-          />
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.family}
-            onChange={(event) => setFilters((current) => ({ ...current, family: event.target.value, page: 1 }))}
-          >
-            <option value="">All families</option>
-            {FAMILY_OPTIONS.map((family) => (
-              <option key={family} value={family}>
-                {family.toUpperCase()}
-              </option>
-            ))}
-          </select>
-          <Input
-            value={filters.status}
-            onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value, page: 1 }))}
-            placeholder="Disposition"
-          />
-          <Input
-            value={filters.source}
-            onChange={(event) => setFilters((current) => ({ ...current, source: event.target.value, page: 1 }))}
-            placeholder="Source"
-          />
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-4">
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.serverId}
-            onChange={(event) => setFilters((current) => ({ ...current, serverId: event.target.value, page: 1 }))}
-          >
-            <option value="">All servers</option>
-            {(serversQuery.data ?? []).map((server) => (
-              <option key={server.id} value={server.id}>
-                {server.hostname} ({server.ipAddress})
-              </option>
-            ))}
-          </select>
-          <Input
-            type="date"
-            value={filters.fromUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, fromUtc: event.target.value, page: 1 }))}
-          />
-          <Input
-            type="date"
-            value={filters.toUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value, page: 1 }))}
-          />
-          <div className="flex items-center gap-2">
-            <Button type="button" size="sm" onClick={applyFilters}>
-              Apply
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={clearFilters}>
-              Clear
-            </Button>
-          </div>
-        </div>
-      </motion.article>
-
-      <motion.article className="wb-panel space-y-3" variants={panelMotion}>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold tracking-tight">Detection history</h3>
-            <p className="text-xs text-muted-foreground">
-              Page {page} | {items.length} row(s) returned
-            </p>
-          </div>
-        </div>
-
-        {items.length === 0 ? (
-          filteredOut ? (
-            <SearchEmptyState
-              title="No detections matched the current search"
-              description="Relax the observed-at window, remove the source or server filter, or clear the search text to reopen the wider normalized result set."
-              action={
-                <Button type="button" size="sm" variant="outline" onClick={clearFilters}>
-                  Reset detection filters
-                </Button>
-              }
-            />
-          ) : (
+        {visibleJobs.length === 0 ? (
+          <div className="mt-4">
             <EmptyState
-              title="No detections available"
-              description="Detections will appear here once scan results are normalized into persisted history."
+              title={historyExpanded ? "No runs match the current filters" : "No scan runs yet"}
+              description={historyExpanded
+                ? "Try clearing one of the run filters or collapse back to the default recent view."
+                : "Queued custom scans and plan-triggered runs will appear here with expandable per-target results."}
             />
-          )
-        ) : (
-          <DataGrid data={items} columns={columns} />
-        )}
-
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">Showing {items.length} of {total} matching detections</p>
-          <div className="flex items-center gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => movePage(page - 1)} disabled={page <= 1}>
-              Previous
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => movePage(page + 1)} disabled={!canMoveNext}>
-              Next
-            </Button>
           </div>
-        </div>
-      </motion.article>
-
-      <motion.article className="wb-panel" variants={panelMotion}>
-        <h3 className="mb-3 text-sm font-semibold tracking-tight">Recent Result Processing Jobs</h3>
-        {jobsQuery.data.length === 0 ? (
-          <EmptyState
-            title="No result ingestion jobs"
-            description="No recent scan-result normalization jobs were returned by the backend."
-          />
         ) : (
-          <div className="space-y-2">
-            {jobsQuery.data.slice(0, 8).map((job) => (
-              <div key={job.id} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2 text-sm">
-                <p className="font-medium">
-                  {job.jobType} | {job.status}
-                </p>
-                <p className="text-xs text-muted-foreground">{job.details || "No detail"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Triggered by {job.triggeredBy} | {new Date(job.startedAtUtc).toLocaleString()}
-                </p>
-              </div>
-            ))}
+          <div className="mt-4 space-y-3">
+            {visibleJobs.map((job) => {
+              const isExpanded = expandedJobIds.includes(job.id)
+              const jobResults = resultsByJobId.get(job.id) ?? []
+              return (
+                <div key={job.id} className="rounded-xl border border-border/70 bg-surface-2/60">
+                  <div className="flex items-start justify-between gap-4 p-4">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpandedJob(job.id)}
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                      aria-expanded={isExpanded}
+                    >
+                      <div className="mt-0.5 text-muted-foreground">
+                        {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-base font-semibold">{job.scannerFamily.toUpperCase()}</p>
+                          <Badge variant="outline">{job.triggerType}</Badge>
+                          {job.executionMode ? <Badge variant="outline">{job.executionMode}</Badge> : null}
+                          <Badge variant={job.status === "Completed" ? "secondary" : "outline"}>{job.status}</Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">{job.summary}</p>
+                        <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          <span>{job.completedTargets}/{job.totalTargets} complete</span>
+                          <span>{job.failedTargets} failed</span>
+                          <span>{job.noFindingsTargets} no-findings</span>
+                        </div>
+                      </div>
+                    </button>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <p>{job.finishedAtUtc ? new Date(job.finishedAtUtc).toLocaleString() : new Date(job.queuedAtUtc).toLocaleString()}</p>
+                      <p>{job.finishedAtUtc ? "Finished" : "Queued"}</p>
+                      {job.scannerFamily === "snort" && job.executionMode === "quarantine" && job.status === "Running" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="mt-3"
+                          disabled={stoppingJobId === job.id}
+                          onClick={() => void stopJob(job.id)}
+                        >
+                          {stoppingJobId === job.id ? "Stopping..." : "Stop"}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {isExpanded ? (
+                    <div className="border-t border-border/60 px-4 pb-4 pt-3">
+                      {jobResults.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-border/60 bg-background/30 p-3 text-sm text-muted-foreground">
+                          No per-target results are currently attached to this run.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[720px] text-sm">
+                            <thead className="text-left text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                              <tr>
+                                <th className="pb-3">Target</th>
+                                <th className="pb-3">Status</th>
+                                <th className="pb-3">Findings</th>
+                                <th className="pb-3">Finished</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {jobResults.map((result) => (
+                                <tr key={result.id} className="border-t border-border/50">
+                                  <td className="py-3">{result.targetDisplay}</td>
+                                  <td className="py-3">{result.status}</td>
+                                  <td className="py-3">{result.findingsCount}</td>
+                                  <td className="py-3">{result.finishedAtUtc ? new Date(result.finishedAtUtc).toLocaleString() : "Running"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
           </div>
         )}
-      </motion.article>
-    </motion.section>
+      </article>
+    </section>
   )
 }

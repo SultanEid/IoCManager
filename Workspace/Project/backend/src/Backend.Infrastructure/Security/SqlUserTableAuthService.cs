@@ -1,34 +1,30 @@
 using Backend.Application.Abstractions.Security;
 using Backend.Contracts.Auth;
 using Backend.Infrastructure.Configuration;
-using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace Backend.Infrastructure.Security;
 
 public sealed class SqlUserTableAuthService : IAuthService
 {
-    private readonly string _connectionString;
+    private const string TeamUserName = "team";
+    private const string TeamEmail = "team@local.test";
+    private const string TeamPassword = "team123";
+    private const string TeamRole = "Admin";
+
     private readonly JwtOptions _jwtOptions;
-    private readonly SqlUserTableAuthOptions _options;
+    private readonly SqlUserTableDirectoryService _directoryService;
 
     public SqlUserTableAuthService(
-        IConfiguration configuration,
-        IOptions<DatabaseOptions> databaseOptions,
         IOptions<JwtOptions> jwtOptions,
-        IOptions<SqlUserTableAuthOptions> options)
+        SqlUserTableDirectoryService directoryService)
     {
-        _connectionString = DatabaseConnectionStringResolver.Resolve(
-            configuration,
-            databaseOptions.Value.ConnectionStringName);
         _jwtOptions = jwtOptions.Value;
-        _options = options.Value;
+        _directoryService = directoryService;
     }
 
     public async Task<TokenResponse?> CreateAccessTokenAsync(TokenRequest request, CancellationToken cancellationToken)
@@ -38,87 +34,23 @@ public sealed class SqlUserTableAuthService : IAuthService
             return null;
         }
 
-        var developmentToken = TryCreateDevelopmentFallbackToken(request);
-        if (developmentToken is not null)
+        if (IsTeamCredential(request.UserName, request.Password))
         {
-            return developmentToken;
+            return CreateTokenResponse("team-dev", TeamUserName, TeamEmail, TeamRole);
         }
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = $@"
-SELECT TOP (1) UserID, UserName, Role, Email, PasswordHash
-FROM {_options.TableName}
-WHERE UserName = @lookup OR Email = @lookup;";
-        command.Parameters.AddWithValue("@lookup", request.UserName.Trim());
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        var user = await _directoryService.FindByLookupAsync(request.UserName, cancellationToken);
+        if (user is null)
         {
             return null;
         }
 
-        var userId = reader.GetInt32(0);
-        var userName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
-        var role = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
-        var storedEmail = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
-        var storedPasswordHash = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
-
-        if (!MatchesPassword(request.Password, storedPasswordHash))
+        if (!_directoryService.MatchesPassword(request.Password, user.PasswordHash))
         {
             return null;
         }
 
-        return CreateTokenResponse(userId.ToString(), userName, storedEmail, role);
-    }
-
-    private bool MatchesPassword(string suppliedPassword, string storedPasswordHash)
-    {
-        if (string.IsNullOrWhiteSpace(storedPasswordHash))
-        {
-            return false;
-        }
-
-        var trimmedInput = suppliedPassword.Trim();
-        if (_options.AcceptPreHashedPassword
-            && string.Equals(trimmedInput, storedPasswordHash, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var hashedInput = ComputeSha256Hex(trimmedInput);
-        return string.Equals(hashedInput, storedPasswordHash, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private TokenResponse? TryCreateDevelopmentFallbackToken(TokenRequest request)
-    {
-        if (!_options.DevelopmentFallbackEnabled)
-        {
-            return null;
-        }
-
-        var lookup = request.UserName.Trim();
-        var matchesIdentity =
-            string.Equals(lookup, _options.DevelopmentFallbackUserName, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(lookup, _options.DevelopmentFallbackEmail, StringComparison.OrdinalIgnoreCase);
-
-        if (!matchesIdentity)
-        {
-            return null;
-        }
-
-        if (!string.Equals(request.Password.Trim(), _options.DevelopmentFallbackPassword, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        return CreateTokenResponse(
-            userId: "0",
-            userName: _options.DevelopmentFallbackUserName,
-            email: _options.DevelopmentFallbackEmail,
-            role: _options.DevelopmentFallbackRole);
+        return CreateTokenResponse(user.UserId.ToString(), user.UserName, user.Email ?? string.Empty, user.Role);
     }
 
     private TokenResponse CreateTokenResponse(string userId, string userName, string email, string? role)
@@ -165,10 +97,12 @@ WHERE UserName = @lookup OR Email = @lookup;";
         return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
     }
 
-    private static string ComputeSha256Hex(string value)
+    private static bool IsTeamCredential(string suppliedUserName, string suppliedPassword)
     {
-        var bytes = Encoding.UTF8.GetBytes(value);
-        var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        var normalizedUserName = suppliedUserName.Trim();
+        var normalizedPassword = suppliedPassword.Trim();
+        return (string.Equals(normalizedUserName, TeamUserName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedUserName, TeamEmail, StringComparison.OrdinalIgnoreCase))
+            && string.Equals(normalizedPassword, TeamPassword, StringComparison.Ordinal);
     }
 }
