@@ -1,0 +1,18 @@
+title: DeTechTive Test - whoami execution
+id: 1bb8fd00-0d3b-4be2-9e12-c5dc5d8f7a31
+status: test
+description: Benign test - whoami process execution
+author: DeTechTive
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  image:
+    Image|endswith:
+      - '\whoami.exe'
+  original:
+    OriginalFileName: 'whoami.exe'
+  command:
+    CommandLine|contains: 'whoami'
+  condition: image or original or command
+level: low

@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///C:/Users/xsspe/Desktop/IOC_Manager/Workspace/Project/frontend/workbench/src/app/%28workbench%29/settings/layout.tsx"],"sourcesContent":["import { RouteGuard } from \"@/components/workbench/route-guard\"\r\n\r\nexport default function SettingsLayout({ children }: { children: React.ReactNode }) {\r\n  return <RouteGuard requiredRoles={[\"Admin\"]}>{children}</RouteGuard>\r\n}\r\n"],"names":[],"mappings":";;;;;AAAA;;;AAEe,SAAS,eAAe,EAAE,QAAQ,EAAiC;IAChF,qBAAO,8OAAC,+JAAU;QAAC,eAAe;YAAC;SAAQ;kBAAG;;;;;;AAChD"}}]
+}

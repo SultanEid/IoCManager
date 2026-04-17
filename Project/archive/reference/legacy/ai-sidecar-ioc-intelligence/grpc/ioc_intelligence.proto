@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package ioc.intelligence.v1;
+
+message ScoreIocRequest {
+  string ioc_value = 1;
+  string ioc_type = 2;
+  string source_system = 3;
+  string event_time_utc = 4;
+  map<string, string> host_context = 5;
+  map<string, string> rule_context = 6;
+}
+
+message EvidenceItem {
+  string feature = 1;
+  string explanation = 2;
+  double contribution = 3;
+}
+
+message ScoreIocResponse {
+  double risk_score = 1;
+  string risk_tier = 2;
+  double confidence = 3;
+  repeated double uncertainty_set = 4;
+  repeated EvidenceItem top_evidence = 5;
+  string recommended_action = 6;
+  int32 ttl_hours = 7;
+  string model_version = 8;
+}
+
+message ScoreBatchRequest {
+  repeated ScoreIocRequest items = 1;
+}
+
+message ScoreBatchResponse {
+  repeated ScoreIocResponse items = 1;
+}
+
+message FeedbackRequest {
+  string ioc_value = 1;
+  string ioc_type = 2;
+  string verdict = 3;
+  string case_id = 4;
+  string source_system = 5;
+  string event_time_utc = 6;
+  map<string, string> metadata = 7;
+}
+
+message FeedbackResponse {
+  bool accepted = 1;
+  string stored_at_utc = 2;
+  bool forwarded_to_learning = 3;
+}
+
+message ModelCardRequest {}
+
+message ModelCardResponse {
+  string model_version = 1;
+  string trained_at_utc = 2;
+  repeated string views = 3;
+  repeated string metrics = 4;
+  repeated string supported_ioc_types = 5;
+  string optimization_target = 6;
+}
+
+service IocIntelligenceService {
+  rpc ScoreIoc(ScoreIocRequest) returns (ScoreIocResponse);
+  rpc ScoreBatch(ScoreBatchRequest) returns (ScoreBatchResponse);
+  rpc SubmitFeedback(FeedbackRequest) returns (FeedbackResponse);
+  rpc GetModelCard(ModelCardRequest) returns (ModelCardResponse);
+}
+

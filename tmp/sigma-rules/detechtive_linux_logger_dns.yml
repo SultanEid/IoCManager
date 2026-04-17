@@ -1,0 +1,13 @@
+title: DeTechTive Linux - logger dns marker
+id: 0439a624-3f96-420f-b2f0-8fe3fef3266d
+status: experimental
+level: low
+logsource:
+  product: linux
+  service: syslog
+  category: process_creation
+detection:
+  selection:
+    keywords:
+      - DeTechTive Linux Sigma DNS
+  condition: selection

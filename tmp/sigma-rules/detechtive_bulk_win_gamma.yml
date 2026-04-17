@@ -1,0 +1,16 @@
+title: DeTechTive Bulk Windows Gamma
+id: a14a23f0-c8b3-43a1-9947-bebd607df003
+status: test
+description: Benign bulk Windows sigma marker gamma
+author: DeTechTive
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  image:
+    Image|endswith:
+      - '\cmd.exe'
+  command:
+    CommandLine|contains: 'DeTechTiveBulkWinGamma'
+  condition: image and command
+level: low

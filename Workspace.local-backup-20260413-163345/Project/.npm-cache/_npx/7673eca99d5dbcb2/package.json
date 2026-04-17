@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "pdf-parse": "^2.4.5"
+  },
+  "_npx": {
+    "packages": [
+      "pdf-parse"
+    ]
+  }
+}

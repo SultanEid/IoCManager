@@ -1,0 +1,14 @@
+title: DeTechTive Bulk Linux Beta
+id: b26b23f0-c8b3-43a1-9947-bebd607df002
+status: test
+level: low
+logsource:
+  product: linux
+  service: syslog
+  category: process_creation
+detection:
+  selection:
+    keywords:
+      - Linux-Sysmon/Operational
+      - 'CommandLine">logger DeTechTiveBulkLinuxBeta'
+  condition: selection

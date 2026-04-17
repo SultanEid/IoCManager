@@ -1,0 +1,17 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "detective-theme-cyan",
+  "type": "registry:theme",
+  "cssVars": {
+    "light": {
+      "primary": "oklch(0.78 0.12 206)",
+      "primary-foreground": "oklch(0.2 0.03 206)",
+      "ring": "oklch(0.74 0.14 206)"
+    },
+    "dark": {
+      "primary": "oklch(0.8 0.13 206)",
+      "primary-foreground": "oklch(0.2 0.03 206)",
+      "ring": "oklch(0.75 0.15 206)"
+    }
+  }
+}

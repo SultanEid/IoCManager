@@ -1,0 +1,13 @@
+title: DeTechTive Linux - logger service marker
+id: c3f93f46-2954-45f0-9774-b98857c80491
+status: experimental
+level: medium
+logsource:
+  product: linux
+  service: syslog
+  category: process_creation
+detection:
+  selection:
+    keywords:
+      - DeTechTive Linux Sigma Service
+  condition: selection

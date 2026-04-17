@@ -1,0 +1,18 @@
+title: DeTechTive Test - ipconfig execution
+id: 7060e4bd-9d0e-4c24-9384-8e4f0cb08940
+status: test
+description: Benign test - ipconfig process execution
+author: DeTechTive
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  image:
+    Image|endswith:
+      - '\ipconfig.exe'
+  original:
+    OriginalFileName: 'ipconfig.exe'
+  command:
+    CommandLine|contains: 'ipconfig'
+  condition: image or original or command
+level: low

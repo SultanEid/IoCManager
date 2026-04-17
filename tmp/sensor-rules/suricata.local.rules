@@ -1,0 +1,12 @@
+# DeTechTive local rules
+# Safe, operator-controlled detections to validate the pipeline without
+# modifying the upstream/community rule packs.
+
+alert icmp any any -> any any (msg:"DeTechTive PCAP - ICMP Detected"; sid:1000001; rev:2;)
+alert tcp any any -> any 4444 (msg:"DeTechTive - Reverse TCP Listener Probe"; flow:to_server,established; sid:1000012; rev:2;)
+alert tcp any any -> any any (msg:"DeTechTive - Suspicious HTTP User-Agent curl"; flow:to_server,established; content:"User-Agent|3A 20|curl/"; nocase; sid:1001002; rev:2;)
+alert tcp any any -> any any (msg:"DeTechTive - Suspicious HTTP User-Agent Wget"; flow:to_server,established; content:"User-Agent|3A 20|Wget/"; nocase; sid:1001003; rev:2;)
+alert tcp any any -> any any (msg:"DeTechTive - Canary HTTP Header"; flow:to_server,established; content:"X-DeTechTive-Test|3A 20|1"; nocase; sid:1001004; rev:2;)
+alert tcp any any -> any any (msg:"DeTechTive - Canary HTTP Host Header"; flow:to_server,established; content:"Host|3A 20|detechtive.lab"; nocase; sid:1001006; rev:1;)
+alert tcp any any -> any any (msg:"DeTechTive - HTTP Path Marker"; flow:to_server,established; content:"GET /detechtive-check"; nocase; sid:1001007; rev:1;)
+alert udp any any -> any 53 (msg:"DeTechTive - Canary DNS Query"; content:"detechtive"; nocase; sid:1001005; rev:2;)

@@ -1,0 +1,16 @@
+title: DeTechTive Bulk Windows Beta
+id: a14a23f0-c8b3-43a1-9947-bebd607df002
+status: test
+description: Benign bulk Windows sigma marker beta
+author: DeTechTive
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  image:
+    Image|endswith:
+      - '\cmd.exe'
+  command:
+    CommandLine|contains: 'DeTechTiveBulkWinBeta'
+  condition: image and command
+level: low
