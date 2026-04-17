@@ -1,2 +1,0 @@
-"""IoC Intelligence Service package."""
-

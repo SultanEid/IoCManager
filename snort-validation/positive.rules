@@ -1,1 +1,0 @@
-alert tcp any any -> any 22 (msg:"IOC Manager Snort Positive Validation"; sid:1001002; rev:1;)

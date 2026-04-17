@@ -361,3 +361,23 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local workspace/runtime clutter that should never be committed
+/.appdata/
+/.dotnet-home/
+/.dotnet/
+/Project/
+/SIGMA_Results/
+/SNORT_Results/
+/SURICATA_Results/
+/SWEEPNETWORKV2_Results/
+/YARA_Results/
+/Workspace.local-backup-*/
+/docs/
+/scripts/
+/snort-validation/
+/src/
+/tmp/
+/tmp_script_validation/
+/IocManager.Web.sln
+/*.pdf

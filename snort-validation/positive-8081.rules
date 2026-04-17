@@ -1,1 +1,0 @@
-alert tcp any any -> any 8081 (msg:"IOC Manager Snort Validation 8081"; sid:1000001; rev:2;)

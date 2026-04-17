@@ -1,1 +1,0 @@
-alert tcp any any -> any 65001 (msg:"IOC Manager Snort Quiet Validation"; sid:1001001; rev:1;)
