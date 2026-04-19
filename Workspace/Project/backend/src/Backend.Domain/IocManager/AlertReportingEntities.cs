@@ -12,6 +12,10 @@ public sealed class Alert : AuditableEntity
     public AlertStatus Status { get; private set; } = AlertStatus.Open;
     public string OwnerUserId { get; private set; } = string.Empty;
     public string ApprovalTierRequired { get; private set; } = "Analyst";
+    public string ScannerFamily { get; private set; } = string.Empty;
+    public int? TargetId { get; private set; }
+    public string TargetDisplay { get; private set; } = string.Empty;
+    public string RuleName { get; private set; } = string.Empty;
     public DateTimeOffset FirstDetectedAtUtc { get; private set; }
     public DateTimeOffset LastDetectedAtUtc { get; private set; }
 
@@ -21,6 +25,10 @@ public sealed class Alert : AuditableEntity
         AlertSeverity severity,
         string ownerUserId,
         string approvalTierRequired,
+        string scannerFamily,
+        int? targetId,
+        string targetDisplay,
+        string ruleName,
         DateTimeOffset detectedAtUtc,
         string actorUserId,
         DateTimeOffset nowUtc)
@@ -28,6 +36,9 @@ public sealed class Alert : AuditableEntity
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerUserId);
         ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerFamily);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetDisplay);
+        ArgumentException.ThrowIfNullOrWhiteSpace(ruleName);
 
         var item = new Alert
         {
@@ -37,6 +48,10 @@ public sealed class Alert : AuditableEntity
             Status = AlertStatus.Open,
             OwnerUserId = ownerUserId.Trim(),
             ApprovalTierRequired = string.IsNullOrWhiteSpace(approvalTierRequired) ? "Analyst" : approvalTierRequired.Trim(),
+            ScannerFamily = scannerFamily.Trim(),
+            TargetId = targetId,
+            TargetDisplay = targetDisplay.Trim(),
+            RuleName = ruleName.Trim(),
             FirstDetectedAtUtc = detectedAtUtc,
             LastDetectedAtUtc = detectedAtUtc,
         };
@@ -45,8 +60,24 @@ public sealed class Alert : AuditableEntity
         return item;
     }
 
-    public void TouchDetection(DateTimeOffset detectedAtUtc, string actorUserId, DateTimeOffset nowUtc)
+    public void RefreshDetection(
+        string title,
+        string summary,
+        AlertSeverity severity,
+        DateTimeOffset detectedAtUtc,
+        string actorUserId,
+        DateTimeOffset nowUtc)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
+
+        Title = title.Trim();
+        Summary = summary.Trim();
+        if (severity > Severity)
+        {
+            Severity = severity;
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
         if (detectedAtUtc > LastDetectedAtUtc)
         {
@@ -88,6 +119,35 @@ public sealed class AlertScanResult : Entity
         {
             AlertId = alertId,
             ScanResultId = scanResultId,
+            LinkedAtUtc = linkedAtUtc,
+        };
+    }
+}
+
+public sealed class AlertIoc : Entity
+{
+    private AlertIoc() { }
+
+    public Guid AlertId { get; private set; }
+    public Guid IocId { get; private set; }
+    public DateTimeOffset LinkedAtUtc { get; private set; }
+
+    public static AlertIoc Create(Guid alertId, Guid iocId, DateTimeOffset linkedAtUtc)
+    {
+        if (alertId == Guid.Empty)
+        {
+            throw new ArgumentException("Alert id is required.", nameof(alertId));
+        }
+
+        if (iocId == Guid.Empty)
+        {
+            throw new ArgumentException("IOC id is required.", nameof(iocId));
+        }
+
+        return new AlertIoc
+        {
+            AlertId = alertId,
+            IocId = iocId,
             LinkedAtUtc = linkedAtUtc,
         };
     }

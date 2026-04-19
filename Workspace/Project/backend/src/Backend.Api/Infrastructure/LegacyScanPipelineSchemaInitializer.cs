@@ -42,7 +42,6 @@ public sealed class LegacyScanPipelineSchemaInitializer : ILegacyScanPipelineSch
             "IF COL_LENGTH('dbo.Report', 'FileExtension') IS NULL ALTER TABLE dbo.Report ADD FileExtension nvarchar(10) NULL;",
             "IF COL_LENGTH('dbo.Report', 'FilePath') IS NULL ALTER TABLE dbo.Report ADD FilePath nvarchar(512) NULL;",
             "IF COL_LENGTH('dbo.Report', 'ContentJson') IS NULL ALTER TABLE dbo.Report ADD ContentJson nvarchar(max) NULL;",
-            "DELETE FROM dbo.Target WHERE IPAddress IN ('172.165.50.128', '172.165.50.134');",
         };
 
         foreach (var command in commands)

@@ -1,5 +1,6 @@
 import type {
   AlertListResponse,
+  V2AlertDetailResponse,
   AuditLogListResponse,
   CaseRuleWorkflowResponse,
   CoveragePainAnalysisResponse,
@@ -197,6 +198,11 @@ export class MockGateway implements Gateway {
         status: item.status,
         ownerUserId: item.ownerUserId,
         approvalTierRequired: item.approvalTierRequired,
+        scannerFamily: "sigma",
+        targetId: null,
+        targetDisplay: "Demo target",
+        ruleName: item.title,
+        linkedIocCount: 0,
         firstDetectedAtUtc: item.createdAtUtc,
         lastDetectedAtUtc: item.updatedAtUtc,
         createdAtUtc: item.createdAtUtc,
@@ -216,6 +222,37 @@ export class MockGateway implements Gateway {
   async getAlert(alertId: string, _signal?: AbortSignal) {
     consume(_signal)
     return copy(selectCase(getMockState(), alertId))
+  }
+
+  async getAlertDetail(alertId: string, _signal?: AbortSignal): Promise<V2AlertDetailResponse> {
+    consume(_signal)
+    const item = selectCase(getMockState(), alertId)
+    return {
+      id: item.id,
+      title: item.title,
+      summary: item.summary,
+      severity: item.priority,
+      status: item.status,
+      ownerUserId: item.ownerUserId,
+      approvalTierRequired: item.approvalTierRequired,
+      scannerFamily: "sigma",
+      targetId: null,
+      targetDisplay: "Demo target",
+      ruleName: item.title,
+      linkedIocCount: 0,
+      firstDetectedAtUtc: item.createdAtUtc,
+      lastDetectedAtUtc: item.updatedAtUtc,
+      createdAtUtc: item.createdAtUtc,
+      updatedAtUtc: item.updatedAtUtc,
+      target: null,
+      linkedIocs: [],
+      linkedScanResults: [],
+    }
+  }
+
+  async updateAlertStatus(alertId: string, status: string, _actorUserId: string): Promise<V2AlertDetailResponse> {
+    consume(_actorUserId)
+    return this.getAlertDetail(alertId).then((detail) => ({ ...detail, status }))
   }
 
   async listCases(_signal?: AbortSignal) {

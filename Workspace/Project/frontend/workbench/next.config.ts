@@ -45,7 +45,6 @@ const nextConfig: NextConfig = {
       { source: "/coverage/telemetry", destination: "/reports", permanent: false },
       { source: "/coverage/sources", destination: "/reports", permanent: false },
       { source: "/coverage/attack", destination: "/reports", permanent: false },
-      { source: "/coverage-pain-analysis", destination: "/reports", permanent: false },
       { source: "/ioc-registry", destination: "/reports", permanent: false },
       { source: "/ioc-registry/:path*", destination: "/reports", permanent: false },
       { source: "/admin", destination: "/settings", permanent: false },

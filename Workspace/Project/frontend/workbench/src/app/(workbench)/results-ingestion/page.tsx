@@ -1,7 +1,8 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Bug, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileSearch, FolderSearch, ShieldAlert, Waypoints } from "lucide-react"
+import { CheckCircle2, ChevronDown, ChevronRight, Clock3, FolderSearch } from "lucide-react"
+import { ScannerFamilyBadge, ScannerFamilyMark } from "@/components/workbench/scanner-family-mark"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,25 +27,21 @@ const SCANNER_METADATA = {
     title: "YARA",
     description: "File and malware signature sweep",
     executionHint: "SSH / host",
-    icon: Bug,
   },
   sigma: {
     title: "SIGMA",
     description: "Windows EVTX and constrained Linux log detection",
     executionHint: "SSH / host",
-    icon: FileSearch,
   },
   snort: {
     title: "SNORT",
     description: "Sensor hunt, live watch, and offline PCAP analysis",
     executionHint: "Network",
-    icon: ShieldAlert,
   },
   suricata: {
     title: "SURICATA",
-    description: "Network traffic detection",
+    description: "Sensor hunt, live watch, and offline PCAP analysis",
     executionHint: "Network",
-    icon: Waypoints,
   },
 } as const
 
@@ -53,6 +50,25 @@ type ResolvedTargetOs = "windows" | "linux"
 function normalizeTargetOs(value: string | null | undefined): ResolvedTargetOs | null {
   const normalized = value?.trim().toLowerCase()
   return normalized === "windows" || normalized === "linux" ? normalized : null
+}
+
+function toggleScannerFamilySelection(
+  selectedFamilies: string[],
+  family: (typeof FAMILIES)[number],
+) {
+  if (selectedFamilies.includes(family)) {
+    return selectedFamilies.filter((value) => value !== family)
+  }
+
+  if (family === "snort") {
+    return [...selectedFamilies.filter((value) => value !== "suricata"), family]
+  }
+
+  if (family === "suricata") {
+    return [...selectedFamilies.filter((value) => value !== "snort"), family]
+  }
+
+  return [...selectedFamilies, family]
 }
 
 export default function ScansPage() {
@@ -75,6 +91,7 @@ export default function ScansPage() {
     rulePath: "",
     minutesBack: "60",
     snortMode: "hunt" as "hunt" | "quarantine" | "pcap",
+    suricataMode: "hunt" as "hunt" | "quarantine" | "pcap",
     quarantineDurationMinutes: "15",
     pcapInputMode: "upload" as "upload" | "hostPath",
     pcapPath: "",
@@ -162,10 +179,16 @@ export default function ScansPage() {
   const snortHuntSelected = snortSelected && snortMode === "hunt"
   const snortQuarantineSelected = snortSelected && snortMode === "quarantine"
   const snortPcapSelected = snortSelected && snortMode === "pcap"
+  const suricataSelected = selectedFamilies.includes("suricata")
+  const suricataMode = form.suricataMode
+  const suricataHuntSelected = suricataSelected && suricataMode === "hunt"
+  const suricataQuarantineSelected = suricataSelected && suricataMode === "quarantine"
+  const suricataPcapSelected = suricataSelected && suricataMode === "pcap"
+  const networkFamilyConflict = snortSelected && suricataSelected
   const minutesBackIsValid = Number.isInteger(Number(form.minutesBack)) && Number(form.minutesBack) > 0
   const quarantineDurationIsValid = Number.isInteger(Number(form.quarantineDurationMinutes)) && Number(form.quarantineDurationMinutes) > 0 && Number(form.quarantineDurationMinutes) <= 120
-  const hasSnortPcapUpload = !!form.pcapFile
-  const hasSnortPcapHostPath = form.pcapPath.trim().length > 0
+  const hasNetworkPcapUpload = !!form.pcapFile
+  const hasNetworkPcapHostPath = form.pcapPath.trim().length > 0
   const missingScope = form.selectedNetworkIds.length === 0 && form.selectedTargetIds.length === 0
   const missingRulePath = form.ruleInputMode === "hostPath" && !form.rulePath.trim()
   const missingUploadFiles = form.ruleInputMode === "upload" && form.files.length === 0
@@ -174,11 +197,16 @@ export default function ScansPage() {
     ...(missingScope ? ["Choose a subnet or at least one explicit target."] : []),
     ...(missingRulePath ? ["Enter a rule path on IOC_MGR or switch to upload mode."] : []),
     ...(missingUploadFiles ? ["Upload at least one rule file or zip bundle."] : []),
+    ...(networkFamilyConflict ? ["Choose either Snort or Suricata for a network scan run, not both."] : []),
     ...(snortHuntSelected && !minutesBackIsValid ? ["Snort Hunt mode requires Minutes back to be a positive integer."] : []),
+    ...(suricataHuntSelected && !minutesBackIsValid ? ["Suricata Hunt mode requires Minutes back to be a positive integer."] : []),
     ...(snortQuarantineSelected && !quarantineDurationIsValid ? ["Snort Quarantine mode requires a watch duration between 1 and 120 minutes."] : []),
+    ...(suricataQuarantineSelected && !quarantineDurationIsValid ? ["Suricata Quarantine mode requires a watch duration between 1 and 120 minutes."] : []),
     ...(snortSelected && snortMode !== "hunt" && selectedFamilies.length > 1 ? ["Snort Quarantine and PCAP runs must be queued on their own in v1."] : []),
-    ...(snortPcapSelected && hasSnortPcapUpload && hasSnortPcapHostPath ? ["Choose either a PCAP upload or a PCAP path on IOC_MGR, not both."] : []),
-    ...(snortPcapSelected && !hasSnortPcapUpload && !hasSnortPcapHostPath ? ["Snort PCAP mode requires one PCAP source via upload or IOC_MGR host path."] : []),
+    ...(suricataSelected && suricataMode !== "hunt" && selectedFamilies.length > 1 ? ["Suricata Quarantine and PCAP runs must be queued on their own in v1."] : []),
+    ...((snortPcapSelected || suricataPcapSelected) && hasNetworkPcapUpload && hasNetworkPcapHostPath ? ["Choose either a PCAP upload or a PCAP path on IOC_MGR, not both."] : []),
+    ...(snortPcapSelected && !hasNetworkPcapUpload && !hasNetworkPcapHostPath ? ["Snort PCAP mode requires one PCAP source via upload or IOC_MGR host path."] : []),
+    ...(suricataPcapSelected && !hasNetworkPcapUpload && !hasNetworkPcapHostPath ? ["Suricata PCAP mode requires one PCAP source via upload or IOC_MGR host path."] : []),
     ...(yaraSelected && yaraUnknownTargets.length > 0 ? ["Choose Windows or Linux for each selected YARA target whose OS is still unknown."] : []),
     ...(sigmaSelected && sigmaUnknownTargets.length > 0 ? ["Sigma requires every selected target to have a discovered OS before the run can be queued."] : []),
     ...(requiresWindowsYaraPath && !form.windowsScanPath.trim() ? ["Windows YARA scope requires a Windows scan path like C:\\IOC\\."] : []),
@@ -221,7 +249,7 @@ export default function ScansPage() {
     setErrorText(null)
     try {
       const options: Record<string, string | null> = {}
-      if (selectedFamilies.some((family) => family === "sigma" || family === "suricata") || snortHuntSelected) {
+      if (selectedFamilies.includes("sigma") || snortHuntSelected || suricataHuntSelected) {
         options.minutesBack = form.minutesBack
       }
       if (snortSelected) {
@@ -230,6 +258,15 @@ export default function ScansPage() {
           options.quarantineDurationMinutes = form.quarantineDurationMinutes
         }
         if (snortPcapSelected && form.pcapInputMode === "hostPath") {
+          options.pcapPath = form.pcapPath.trim()
+        }
+      }
+      if (suricataSelected) {
+        options.suricataMode = form.suricataMode
+        if (suricataQuarantineSelected) {
+          options.quarantineDurationMinutes = form.quarantineDurationMinutes
+        }
+        if (suricataPcapSelected && form.pcapInputMode === "hostPath") {
           options.pcapPath = form.pcapPath.trim()
         }
       }
@@ -281,8 +318,9 @@ export default function ScansPage() {
     setMessage(null)
     setErrorText(null)
     try {
+      const job = jobs.find((candidate) => candidate.id === jobId)
       await stopLegacyJob(jobId)
-      setMessage("Snort Quarantine session stopped.")
+      setMessage(`${job?.scannerFamily === "suricata" ? "Suricata" : "Snort"} Quarantine session stopped.`)
       setRefreshKey((value) => value + 1)
     } catch (error) {
       const failure = classifyUiError(error)
@@ -321,12 +359,14 @@ export default function ScansPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               Selected scanners unlock only the parameters they actually use, so the composer stays focused.
             </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Snort and Suricata are mutually exclusive in one custom scan run. Choose one network engine per submission.
+            </p>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(0,1fr))]">
             {FAMILIES.map((family) => {
               const meta = SCANNER_METADATA[family]
               const selected = form.selectedFamilies.includes(family)
-              const Icon = meta.icon
               return (
                 <button
                   key={family}
@@ -334,9 +374,10 @@ export default function ScansPage() {
                   onClick={() =>
                     setForm((current) => ({
                       ...current,
-                      selectedFamilies: current.selectedFamilies.includes(family)
-                        ? current.selectedFamilies.filter((value) => value !== family)
-                        : [...current.selectedFamilies, family],
+                      selectedFamilies: toggleScannerFamilySelection(
+                        current.selectedFamilies,
+                        family,
+                      ),
                     }))
                   }
                   className={`rounded-2xl border p-4 text-left transition ${
@@ -348,9 +389,7 @@ export default function ScansPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className={`rounded-xl border p-2 ${selected ? "border-cyan-300/40 bg-cyan-400/10 text-cyan-100" : "border-border/70 bg-surface-1 text-muted-foreground"}`}>
-                        <Icon className="size-4" />
-                      </div>
+                      <ScannerFamilyMark family={family} size="md" className={selected ? "ring-1 ring-cyan-300/25" : ""} />
                       <div>
                         <p className="text-base font-semibold">{meta.title}</p>
                         <p className="text-xs text-muted-foreground">{meta.description}</p>
@@ -409,16 +448,13 @@ export default function ScansPage() {
           <div className="grid gap-3 2xl:grid-cols-2">
             {selectedFamilies.map((family) => {
               const meta = SCANNER_METADATA[family]
-              const Icon = meta.icon
               const usesMinutesBack = family === "sigma" || family === "snort" || family === "suricata"
               const usesScanPath = family === "yara"
               return (
                 <div key={family} className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="rounded-xl border border-border/70 bg-surface-1 p-2 text-muted-foreground">
-                        <Icon className="size-4" />
-                      </div>
+                      <ScannerFamilyMark family={family} size="md" />
                       <div>
                         <p className="text-base font-semibold">{meta.title}</p>
                         <p className="text-xs text-muted-foreground">{meta.description}</p>
@@ -529,6 +565,111 @@ export default function ScansPage() {
                               )}
                               <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
                                 PCAP mode is offline analysis. The shared `.rules` source is applied locally, and unmatched packets are ignored because this workflow stays target-driven.
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : family === "suricata" ? (
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Suricata mode</label>
+                            <select
+                              className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                              value={form.suricataMode}
+                              onChange={(event) =>
+                                setForm((current) => ({
+                                  ...current,
+                                  suricataMode: event.target.value as "hunt" | "quarantine" | "pcap",
+                                }))
+                              }
+                            >
+                              <option value="hunt">Hunt</option>
+                              <option value="quarantine">Quarantine</option>
+                              <option value="pcap">PCAP</option>
+                            </select>
+                            <p className="text-xs text-muted-foreground">
+                              Hunt searches recent sensor alerts, Quarantine runs a live watch, and PCAP analyzes one capture file against the selected target IPs.
+                            </p>
+                          </div>
+
+                          {form.suricataMode === "hunt" ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Minutes back</label>
+                              <Input
+                                placeholder="Minutes back"
+                                value={form.minutesBack}
+                                onChange={(event) => setForm((current) => ({ ...current, minutesBack: event.target.value }))}
+                              />
+                              <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+                                Hunt syncs the shared Suricata rule file to the remote sensor, then filters recent alert log entries where the selected target IP appears as source or destination.
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {form.suricataMode === "quarantine" ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Watch duration (minutes)</label>
+                              <Input
+                                placeholder="15"
+                                value={form.quarantineDurationMinutes}
+                                onChange={(event) => setForm((current) => ({ ...current, quarantineDurationMinutes: event.target.value }))}
+                              />
+                              <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+                                Quarantine starts a live sensor watch that stays running until you stop it or the duration expires. Use Suricata only for this run, and expect selected target IPs to match as source or destination.
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {form.suricataMode === "pcap" ? (
+                            <div className="space-y-3">
+                              <div className="space-y-2">
+                                <label className="text-sm font-medium">PCAP source</label>
+                                <select
+                                  className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                                  value={form.pcapInputMode}
+                                  onChange={(event) =>
+                                    setForm((current) => ({
+                                      ...current,
+                                      pcapInputMode: event.target.value as "upload" | "hostPath",
+                                      pcapFile: event.target.value === "hostPath" ? null : current.pcapFile,
+                                      pcapPath: event.target.value === "upload" ? "" : current.pcapPath,
+                                    }))
+                                  }
+                                >
+                                  <option value="upload">Upload PCAP</option>
+                                  <option value="hostPath">PCAP path on IOC_MGR</option>
+                                </select>
+                              </div>
+                              {form.pcapInputMode === "upload" ? (
+                                <div className="space-y-2">
+                                  <Input
+                                    type="file"
+                                    accept=".pcap,.pcapng"
+                                    onChange={(event) =>
+                                      setForm((current) => ({
+                                        ...current,
+                                        pcapFile: event.target.files?.[0] ?? null,
+                                      }))
+                                    }
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Upload one `.pcap` or `.pcapng` file. Findings count only when packet source or destination matches a selected target IP.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <Input
+                                    placeholder="C:\\Captures\\lab-suricata-test.pcap"
+                                    value={form.pcapPath}
+                                    onChange={(event) => setForm((current) => ({ ...current, pcapPath: event.target.value }))}
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Point to one `.pcap` or `.pcapng` file that already exists on IOC_MGR.
+                                  </p>
+                                </div>
+                              )}
+                              <div className="rounded-lg border border-cyan-300/15 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+                                PCAP mode is offline analysis. The shared Suricata rule source is applied to one capture file, and unmatched packets are ignored because this workflow stays target-driven.
                               </div>
                             </div>
                           ) : null}
@@ -762,15 +903,14 @@ export default function ScansPage() {
               <div className="flex flex-wrap gap-2">
                 {selectedFamilies.length > 0 ? (
                   selectedFamilies.map((family) => (
-                    <Badge key={family} variant="secondary">
-                      {SCANNER_METADATA[family].title}
-                    </Badge>
+                    <ScannerFamilyBadge key={family} family={family} />
                   ))
                 ) : (
                   <Badge variant="outline">No scanners selected</Badge>
                 )}
                 <Badge variant="outline">{form.ruleInputMode === "hostPath" ? "Host rule path" : "Upload bundle"}</Badge>
                 {snortSelected ? <Badge variant="outline">Snort {form.snortMode}</Badge> : null}
+                {suricataSelected ? <Badge variant="outline">Suricata {form.suricataMode}</Badge> : null}
               </div>
               <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-3">
                 <p>Selected subnets: <span className="font-medium text-foreground">{form.selectedNetworkIds.length}</span></p>
@@ -786,7 +926,10 @@ export default function ScansPage() {
                 <p>{missingRulePath ? "Rule path still required" : "Rule source configured"}</p>
                 {snortHuntSelected ? <p>{minutesBackIsValid ? "Snort Hunt window configured" : "Snort Hunt window still invalid"}</p> : null}
                 {snortQuarantineSelected ? <p>{quarantineDurationIsValid ? "Snort Quarantine duration configured" : "Snort Quarantine duration still invalid"}</p> : null}
-                {snortPcapSelected ? <p>{hasSnortPcapUpload || hasSnortPcapHostPath ? "Snort PCAP source configured" : "Snort PCAP source still required"}</p> : null}
+                {snortPcapSelected ? <p>{hasNetworkPcapUpload || hasNetworkPcapHostPath ? "Snort PCAP source configured" : "Snort PCAP source still required"}</p> : null}
+                {suricataHuntSelected ? <p>{minutesBackIsValid ? "Suricata Hunt window configured" : "Suricata Hunt window still invalid"}</p> : null}
+                {suricataQuarantineSelected ? <p>{quarantineDurationIsValid ? "Suricata Quarantine duration configured" : "Suricata Quarantine duration still invalid"}</p> : null}
+                {suricataPcapSelected ? <p>{hasNetworkPcapUpload || hasNetworkPcapHostPath ? "Suricata PCAP source configured" : "Suricata PCAP source still required"}</p> : null}
               </div>
             </div>
           </div>
@@ -802,6 +945,15 @@ export default function ScansPage() {
                 : snortQuarantineSelected
                   ? "Snort Quarantine starts a live session. The run stays in Running until you stop it or the watch duration expires, and matching traffic can hit either the source or destination side of a selected target IP."
                   : "Snort PCAP analyzes one capture file offline on IOC_MGR. Findings only count when the packet source or destination matches a selected target IP."}
+            </div>
+          ) : null}
+          {suricataSelected ? (
+            <div className="mt-4 rounded-xl border border-cyan-300/20 bg-cyan-500/10 p-3 text-xs text-cyan-100/90">
+              {suricataHuntSelected
+                ? "Suricata Hunt reads the recent sensor alert log, not the target host. Traffic must cross the monitored segment, and the selected target can match as either source or destination IP inside the recent alert window."
+                : suricataQuarantineSelected
+                  ? "Suricata Quarantine starts a live session. The run stays in Running until you stop it or the watch duration expires, and matching traffic can hit either the source or destination side of a selected target IP."
+                  : "Suricata PCAP analyzes one capture file offline on IOC_MGR. Findings only count when the packet source or destination matches a selected target IP."}
             </div>
           ) : null}
           {submitValidationMessages.length > 0 ? (
@@ -893,7 +1045,7 @@ export default function ScansPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-base font-semibold">{job.scannerFamily.toUpperCase()}</p>
+                          <ScannerFamilyBadge family={job.scannerFamily} />
                           <Badge variant="outline">{job.triggerType}</Badge>
                           {job.executionMode ? <Badge variant="outline">{job.executionMode}</Badge> : null}
                           <Badge variant={job.status === "Completed" ? "secondary" : "outline"}>{job.status}</Badge>
@@ -909,7 +1061,7 @@ export default function ScansPage() {
                     <div className="text-right text-xs text-muted-foreground">
                       <p>{job.finishedAtUtc ? new Date(job.finishedAtUtc).toLocaleString() : new Date(job.queuedAtUtc).toLocaleString()}</p>
                       <p>{job.finishedAtUtc ? "Finished" : "Queued"}</p>
-                      {job.scannerFamily === "snort" && job.executionMode === "quarantine" && job.status === "Running" ? (
+                      {(job.scannerFamily === "snort" || job.scannerFamily === "suricata") && job.executionMode === "quarantine" && job.status === "Running" ? (
                         <Button
                           type="button"
                           variant="outline"

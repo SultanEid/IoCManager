@@ -4,6 +4,7 @@ import { ApiError } from "@/shared/api/error"
 import {
   alertResponseSchema,
   alertListResponseSchema,
+  v2AlertDetailResponseSchema,
   alertRuleWorkflowResponseSchema,
   auditLogListResponseSchema,
   coveragePainAnalysisResponseSchema,
@@ -54,6 +55,7 @@ import {
   userResponseSchema,
   type AlertListResponse,
   type AlertResponse,
+  type V2AlertDetailResponse,
   type AlertRuleWorkflowResponse,
   type AuditLogListResponse,
   type CaseResponse,
@@ -243,8 +245,10 @@ export class AspNetGateway {
     if (query.family) {
       params.set("family", query.family)
     }
-    if (query.serverId) {
-      params.set("serverId", query.serverId)
+    if (query.targetId) {
+      params.set("targetId", query.targetId)
+    } else if (query.serverId && /^\d+$/.test(query.serverId)) {
+      params.set("targetId", query.serverId)
     }
     if (query.ownerUserId) {
       params.set("ownerUserId", query.ownerUserId)
@@ -275,6 +279,20 @@ export class AspNetGateway {
 
   async getAlert(alertId: string, signal?: AbortSignal): Promise<AlertResponse> {
     return requestJson(`/api/alerts/${alertId}`, alertResponseSchema, { signal })
+  }
+
+  async getAlertDetail(alertId: string, signal?: AbortSignal): Promise<V2AlertDetailResponse> {
+    return requestJson(`/api/v2/alerts/${alertId}`, v2AlertDetailResponseSchema, { signal })
+  }
+
+  async updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse> {
+    return requestJson(`/api/v2/alerts/${alertId}/status`, v2AlertDetailResponseSchema, {
+      method: "PATCH",
+      body: {
+        status,
+        actorUserId,
+      },
+    })
   }
 
   // Legacy aliases retained for one release cycle.

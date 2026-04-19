@@ -87,11 +87,10 @@ public sealed record LegacyPipelineRulePresetResponse(
 
 public sealed record LegacyPipelineScanPlanRequest(
     string Name,
-    string ScannerFamily,
+    IReadOnlyList<string> ScannerFamilies,
     string Status,
     string ScheduleType,
-    string? RulePath,
-    string? RulePathPreset,
+    Dictionary<string, string?> RulePathsByFamily,
     string? Notes,
     string ActorUserId,
     IReadOnlyList<string> NetworkIds,
@@ -102,10 +101,10 @@ public sealed record LegacyPipelineScanPlanRequest(
 public sealed record LegacyPipelineScanPlanResponse(
     string Id,
     string Name,
-    string ScannerFamily,
+    IReadOnlyList<string> ScannerFamilies,
     string Status,
     string ScheduleType,
-    string? RulePath,
+    Dictionary<string, string?> RulePathsByFamily,
     string? Notes,
     IReadOnlyList<string> NetworkIds,
     IReadOnlyList<string> TargetIds,
@@ -119,6 +118,16 @@ public sealed record LegacyPipelineScanPlanResponse(
     DateTimeOffset UpdatedAtUtc);
 
 public sealed record LegacyPipelineScanPlanRunRequest(string ActorUserId);
+
+public sealed record LegacyPipelineScanPlanRunResponse(
+    string BatchId,
+    string PlanId,
+    IReadOnlyList<LegacyPipelineScanJobResponse> Jobs);
+
+public sealed record LegacyPipelineScanPlanDeletionResponse(
+    string PlanId,
+    string PlanName,
+    int DetachedJobs);
 
 public sealed record LegacyPipelineCustomScanRequest(
     string ActorUserId,
@@ -162,6 +171,113 @@ public sealed record LegacyPipelineScanResultResponse(
     DateTimeOffset? StartedAtUtc,
     DateTimeOffset? FinishedAtUtc);
 
+public sealed record LegacyPipelineIocFindingResponse(
+    string IocId,
+    string ScannerFamily,
+    string? TargetId,
+    string TargetDisplay,
+    string? TargetIp,
+    string? TargetOsType,
+    string? JobId,
+    string? ScanPlanId,
+    string RuleName,
+    string IndicatorValue,
+    string IndicatorKind,
+    string PainLevel,
+    string Severity,
+    DateTimeOffset TimestampUtc,
+    string? RawPayload,
+    string Status);
+
+public sealed record LegacyPipelineIocFindingListResponse(
+    IReadOnlyList<LegacyPipelineIocFindingResponse> Items,
+    int TotalCount,
+    int Page,
+    int PageSize,
+    IReadOnlyList<string> AvailableSeverities);
+
+public sealed record LegacyPipelineIocFindingTargetResponse(
+    string? Id,
+    string Display,
+    string? Hostname,
+    string? IpAddress,
+    string? Status,
+    string? TargetOsType);
+
+public sealed record LegacyPipelineIocFindingScanResponse(
+    string? JobId,
+    string? ScanPlanId,
+    string ScannerFamily,
+    string? ExecutionMode,
+    string? TriggerType,
+    string Status,
+    DateTimeOffset? QueuedAtUtc,
+    DateTimeOffset? StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc);
+
+public sealed record LegacyPipelineIocFindingYaraDetailResponse(
+    string? FilePath,
+    string? FileHash);
+
+public sealed record LegacyPipelineIocFindingSigmaDetailResponse(
+    string? LogSource,
+    string? Severity,
+    string? CommandLine);
+
+public sealed record LegacyPipelineIocFindingNetworkDetailResponse(
+    string? SourceIp,
+    string? DestIp,
+    string? Protocol,
+    string? Severity,
+    long? FlowId);
+
+public sealed record LegacyPipelineIocFindingDetailResponse(
+    string IocId,
+    string ScannerFamily,
+    string? TargetId,
+    string TargetDisplay,
+    string? TargetIp,
+    string? TargetOsType,
+    string? JobId,
+    string? ScanPlanId,
+    string RuleName,
+    string IndicatorValue,
+    string IndicatorKind,
+    string PainLevel,
+    string Severity,
+    DateTimeOffset TimestampUtc,
+    string? RawPayload,
+    string Status,
+    LegacyPipelineIocFindingTargetResponse? Target,
+    LegacyPipelineIocFindingScanResponse? RelatedScan,
+    LegacyPipelineIocFindingYaraDetailResponse? YaraDetail,
+    LegacyPipelineIocFindingSigmaDetailResponse? SigmaDetail,
+    LegacyPipelineIocFindingNetworkDetailResponse? NetworkDetail);
+
+public sealed record LegacyPipelinePainLevelResponse(
+    string Level,
+    string Label,
+    int Count,
+    double Share,
+    IReadOnlyList<LegacyPipelineIocFindingResponse> PreviewIocs);
+
+public sealed record LegacyPipelinePainTrendPointResponse(
+    DateTimeOffset BucketStartUtc,
+    Dictionary<string, int> CountsByLevel);
+
+public sealed record LegacyPipelinePainAnalysisResponse(
+    DateTimeOffset FromUtc,
+    DateTimeOffset ToUtc,
+    int TotalCount,
+    IReadOnlyList<LegacyPipelinePainLevelResponse> Levels,
+    IReadOnlyList<LegacyPipelinePainTrendPointResponse> Trend);
+
+public sealed record LegacyPipelineOverviewSummaryResponse(
+    int TargetCount,
+    int IocCount,
+    int ReportCount,
+    int AlertCount);
+
 public sealed record LegacyPipelineReportSectionMetricResponse(
     string Label,
     string Value,
@@ -173,11 +289,22 @@ public sealed record LegacyPipelineReportSectionResponse(
     IReadOnlyList<LegacyPipelineReportSectionMetricResponse> Metrics,
     IReadOnlyList<string> Highlights);
 
+public sealed record LegacyPipelineReportQueryResponse(
+    string? JobId,
+    string? TargetId,
+    string? NetworkId,
+    string? ScannerFamily,
+    string? FromUtc,
+    string? ToUtc,
+    string? Severity,
+    string? Status);
+
 public sealed record LegacyPipelineGeneratedReportResponse(
     string Title,
     string ReportType,
     string Scope,
     DateTimeOffset GeneratedAtUtc,
+    LegacyPipelineReportQueryResponse Query,
     IReadOnlyList<LegacyPipelineReportSectionResponse> Sections,
     LegacyPipelineReportRecordResponse? PersistedReport);
 
@@ -187,9 +314,26 @@ public sealed record LegacyPipelineReportRecordResponse(
     string ReportType,
     string Scope,
     DateTimeOffset CreatedAtUtc,
-    string? FileExtension,
-    string? DownloadPath,
+    string? PdfDownloadPath,
+    string? CsvDownloadPath,
     string Status);
+
+public sealed record LegacyPipelineReportDetailResponse(
+    string Id,
+    string Title,
+    string ReportType,
+    string Scope,
+    DateTimeOffset CreatedAtUtc,
+    LegacyPipelineReportQueryResponse Query,
+    IReadOnlyList<LegacyPipelineReportSectionResponse> Sections,
+    string? PdfDownloadPath,
+    string? CsvDownloadPath,
+    string Status);
+
+public sealed record LegacyPipelineReportDeletionResponse(
+    string Id,
+    string Title,
+    int DeletedFiles);
 
 public sealed record LegacyPipelineGenerateReportRequest(
     string ReportType,

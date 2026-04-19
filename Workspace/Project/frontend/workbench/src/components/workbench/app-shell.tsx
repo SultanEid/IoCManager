@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Bell,
+  ChevronRight,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -37,6 +38,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { roleLabels } from "@/shared/auth/session"
 import { gateway, isMockMode } from "@/shared/gateway"
+import { listLegacyJobs } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { pageMotion } from "@/shared/ui/motion"
 import { CompactEmptyState, CompactErrorState, CompactLoadingState } from "@/shared/ui/state-panels"
@@ -113,7 +115,7 @@ function SidebarWorkArea({ collapsed, pinned, onTogglePin }: SidebarWorkAreaProp
     })
   }, [alertsQuery.data, pinned])
 
-  if (collapsed) {
+  if (collapsed || pinned.length === 0) {
     return null
   }
 
@@ -128,8 +130,6 @@ function SidebarWorkArea({ collapsed, pinned, onTogglePin }: SidebarWorkAreaProp
 
         {alertsQuery.isLoading && pinned.length > 0 ? <CompactLoadingState label="Loading pinned alerts" /> : null}
         {alertsQuery.isError ? <CompactErrorState label="Pinned alerts unavailable" /> : null}
-
-        {!alertsQuery.isError && pinnedRows.length === 0 ? <CompactEmptyState label="No pinned alerts yet." /> : null}
 
         {pinnedRows.length > 0 ? (
           <div className="space-y-1.5">
@@ -228,18 +228,19 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const resolvedRoute = useMemo(() => resolveWorkbenchRoute(pathname), [pathname])
 
   const notificationsQuery = useWorkbenchQuery(["shell", "notifications"], async (signal) => {
-    const jobsResult = await Promise.allSettled([gateway.listJobRuns(signal)])
+    const jobsResult = await Promise.allSettled([listLegacyJobs(signal)])
 
     const items: NotificationItem[] = []
     const reducedCapability = true
 
     if (jobsResult[0].status === "fulfilled") {
       for (const job of jobsResult[0].value.slice(0, 3)) {
+        const when = job.finishedAtUtc ?? job.startedAtUtc ?? job.queuedAtUtc
         items.push({
           id: `job-${job.id}`,
-          title: `${job.jobType} ${job.status.toLowerCase()}`,
-          description: job.details || "No additional details.",
-          when: new Date(job.startedAtUtc).toLocaleString(),
+          title: `${job.scannerFamily} ${job.status.toLowerCase()}`,
+          description: job.summary || "No additional details.",
+          when: new Date(when).toLocaleString(),
         })
       }
     }
@@ -277,6 +278,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const notificationItems = notificationsQuery.data?.items ?? []
   const hasPartialNotificationError = notificationsQuery.data?.hasPartialError ?? false
   const reducedNotificationCapability = notificationsQuery.data?.reducedCapability ?? !isMockMode
+  const RouteIcon = resolvedRoute.route?.icon
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -284,11 +286,11 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         <motion.aside
           animate={{ width: collapsed ? 96 : 292 }}
           transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-          className="hidden border-r border-border/70 bg-shell-sidebar shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)] backdrop-blur md:flex md:flex-col"
+          className="hidden border-r border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--shell-sidebar)_94%,transparent),color-mix(in_srgb,var(--background)_86%,transparent))] shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent),18px_0_42px_rgba(0,0,0,0.22)] backdrop-blur md:flex md:flex-col"
         >
           <div className={cn("px-3", collapsed ? "flex flex-col items-center gap-2 py-3" : "flex h-16 items-center justify-between")}>
             <div className={cn("flex items-center gap-2", collapsed && "w-full justify-center")}>
-              <div className="grid h-8 w-8 place-items-center rounded-lg border border-primary/40 bg-primary/15 text-primary">
+              <div className="grid h-9 w-9 place-items-center rounded-xl border border-primary/35 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--primary)_18%,transparent),color-mix(in_srgb,var(--surface-2)_74%,transparent))] text-primary shadow-[0_14px_30px_rgba(0,0,0,0.24)]">
                 <span className="text-[11px] font-semibold tracking-[0.14em]">IOC</span>
               </div>
               {!collapsed ? (
@@ -344,13 +346,20 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
               </Sheet>
 
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <span className="wb-kicker hidden rounded-full border border-border/60 bg-surface-2/80 px-2 py-1 sm:inline-flex">
                     {resolvedRoute.module}
                   </span>
-                  <p className="truncate text-sm font-semibold tracking-tight">{resolvedRoute.title}</p>
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_90%,transparent),color-mix(in_srgb,var(--surface-1)_76%,transparent))] text-foreground shadow-[0_14px_30px_rgba(0,0,0,0.18)]">
+                      {RouteIcon ? <RouteIcon className="h-4.5 w-4.5" /> : <Search className="h-4.5 w-4.5" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold tracking-tight">{resolvedRoute.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">{resolvedRoute.subtitle}</p>
+                    </div>
+                  </div>
                 </div>
-                <p className="truncate text-xs text-muted-foreground">{resolvedRoute.subtitle}</p>
               </div>
 
               <button
@@ -413,7 +422,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                 <nav className="flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="shell-breadcrumbs">
                   {resolvedRoute.breadcrumbs.map((item, index) => (
                     <span key={`${item.label}:${index}`} className="inline-flex items-center gap-1">
-                      {index > 0 ? <span>/</span> : null}
+                      {index > 0 ? <ChevronRight className="h-3 w-3" /> : null}
                       {item.href ? (
                         <Link href={item.href} className="hover:text-foreground">
                           {item.label}

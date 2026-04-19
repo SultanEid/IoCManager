@@ -10,7 +10,7 @@ namespace Backend.Api.Infrastructure;
 
 public sealed partial class LegacyScanPipelineService
 {
-    private async Task<LegacyPipelineScanJobEntity> QueuePlanJobAsync(
+    private async Task<IReadOnlyList<LegacyPipelineScanJobEntity>> QueuePlanJobsAsync(
         LegacyPipelineScanPlanEntity plan,
         int actorUserId,
         string triggerType,
@@ -19,35 +19,45 @@ public sealed partial class LegacyScanPipelineService
     {
         var planConfig = LegacyScanPipelineSerializer.DeserializePlanConfig(plan.ScannerConfigJson)
             ?? throw new InvalidOperationException("Stored scan plan configuration is invalid.");
+        var scannerFamilies = NormalizePlanScannerFamilies(planConfig);
+        var rulePathsByFamily = NormalizePlanRulePathsByFamily(planConfig, scannerFamilies);
         var targetScope = LegacyScanPipelineSerializer.DeserializeTargetScope(plan.TargetScopeJson)
             ?? throw new InvalidOperationException("Stored scan plan target scope is invalid.");
         var resolvedTargets = await ResolveTargetsForScopeAsync(targetScope.NetworkIds, targetScope.TargetIds, cancellationToken);
         ValidateTargetCount(resolvedTargets.Count);
-
-        var executionScope = new LegacyPipelineExecutionScope(
-            planConfig.ScannerFamily,
-            "hostPath",
-            planConfig.RulePath,
-            null,
-            null,
-            targetScope.NetworkIds,
-            resolvedTargets.Select(item => item.TargetId).ToList(),
-            planConfig.Options);
-
-        var job = new LegacyPipelineScanJobEntity
+        var batchId = Guid.NewGuid();
+        var jobs = new List<LegacyPipelineScanJobEntity>(scannerFamilies.Length);
+        foreach (var family in scannerFamilies)
         {
-            Status = "Queued",
-            TriggeredByUserId = actorUserId,
-            PlanId = plan.PlanId,
-            ExecutionScopeJson = JsonSerializer.Serialize(executionScope, LegacyScanPipelineSerializer.JsonOptions),
-            QueuedAt = queuedAtUtc.UtcDateTime,
-            TriggerType = triggerType,
-            Summary = $"Queued plan '{plan.Name}' for {resolvedTargets.Count} targets.",
-        };
+            var executionOptions = BuildPlanExecutionOptionsForFamily(family, planConfig.Options);
+            var executionScope = new LegacyPipelineExecutionScope(
+                family,
+                "hostPath",
+                rulePathsByFamily[family],
+                null,
+                null,
+                targetScope.NetworkIds,
+                resolvedTargets.Select(item => item.TargetId).ToList(),
+                executionOptions);
 
-        _dbContext.ScanJobs.Add(job);
+            var job = new LegacyPipelineScanJobEntity
+            {
+                Status = "Queued",
+                TriggeredByUserId = actorUserId,
+                PlanId = plan.PlanId,
+                ExecutionScopeJson = JsonSerializer.Serialize(executionScope, LegacyScanPipelineSerializer.JsonOptions),
+                QueuedAt = queuedAtUtc.UtcDateTime,
+                TriggerType = triggerType,
+                BatchId = batchId,
+                Summary = $"Queued plan '{plan.Name}' {family.ToUpperInvariant()} scan for {resolvedTargets.Count} targets.",
+            };
+
+            jobs.Add(job);
+        }
+
+        _dbContext.ScanJobs.AddRange(jobs);
         await _dbContext.SaveChangesAsync(cancellationToken);
-        return job;
+        return jobs;
     }
 
     private async Task ProcessJobAsync(int jobId, CancellationToken cancellationToken)
@@ -79,8 +89,9 @@ public sealed partial class LegacyScanPipelineService
         job.Summary = $"Running {scope.ScannerFamily.ToUpperInvariant()} scan across {targets.Count} targets.";
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        var executionMode = LegacyScanPipelineHelpers.ResolveExecutionMode(scope.ScannerFamily, scope.Options);
         if (string.Equals(scope.ScannerFamily, "snort", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(LegacyScanPipelineHelpers.ResolveExecutionMode(scope.ScannerFamily, scope.Options), "quarantine", StringComparison.OrdinalIgnoreCase))
+            && string.Equals(executionMode, "quarantine", StringComparison.OrdinalIgnoreCase))
         {
             if (!LegacyScanPipelineHelpers.IsPositiveInteger(LegacyScanPipelineHelpers.GetOption(scope.Options, "quarantineDurationMinutes"), out var durationMinutes))
             {
@@ -100,10 +111,32 @@ public sealed partial class LegacyScanPipelineService
             return;
         }
 
+        if (string.Equals(scope.ScannerFamily, "suricata", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(executionMode, "quarantine", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!LegacyScanPipelineHelpers.IsPositiveInteger(LegacyScanPipelineHelpers.GetOption(scope.Options, "quarantineDurationMinutes"), out var durationMinutes))
+            {
+                throw new InvalidOperationException("Suricata Quarantine jobs require a positive duration.");
+            }
+
+            var scriptPath = ResolveScannerScript(scope.ScannerFamily, _scanExecutionOptions.CurrentValue);
+            var effectiveRulePath = string.Equals(scope.RuleInputMode, "hostPath", StringComparison.OrdinalIgnoreCase) ? scope.RulePath : scope.StagedRulePath;
+            if (string.IsNullOrWhiteSpace(effectiveRulePath) || !File.Exists(effectiveRulePath))
+            {
+                throw new FileNotFoundException("No effective Suricata rule file was available for quarantine execution.");
+            }
+
+            await _suricataQuarantineSessionManager.StartAsync(
+                new LegacyPipelineSuricataQuarantineSessionDefinition(job.JobId, scriptPath, effectiveRulePath, durationMinutes, targets),
+                cancellationToken);
+            return;
+        }
+
         var configuredParallelLimit = Math.Max(1, _pipelineOptions.CurrentValue.MaxParallelTargetExecutions);
         var parallelLimit = scope.ScannerFamily.Equals("yara", StringComparison.OrdinalIgnoreCase)
                             || scope.ScannerFamily.Equals("sigma", StringComparison.OrdinalIgnoreCase)
                             || scope.ScannerFamily.Equals("snort", StringComparison.OrdinalIgnoreCase)
+                            || scope.ScannerFamily.Equals("suricata", StringComparison.OrdinalIgnoreCase)
             ? 1
             : configuredParallelLimit;
         using var gate = new SemaphoreSlim(parallelLimit, parallelLimit);
@@ -251,10 +284,103 @@ public sealed partial class LegacyScanPipelineService
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    internal async Task FinalizeSuricataQuarantineJobAsync(
+        int jobId,
+        IReadOnlyList<LegacyPipelineSuricataQuarantineTargetCapture> captures,
+        bool stoppedByUser,
+        CancellationToken cancellationToken)
+    {
+        var job = await _dbContext.ScanJobs.FirstOrDefaultAsync(item => item.JobId == jobId, cancellationToken)
+            ?? throw new InvalidOperationException($"Suricata quarantine job '{jobId}' was not found.");
+        var scope = LegacyScanPipelineSerializer.DeserializeExecutionScope(job.ExecutionScopeJson)
+            ?? throw new InvalidOperationException("Stored execution scope is invalid.");
+        var targetIds = captures.Select(item => item.TargetId).Distinct().ToArray();
+        var targetLookup = await _dbContext.Targets
+            .Where(item => targetIds.Contains(item.TargetId))
+            .ToDictionaryAsync(item => item.TargetId, cancellationToken);
+
+        var completed = 0;
+        var failed = 0;
+        var noFindings = 0;
+        var totalFindings = 0;
+        string? firstFailureSummary = null;
+
+        foreach (var capture in captures)
+        {
+            if (!targetLookup.TryGetValue(capture.TargetId, out var target))
+            {
+                continue;
+            }
+
+            var output = string.IsNullOrWhiteSpace(capture.FailureSummary)
+                ? BuildSuricataQuarantineExecutionOutput(scope, target, capture)
+                : new LegacyPipelineTargetExecutionOutput("Failed", capture.FailureSummary!, capture.StartedAtUtc, capture.FinishedAtUtc, []);
+
+            await PersistTargetExecutionAsync(job, scope, target, output, cancellationToken);
+            totalFindings += output.Iocs.Count;
+            switch (output.Status)
+            {
+                case "Failed":
+                    failed++;
+                    firstFailureSummary ??= output.Summary;
+                    break;
+                case "NoFindings":
+                    completed++;
+                    noFindings++;
+                    break;
+                default:
+                    completed++;
+                    break;
+            }
+        }
+
+        LegacyScanPipelineHelpers.CleanupTempDirectory(scope.TempDirectory);
+
+        job.FinishedAt = DateTimeOffset.UtcNow.UtcDateTime;
+        job.Status = stoppedByUser
+            ? "Stopped"
+            : failed switch
+            {
+                0 => "Completed",
+                _ when completed == 0 => "Failed",
+                _ => "PartiallyCompleted",
+            };
+        job.Summary = $"{completed} completed, {failed} failed, {noFindings} no-findings, {totalFindings} findings.";
+        if (!string.IsNullOrWhiteSpace(firstFailureSummary))
+        {
+            job.Summary = $"{job.Summary} First failure: {firstFailureSummary}";
+        }
+
+        if (job.Summary?.Length > 255)
+        {
+            job.Summary = job.Summary[..255];
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private LegacyPipelineTargetExecutionOutput BuildSnortQuarantineExecutionOutput(
         LegacyPipelineExecutionScope scope,
         LegacyPipelineTargetEntity target,
         LegacyPipelineSnortQuarantineTargetCapture capture)
+    {
+        var iocs = ParseLegacyScannerOutput(scope.ScannerFamily, capture.StandardOutput, target)
+            .Where(ioc => ioc.NetworkDetail is null
+                || string.Equals(ioc.NetworkDetail.SourceIp, target.IPAddress, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ioc.NetworkDetail.DestIp, target.IPAddress, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return new LegacyPipelineTargetExecutionOutput(
+            iocs.Length == 0 ? "NoFindings" : "Succeeded",
+            iocs.Length == 0 ? "No findings were produced by the scanner." : $"Stored {iocs.Length} findings.",
+            capture.StartedAtUtc,
+            capture.FinishedAtUtc,
+            iocs);
+    }
+
+    private LegacyPipelineTargetExecutionOutput BuildSuricataQuarantineExecutionOutput(
+        LegacyPipelineExecutionScope scope,
+        LegacyPipelineTargetEntity target,
+        LegacyPipelineSuricataQuarantineTargetCapture capture)
     {
         var iocs = ParseLegacyScannerOutput(scope.ScannerFamily, capture.StandardOutput, target)
             .Where(ioc => ioc.NetworkDetail is null
@@ -340,6 +466,7 @@ public sealed partial class LegacyScanPipelineService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PromoteIocsToAlertsAsync(target, output.Iocs, cancellationToken);
     }
 
 }

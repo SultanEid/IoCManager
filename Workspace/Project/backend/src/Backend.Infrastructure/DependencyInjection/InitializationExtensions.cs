@@ -32,6 +32,7 @@ public static class InitializationExtensions
         typeof(RuleRevision),
         typeof(ScanJob),
         typeof(Alert),
+        typeof(AlertIoc),
         typeof(Report),
         typeof(AuditLog),
         typeof(ApplicationUser),

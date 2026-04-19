@@ -73,7 +73,7 @@ public sealed class AlertsController : ControllerBase
 
         if (existing is not null)
         {
-            existing.TouchDetection(detectedAtUtc, request.RequestedByUserId, DateTimeOffset.UtcNow);
+            existing.RefreshDetection(request.Title, request.Summary, severity, detectedAtUtc, request.RequestedByUserId, DateTimeOffset.UtcNow);
             await _dbContext.SaveChangesAsync(cancellationToken);
             return Ok(ToLegacyAlertResponse(existing));
         }
@@ -84,6 +84,10 @@ public sealed class AlertsController : ControllerBase
             severity,
             request.OwnerUserId,
             request.ApprovalTierRequired,
+            "manual",
+            null,
+            "Unscoped",
+            request.Title,
             detectedAtUtc,
             request.RequestedByUserId,
             DateTimeOffset.UtcNow);

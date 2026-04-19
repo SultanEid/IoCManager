@@ -72,7 +72,7 @@ internal static class V2Mappings
             source.UpdatedAtUtc);
     }
 
-    public static AlertResponse ToAlertResponse(this Alert source)
+    public static AlertResponse ToAlertResponse(this Alert source, int linkedIocCount = 0)
     {
         return new AlertResponse(
             source.Id,
@@ -82,6 +82,11 @@ internal static class V2Mappings
             source.Status.ToString(),
             source.OwnerUserId,
             source.ApprovalTierRequired,
+            source.ScannerFamily,
+            source.TargetId?.ToString(),
+            source.TargetDisplay,
+            source.RuleName,
+            linkedIocCount,
             source.FirstDetectedAtUtc,
             source.LastDetectedAtUtc,
             source.CreatedAtUtc,

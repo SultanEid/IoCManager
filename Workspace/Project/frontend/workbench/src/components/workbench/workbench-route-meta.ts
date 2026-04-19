@@ -8,6 +8,7 @@ import {
   SearchCode,
   Server,
   Settings,
+  Triangle,
   Workflow,
 } from "lucide-react"
 
@@ -91,7 +92,7 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     module: "Core",
     label: "Alerts",
     title: "Alert Registry",
-    subtitle: "Alert registry with current status, priority, and deployment context.",
+    subtitle: "Stored IOC-driven alerts with queue posture, evidence links, and target context.",
     icon: Activity,
     commandAliases: ["Alerts", "Alert Registry", "Alert Queue", "Queue", "Triage Queue"],
   },
@@ -146,18 +147,29 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     module: "Operations",
     label: "IOCs Explorer",
     title: "IOCs Explorer",
-    subtitle: "Explore normalized IoC data, feed quality, and source-level processing state.",
+    subtitle: "Investigate normalized findings across scanners with shared search, filters, and raw evidence.",
     icon: FileSearch,
-    commandAliases: ["IOCs Explorer", "IoC Ingestion", "Ingestion", "Feeds"],
+    commandAliases: ["IOCs Explorer", "IOC Findings", "Findings Explorer", "Investigation Surface"],
+  },
+  {
+    id: "coverage-pain-analysis",
+    href: "/coverage-pain-analysis",
+    aliases: [],
+    module: "Operations",
+    label: "Pyramid of Pain",
+    title: "Pyramid of Pain",
+    subtitle: "Dynamic posture analytics showing where detections land on the Pyramid of Pain over time.",
+    icon: Triangle,
+    commandAliases: ["Pyramid of Pain", "Pain Analysis", "Detection Posture", "Pain Analytics"],
   },
   {
     id: "reports",
     href: "/reports",
-    aliases: ["/ioc-registry", "/coverage", "/coverage-pain-analysis"],
+    aliases: ["/ioc-registry", "/coverage"],
     module: "Operations",
     label: "Reports",
     title: "Reports",
-    subtitle: "Generate management and technical summaries with preview, history, and future export paths.",
+    subtitle: "Generate management and technical summaries with preview, saved snapshots, and direct PDF or CSV download.",
     icon: FileText,
     commandAliases: ["Reports", "Report Generation", "Export History", "Executive Summary"],
   },
@@ -180,7 +192,7 @@ export const WORKBENCH_CASE_ROUTES: WorkbenchCaseRouteMeta[] = [
     suffix: "",
     label: "Alert Detail",
     title: "Alert Detail",
-    subtitle: "Alert summary with decisions, evidence, and rollout posture.",
+    subtitle: "IOC evidence, target context, scan linkage, and alert status controls.",
     icon: Activity,
     commandAliases: ["Alert Detail"],
   },
@@ -238,9 +250,9 @@ const INGESTION_SUBROUTE_BY_SUFFIX = new Map<string, IngestionSubrouteMeta>([
   [
     "",
     {
-      label: "Ingestion Overview",
+      label: "Findings Explorer",
       title: "IOCs Explorer",
-      subtitle: "Explore ingestion health and normalization readiness for IoC sources.",
+      subtitle: "Search normalized scanner findings with shared filters and evidence detail.",
     },
   ],
   [
@@ -390,7 +402,11 @@ function parseDistributionPath(pathname: string): boolean {
 }
 
 function parseReportingPath(pathname: string): boolean {
-  return /^\/(?:reports|ioc-registry|coverage|coverage-pain-analysis)(?:\/.*)?$/.test(pathname)
+  return /^\/(?:reports|ioc-registry|coverage)(?:\/.*)?$/.test(pathname)
+}
+
+function parsePainAnalysisPath(pathname: string): boolean {
+  return /^\/coverage-pain-analysis(?:\/.*)?$/.test(pathname)
 }
 
 function toAlertLabel(caseId: string) {
@@ -611,6 +627,21 @@ export function resolveWorkbenchRoute(pathname: string): ResolvedWorkbenchRoute 
     }
   }
 
+  if (parsePainAnalysisPath(normalized)) {
+    const route = ROUTE_BY_HREF.get("/coverage-pain-analysis") ?? null
+    return {
+      pathname: normalized,
+      canonicalPath: "/coverage-pain-analysis",
+      module: "Operations",
+      title: route?.title ?? "Pyramid of Pain",
+      subtitle: route?.subtitle ?? "High-level analytical view of detections by Pyramid of Pain level.",
+      breadcrumbs: buildRouteBreadcrumbs(route ?? WORKBENCH_ROUTES[0]),
+      route,
+      caseRoute: null,
+      caseId: null,
+    }
+  }
+
   if (parseReportingPath(normalized)) {
     const route = ROUTE_BY_HREF.get("/reports") ?? null
     return {
@@ -690,6 +721,10 @@ export function isWorkbenchNavActive(pathname: string, href: string) {
   }
 
   if (href === "/reports" && resolved.canonicalPath.startsWith("/reports")) {
+    return true
+  }
+
+  if (href === "/coverage-pain-analysis" && resolved.canonicalPath.startsWith("/coverage-pain-analysis")) {
     return true
   }
 

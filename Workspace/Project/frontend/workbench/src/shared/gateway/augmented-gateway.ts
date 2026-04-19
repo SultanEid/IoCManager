@@ -69,6 +69,14 @@ export class AugmentedGateway implements Gateway {
     return this.source.listAlertRegistry(query, signal)
   }
 
+  getAlertDetail(alertId: string, signal?: AbortSignal) {
+    return this.source.getAlertDetail(alertId, signal)
+  }
+
+  updateAlertStatus(alertId: string, status: string, actorUserId: string) {
+    return this.source.updateAlertStatus(alertId, status, actorUserId)
+  }
+
   listAlerts(signal?: AbortSignal) {
     return this.source.listAlerts(signal)
   }

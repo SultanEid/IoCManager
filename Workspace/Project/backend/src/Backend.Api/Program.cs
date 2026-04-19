@@ -49,6 +49,9 @@ app.UseApiPipeline();
 await app.Services.InitializeInfrastructureAsync();
 using (var scope = app.Services.CreateScope())
 {
+    var alertSchemaInitializer = scope.ServiceProvider.GetRequiredService<IAlertRegistrySchemaInitializer>();
+    await alertSchemaInitializer.EnsureSchemaAsync(CancellationToken.None);
+
     var schemaInitializer = scope.ServiceProvider.GetRequiredService<ILegacyScanPipelineSchemaInitializer>();
     await schemaInitializer.EnsureSchemaAsync(CancellationToken.None);
 }

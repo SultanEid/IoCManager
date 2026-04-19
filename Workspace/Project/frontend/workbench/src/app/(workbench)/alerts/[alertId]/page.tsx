@@ -1,24 +1,25 @@
 "use client"
 
+import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { useParams } from "next/navigation"
 import { motion } from "framer-motion"
-import type { ReactNode } from "react"
+import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
+import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { classifyUiError } from "@/shared/api/error-classification"
-import { type AlertResponse, type DecisionResponse, type DeploymentResponse, type EvidenceResponse, type FeedbackResponse, type RuleResponse } from "@/shared/api/schemas"
-import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
+import type { V2AlertDetailResponse } from "@/shared/api/schemas"
+import { gateway, isModeConfigured } from "@/shared/gateway"
+import { getSession } from "@/shared/auth/session"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { panelMotion, staggerMotion } from "@/shared/ui/motion"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
-import {
-  DependencyDownState,
-  EmptyState,
-  LoadingState,
-  SimulatedBadge,
-} from "@/shared/ui/state-panels"
+import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
 
-function latestByUpdatedAt<T extends { updatedAtUtc: string }>(rows: T[]) {
-  return rows.slice().sort((left, right) => Date.parse(right.updatedAtUtc) - Date.parse(left.updatedAtUtc))[0] ?? null
+const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
+
+function ownerLabel(ownerUserId: string) {
+  return ownerUserId === "unassigned" ? "Unassigned" : ownerUserId
 }
 
 function SectionHeader({ title, description }: { title: string; description: string }) {
@@ -30,78 +31,106 @@ function SectionHeader({ title, description }: { title: string; description: str
   )
 }
 
-function AlertEvents<T extends { id: string }>({
-  rows,
-  renderRow,
-  emptyLabel,
-}: {
-  rows: T[]
-  renderRow: (row: T) => ReactNode
-  emptyLabel: string
-}) {
-  if (rows.length === 0) {
-    return <EmptyState title="No records" description={emptyLabel} />
-  }
-
-  return <div className="space-y-2">{rows.map((row) => <div key={row.id}>{renderRow(row)}</div>)}</div>
-}
-
-function SectionFailure({ title, error }: { title: string; error: unknown }) {
-  const failure = classifyUiError(error)
-  if (failure.kind === "dependency-down") {
+function ScannerSpecificFields({ detail }: { detail: V2AlertDetailResponse["linkedIocs"][number] }) {
+  if (detail.yaraDetail) {
     return (
-      <DependencyDownState
-        title={`${title} dependency down`}
-        description={failure.isContractMismatch ? "Contract mismatch detected while reading this section." : "Backend dependency failure prevented loading this section."}
-      />
+      <dl className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+        <div>
+          <dt className="wb-kicker">File Path</dt>
+          <dd className="mt-1 break-all text-foreground">{detail.yaraDetail.filePath ?? "Unknown"}</dd>
+        </div>
+        <div>
+          <dt className="wb-kicker">File Hash</dt>
+          <dd className="mt-1 break-all text-foreground">{detail.yaraDetail.fileHash ?? "Unavailable"}</dd>
+        </div>
+      </dl>
     )
   }
 
-  return <ClassifiedFailureState failure={failure} fallbackTitle={`${title} unavailable`} />
+  if (detail.sigmaDetail) {
+    return (
+      <dl className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+        <div>
+          <dt className="wb-kicker">Log Source</dt>
+          <dd className="mt-1 text-foreground">{detail.sigmaDetail.logSource ?? "Unknown"}</dd>
+        </div>
+        <div>
+          <dt className="wb-kicker">Severity</dt>
+          <dd className="mt-1 text-foreground">{detail.sigmaDetail.severity ?? "Unknown"}</dd>
+        </div>
+        <div className="sm:col-span-3">
+          <dt className="wb-kicker">Command Line</dt>
+          <dd className="mt-1 break-all text-foreground">{detail.sigmaDetail.commandLine ?? "Unavailable"}</dd>
+        </div>
+      </dl>
+    )
+  }
+
+  if (detail.networkDetail) {
+    return (
+      <dl className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+        <div>
+          <dt className="wb-kicker">Source</dt>
+          <dd className="mt-1 text-foreground">{detail.networkDetail.sourceIp ?? "Unknown"}</dd>
+        </div>
+        <div>
+          <dt className="wb-kicker">Destination</dt>
+          <dd className="mt-1 text-foreground">{detail.networkDetail.destIp ?? "Unknown"}</dd>
+        </div>
+        <div>
+          <dt className="wb-kicker">Protocol</dt>
+          <dd className="mt-1 text-foreground">{detail.networkDetail.protocol ?? "Unknown"}</dd>
+        </div>
+      </dl>
+    )
+  }
+
+  return null
 }
 
 export default function AlertDetailPage() {
   const params = useParams<{ alertId: string }>()
   const alertId = params.alertId
+  const [statusUpdate, setStatusUpdate] = useState<string | null>(null)
+  const [detailOverride, setDetailOverride] = useState<V2AlertDetailResponse | null>(null)
 
   if (!isModeConfigured) {
     const failure = classifyUiError(null, { modeMisconfigured: true })
     return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
   }
 
-  const alertQuery = useWorkbenchQuery(["alert", alertId], (signal) => gateway.getAlert(alertId, signal))
-  const evidenceQuery = useWorkbenchQuery(["alert", alertId, "evidence"], (signal) => gateway.listEvidence(alertId, signal))
-  const decisionsQuery = useWorkbenchQuery(["alert", alertId, "decisions"], (signal) => gateway.listDecisions(alertId, signal))
-  const deploymentsQuery = useWorkbenchQuery(["alert", alertId, "deployments"], (signal) => gateway.listDeployments(alertId, signal))
-  const rulesQuery = useWorkbenchQuery(["alert", alertId, "rules"], (signal) => gateway.listRules(alertId, signal))
-  const feedbackQuery = useWorkbenchQuery(["alert", alertId, "feedback"], (signal) => gateway.listFeedback(alertId, signal))
-  const workflowQuery = useWorkbenchQuery(["alert", alertId, "workflow"], (signal) => gateway.getAlertRuleWorkflow(alertId, signal))
+  const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal))
+
+  useEffect(() => {
+    setDetailOverride(null)
+  }, [alertId, alertQuery.data?.updatedAtUtc])
+
+  const detail = detailOverride ?? alertQuery.data ?? null
+  const session = useMemo(() => getSession(), [])
+
+  const updateStatus = async (nextStatus: string) => {
+    if (!detail || statusUpdate) {
+      return
+    }
+
+    const actorUserId = session?.username ?? session?.userId ?? "workbench"
+    try {
+      setStatusUpdate(nextStatus)
+      const updated = await gateway.updateAlertStatus(alertId, nextStatus, actorUserId)
+      setDetailOverride(updated)
+    } finally {
+      setStatusUpdate(null)
+    }
+  }
 
   if (alertQuery.isLoading) {
     return <LoadingState label="Loading alert detail" />
   }
 
-  if (alertQuery.isError || !alertQuery.data) {
+  if (alertQuery.isError || !detail) {
     const failure = classifyUiError(alertQuery.error)
     return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
   }
-
-  const alertItem: AlertResponse = alertQuery.data
-  const latestDecision: DecisionResponse | null = latestByUpdatedAt(decisionsQuery.data ?? [])
-  const latestDeployment: DeploymentResponse | null = latestByUpdatedAt(deploymentsQuery.data ?? [])
-  const evidenceRows: EvidenceResponse[] = evidenceQuery.data ?? []
-  const rulesRows: RuleResponse[] = rulesQuery.data ?? []
-  const feedbackRows: FeedbackResponse[] = feedbackQuery.data ?? []
-  const latestDecisionLabel = decisionsQuery.isLoading
-    ? "Loading..."
-    : decisionsQuery.isError
-      ? "Unavailable"
-      : (latestDecision?.state ?? "No decision")
-  const latestDeploymentLabel = deploymentsQuery.isLoading
-    ? "Loading..."
-    : deploymentsQuery.isError
-      ? "Unavailable"
-      : (latestDeployment?.status ?? "No deployment")
 
   return (
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
@@ -109,180 +138,158 @@ export default function AlertDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="wb-kicker">Alert Detail</p>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight">{alertItem.title}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{alertItem.summary}</p>
+            <h1 className="mt-1 text-xl font-semibold tracking-tight">{detail.title}</h1>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{detail.summary}</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <StatusBadge value={alertItem.priority} />
-            <StatusBadge value={alertItem.status} />
-            <StatusBadge value={alertItem.approvalTierRequired} />
-            {isMockMode ? <SimulatedBadge /> : null}
+            <StatusBadge value={detail.severity} />
+            <StatusBadge value={detail.status} />
+            <ScannerFamilyBadge family={detail.scannerFamily} />
           </div>
         </div>
 
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <p className="wb-kicker">Owner</p>
-            <p className="mt-1 text-sm font-semibold">{alertItem.ownerUserId}</p>
+            <p className="mt-1 text-sm font-semibold">{ownerLabel(detail.ownerUserId)}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
-            <p className="wb-kicker">Latest Decision</p>
-            <p className="mt-1 text-sm font-semibold">{latestDecisionLabel}</p>
+            <p className="wb-kicker">Target</p>
+            <p className="mt-1 text-sm font-semibold">{detail.targetDisplay}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
-            <p className="wb-kicker">Latest Deployment</p>
-            <p className="mt-1 text-sm font-semibold">{latestDeploymentLabel}</p>
+            <p className="wb-kicker">Linked IOCs</p>
+            <p className="mt-1 text-sm font-semibold">{detail.linkedIocCount}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
-            <p className="wb-kicker">Updated</p>
-            <p className="mt-1 text-sm font-semibold">{new Date(alertItem.updatedAtUtc).toLocaleString()}</p>
+            <p className="wb-kicker">Last Seen</p>
+            <p className="mt-1 text-sm font-semibold">{new Date(detail.lastDetectedAtUtc).toLocaleString()}</p>
           </div>
         </div>
       </motion.header>
 
-      <motion.article className="wb-panel" variants={panelMotion}>
+      <motion.article className="wb-panel space-y-4" variants={panelMotion}>
         <SectionHeader
-          title="Decisions"
-          description="Decision records rendered directly from backend decision contracts."
+          title="Status Controls"
+          description="Update the stored alert state without leaving the IOC evidence view."
         />
-        {decisionsQuery.isLoading ? <LoadingState label="Loading decisions" /> : null}
-        {decisionsQuery.isError ? <SectionFailure title="Decisions" error={decisionsQuery.error} /> : null}
-        {!decisionsQuery.isLoading && !decisionsQuery.isError ? (
-          <AlertEvents
-            rows={decisionsQuery.data ?? []}
-            emptyLabel="No decision records have been created for this alert."
-            renderRow={(decision) => (
-              <div className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{decision.recommendedAction}</p>
-                  <StatusBadge value={decision.state} />
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Approval: {decision.approvalTierRequired} · Updated {new Date(decision.updatedAtUtc).toLocaleString()}
-                </p>
-              </div>
-            )}
-          />
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {STATUS_OPTIONS.map((option) => (
+            <Button
+              key={option}
+              type="button"
+              size="sm"
+              variant={detail.status === option ? "default" : "outline"}
+              disabled={statusUpdate !== null}
+              onClick={() => void updateStatus(option)}
+            >
+              {statusUpdate === option ? "Updating..." : option}
+            </Button>
+          ))}
+        </div>
       </motion.article>
 
       <motion.article className="wb-panel grid gap-3 xl:grid-cols-2" variants={panelMotion}>
         <section>
           <SectionHeader
-            title="Deployments"
-            description="Distribution records are rendered directly from deployment contracts."
+            title="Related Target"
+            description="Legacy inventory context for the target associated with this alert."
           />
-          {deploymentsQuery.isLoading ? <LoadingState label="Loading deployments" /> : null}
-          {deploymentsQuery.isError ? <SectionFailure title="Deployments" error={deploymentsQuery.error} /> : null}
-          {!deploymentsQuery.isLoading && !deploymentsQuery.isError ? (
-            <AlertEvents
-              rows={deploymentsQuery.data ?? []}
-              emptyLabel="No deployment records exist for this alert."
-              renderRow={(deployment) => (
-                <div className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium">{deployment.targetEnvironment}</p>
-                    <StatusBadge value={deployment.status} />
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Rule {deployment.ruleId.slice(0, 8)} · Updated {new Date(deployment.updatedAtUtc).toLocaleString()}
-                  </p>
+          {detail.target ? (
+            <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+              <p className="text-sm font-medium">{detail.target.display}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {detail.target.ipAddress ?? "Unknown IP"} | {detail.target.targetOsType ?? "Unknown OS"} | {detail.target.status ?? "Unknown status"}
+              </p>
+              {detail.target.id ? (
+                <div className="mt-3">
+                  <Link href={`/servers?targetId=${detail.target.id}`} className="inline-flex">
+                    <Button type="button" size="sm">Open target</Button>
+                  </Link>
                 </div>
-              )}
-            />
-          ) : null}
+              ) : null}
+            </div>
+          ) : (
+            <EmptyState title="No related target" description="This alert is not linked to a target inventory row." />
+          )}
         </section>
 
         <section>
           <SectionHeader
-            title="Rule Workflow"
-            description="Workflow counters are direct from the rule workflow contract."
+            title="Related Scan Results"
+            description="Legacy scan runs derived from the linked IOC evidence for this alert."
           />
-          {workflowQuery.isLoading ? <LoadingState label="Loading workflow" /> : null}
-          {workflowQuery.isError ? <SectionFailure title="Rule workflow" error={workflowQuery.error} /> : null}
-          {!workflowQuery.isLoading && !workflowQuery.isError ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                <p className="wb-kicker">Proposals</p>
-                <p className="mt-1 text-lg font-semibold">{workflowQuery.data?.proposals.length ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                <p className="wb-kicker">Recommendations</p>
-                <p className="mt-1 text-lg font-semibold">{workflowQuery.data?.recommendations.length ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                <p className="wb-kicker">Rollouts</p>
-                <p className="mt-1 text-lg font-semibold">{workflowQuery.data?.rolloutPlans.length ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                <p className="wb-kicker">Rollbacks</p>
-                <p className="mt-1 text-lg font-semibold">{workflowQuery.data?.rollbackPlans.length ?? 0}</p>
-              </div>
+          {detail.linkedScanResults.length === 0 ? (
+            <EmptyState title="No linked scan results" description="This alert has not retained any related scan-result references yet." />
+          ) : (
+            <div className="space-y-2">
+              {detail.linkedScanResults.map((result) => (
+                <div key={result.resultId} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium">Result {result.resultId}</p>
+                    <StatusBadge value={result.status} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Job {result.jobId ?? "Unknown"} | {result.findingsCount} finding(s)
+                  </p>
+                </div>
+              ))}
             </div>
-          ) : null}
+          )}
         </section>
       </motion.article>
 
-      <motion.article className="wb-panel grid gap-3 xl:grid-cols-3" variants={panelMotion}>
-        <section>
-          <SectionHeader title="Evidence" description="Evidence list is rendered from backend evidence records." />
-          {evidenceQuery.isLoading ? <LoadingState label="Loading evidence" /> : null}
-          {evidenceQuery.isError ? <SectionFailure title="Evidence" error={evidenceQuery.error} /> : null}
-          {!evidenceQuery.isLoading && !evidenceQuery.isError ? (
-            <AlertEvents
-              rows={evidenceRows}
-              emptyLabel="No evidence records are attached to this alert."
-              renderRow={(item) => (
-                <div className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
-                  <p className="text-sm font-medium">{item.evidenceType}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.sourceSystem} · {Math.round(item.confidence * 100)}% confidence
-                  </p>
+      <motion.article className="wb-panel" variants={panelMotion}>
+        <SectionHeader
+          title="Linked IOC Findings"
+          description="Exact promoted findings that keep this alert open, including raw payload and scanner-specific context."
+        />
+        {detail.linkedIocs.length === 0 ? (
+          <EmptyState title="No linked IOCs" description="This alert does not currently have stored IOC evidence." />
+        ) : (
+          <div className="space-y-3">
+            {detail.linkedIocs.map((ioc) => (
+              <section key={ioc.iocId} className="rounded-xl border border-border/70 bg-surface-2/60 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold tracking-tight">{ioc.ruleName}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                      <ScannerFamilyBadge family={ioc.scannerFamily} size="sm" />
+                      <span>{ioc.indicatorKind}</span>
+                      <span>{new Date(ioc.timestampUtc).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <StatusBadge value={ioc.severity} />
+                  </div>
                 </div>
-              )}
-            />
-          ) : null}
-        </section>
 
-        <section>
-          <SectionHeader title="Rules" description="Rule records are rendered directly from backend rules." />
-          {rulesQuery.isLoading ? <LoadingState label="Loading rules" /> : null}
-          {rulesQuery.isError ? <SectionFailure title="Rules" error={rulesQuery.error} /> : null}
-          {!rulesQuery.isLoading && !rulesQuery.isError ? (
-            <AlertEvents
-              rows={rulesRows}
-              emptyLabel="No rules are currently linked to this alert."
-              renderRow={(item) => (
-                <div className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
-                  <p className="text-sm font-medium">{item.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.version} · {item.status}
-                  </p>
-                </div>
-              )}
-            />
-          ) : null}
-        </section>
+                <dl className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                  <div>
+                    <dt className="wb-kicker">Indicator</dt>
+                    <dd className="mt-1 break-all text-foreground">{ioc.indicatorValue}</dd>
+                  </div>
+                  <div>
+                    <dt className="wb-kicker">IOC Id</dt>
+                    <dd className="mt-1 break-all text-foreground">{ioc.iocId}</dd>
+                  </div>
+                </dl>
 
-        <section>
-          <SectionHeader title="Feedback" description="Analyst feedback records are rendered from backend feedback data." />
-          {feedbackQuery.isLoading ? <LoadingState label="Loading feedback" /> : null}
-          {feedbackQuery.isError ? <SectionFailure title="Feedback" error={feedbackQuery.error} /> : null}
-          {!feedbackQuery.isLoading && !feedbackQuery.isError ? (
-            <AlertEvents
-              rows={feedbackRows}
-              emptyLabel="No feedback entries are available for this alert."
-              renderRow={(item) => (
-                <div className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
-                  <p className="text-sm font-medium">{item.verdict}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.submittedByUserId} · {new Date(item.submittedAtUtc).toLocaleString()}
-                  </p>
+                <div className="mt-4">
+                  <SectionHeader title="Scanner Context" description="Fields normalized from the scanner-specific detail tables." />
+                  <ScannerSpecificFields detail={ioc} />
                 </div>
-              )}
-            />
-          ) : null}
-        </section>
+
+                <div className="mt-4">
+                  <SectionHeader title="Raw Payload" description="Original persisted scanner payload for the finding." />
+                  <pre className="overflow-x-auto rounded-lg border border-border/70 bg-surface-1/80 p-3 text-xs text-muted-foreground">
+                    {ioc.rawPayload ?? "No raw payload available."}
+                  </pre>
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
       </motion.article>
     </motion.section>
   )

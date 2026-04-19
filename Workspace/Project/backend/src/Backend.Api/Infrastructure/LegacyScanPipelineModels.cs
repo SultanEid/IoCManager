@@ -8,10 +8,12 @@ using Backend.Infrastructure.Compatibility.LegacyAzure;
 namespace Backend.Api.Infrastructure;
 
 internal sealed record LegacyPipelineScanPlanConfig(
-    string ScannerFamily,
+    string? ScannerFamily,
     string RuleInputMode,
     string? RulePath,
-    Dictionary<string, string?> Options);
+    Dictionary<string, string?> Options,
+    List<string>? ScannerFamilies = null,
+    Dictionary<string, string?>? RulePathsByFamily = null);
 
 internal sealed record LegacyPipelineTargetScope(
     string SelectionMode,
@@ -79,6 +81,20 @@ internal sealed record LegacyPipelineSnortQuarantineSessionDefinition(
     int DurationMinutes,
     IReadOnlyList<LegacyPipelineTargetEntity> Targets);
 
+internal sealed record LegacyPipelineSuricataQuarantineTargetCapture(
+    int TargetId,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset FinishedAtUtc,
+    string StandardOutput,
+    string? FailureSummary);
+
+internal sealed record LegacyPipelineSuricataQuarantineSessionDefinition(
+    int JobId,
+    string ScriptPath,
+    string RulePath,
+    int DurationMinutes,
+    IReadOnlyList<LegacyPipelineTargetEntity> Targets);
+
 public sealed record LegacyPipelineDownloadResult(string ContentType, string FileName, string FilePath);
 
 internal static class LegacyScanPipelineSerializer
@@ -108,7 +124,9 @@ internal static class LegacyScanPipelineHelpers
 
     public const string TargetOsOverrideOptionPrefix = "__targetOsOverride:";
     public const string SnortModeOptionKey = "snortMode";
+    public const string SuricataModeOptionKey = "suricataMode";
     public const string StagedPcapPathOptionKey = "__stagedPcapPath";
+    public const string FamilyScopedOptionSeparator = ".";
 
     public static readonly string[] ExcludedTargetAddresses =
     [
@@ -197,6 +215,18 @@ internal static class LegacyScanPipelineHelpers
         };
     }
 
+    public static string NormalizeSuricataMode(string? value)
+    {
+        var normalized = (value ?? "hunt").Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "hunt" => "hunt",
+            "quarantine" => "quarantine",
+            "pcap" => "pcap",
+            _ => throw new ArgumentException("Suricata mode must be 'hunt', 'quarantine', or 'pcap'."),
+        };
+    }
+
     public static string NormalizeReportType(string value)
     {
         var normalized = value.Trim();
@@ -207,8 +237,24 @@ internal static class LegacyScanPipelineHelpers
         };
     }
 
+    public static string GetReportTypeDisplayName(string value)
+        => NormalizeReportType(value) switch
+        {
+            "ExecutiveSummary" => "Executive Summary",
+            "DetailedIocReport" => "Detailed IOC Report",
+            "TargetExposureSummary" => "Target Exposure Summary",
+            "ScanActivitySummary" => "Scan Activity Summary",
+            _ => value,
+        };
+
     public static string? CleanOrNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    public static string BuildFamilyScopedOptionKey(string scannerFamily, string optionKey)
+        => $"{NormalizeScannerFamily(scannerFamily)}{FamilyScopedOptionSeparator}{optionKey}";
+
+    public static string? GetFamilyScopedOption(IReadOnlyDictionary<string, string?> options, string scannerFamily, string optionKey)
+        => GetOption(options, BuildFamilyScopedOptionKey(scannerFamily, optionKey));
 
     public static int ParseRequiredIntId(string value, string name)
     {
@@ -464,6 +510,7 @@ internal static class LegacyScanPipelineHelpers
         return NormalizeScannerFamily(scannerFamily) switch
         {
             "snort" => NormalizeSnortMode(GetOption(options, SnortModeOptionKey)),
+            "suricata" => NormalizeSuricataMode(GetOption(options, SuricataModeOptionKey)),
             _ => null,
         };
     }
@@ -673,6 +720,9 @@ internal static class LegacyScanPipelineHelpers
 
         return normalized.Any(line => SnortRuleLineRegex.IsMatch(line));
     }
+
+    public static bool HasValidSuricataRule(string content)
+        => HasValidSnortRule(content);
 
     public static bool IsAllowedPcapPath(string? path)
     {

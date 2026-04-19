@@ -614,6 +614,7 @@ $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
 $remoteRulesRoot    = "C:\Temp\detechtive_rules_$ts"
 $remoteRulesRootScp = "C:/Temp/detechtive_rules_$ts"
 $remoteRulesPath    = "$remoteRulesRoot\$RulesLeaf"
+$effectiveRemoteRulesPath = $remoteRulesPath
 
 if ($EffectiveOs -eq 'windows') {
     $CreateTempPS = @"
@@ -635,11 +636,33 @@ if ($EffectiveOs -eq 'windows') {
 
 if ($EffectiveOs -eq 'windows') {
     $VerifyRulesPS = @"
-if (!(Test-Path '$remoteRulesPath')) { throw 'Uploaded rule path not found on target.' }
-Write-Output 'OK'
+`$expected = '$remoteRulesPath'
+`$root = '$remoteRulesRoot'
+`$allowRootFallback = `$$($RulesIsDirectory.ToString().ToLowerInvariant())
+
+if (Test-Path `$expected) {
+    Write-Output ('PATH:' + `$expected)
+    exit 0
+}
+
+if (`$allowRootFallback -and (Test-Path `$root)) {
+    `$entries = @(Get-ChildItem -LiteralPath `$root -Force -ErrorAction SilentlyContinue)
+    if (`$entries.Count -gt 0) {
+        Write-Output ('PATH:' + `$root)
+        exit 0
+    }
+}
+
+throw 'Uploaded rule path not found on target.'
 "@
 
-    Invoke-RemotePS -ScriptText $VerifyRulesPS -FailureMessage "Uploaded rules could not be verified on target." | Out-Null
+    $verifyRulesOutput = Invoke-RemotePS -ScriptText $VerifyRulesPS -FailureMessage "Uploaded rules could not be verified on target."
+    $resolvedPathLine = $verifyRulesOutput | Where-Object { $_ -like 'PATH:*' } | Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($resolvedPathLine)) {
+        throw "Uploaded rules could not be verified on target."
+    }
+
+    $effectiveRemoteRulesPath = $resolvedPathLine.Substring(5)
 }
 
 # =========================
@@ -657,7 +680,7 @@ $psScan = @"
 `$chainsaw  = Join-Path `$base 'chainsaw\chainsaw.exe'
 `$map       = Join-Path `$base 'chainsaw\mappings\sigma-event-logs-all.yml'
 `$out       = Join-Path `$base 'out'
-`$rules     = '$remoteRulesPath'
+`$rules     = '$effectiveRemoteRulesPath'
 `$targetLog = '$EvtxPath'
 
 if (!(Test-Path `$chainsaw)) { throw "chainsaw.exe missing at `$chainsaw" }
@@ -817,7 +840,7 @@ if ($DetectionCount -gt 0) {
     }
 
     $CommandLine = if ($EffectiveOs -eq 'windows') {
-        "chainsaw hunt $EvtxPath -s $remoteRulesPath -m $RemoteSigmaBase\chainsaw\mappings\sigma-event-logs-all.yml"
+        "chainsaw hunt $EvtxPath -s $effectiveRemoteRulesPath -m $RemoteSigmaBase\chainsaw\mappings\sigma-event-logs-all.yml"
     } else {
         "linux-sigma hunt journalctl --since $MinutesBack minutes"
     }

@@ -41,7 +41,7 @@ test("legacy routes redirect to canonical modules", async ({ page }) => {
   await expect(page).toHaveURL(/\/ioc-registry$/)
 
   await page.goto("/coverage-pain-analysis")
-  await expect(page).toHaveURL(/\/ioc-registry$/)
+  await expect(page).toHaveURL(/\/coverage-pain-analysis$/)
 
   await page.goto("/reports-ingestion")
   await expect(page).toHaveURL(/\/ingestion-feeds$/)
