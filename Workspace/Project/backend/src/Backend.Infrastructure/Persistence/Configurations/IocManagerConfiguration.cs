@@ -914,9 +914,31 @@ public sealed class AlertConfiguration : IEntityTypeConfiguration<Alert>
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.OwnerUserId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.ApprovalTierRequired).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ScannerFamily).HasMaxLength(64).HasDefaultValue(string.Empty).IsRequired();
+        builder.Property(x => x.TargetDisplay).HasMaxLength(200).HasDefaultValue(string.Empty).IsRequired();
+        builder.Property(x => x.RuleName).HasMaxLength(255).HasDefaultValue(string.Empty).IsRequired();
         builder.Property(x => x.CreatedByUserId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.UpdatedByUserId).HasMaxLength(128).IsRequired();
         builder.HasIndex(x => new { x.Status, x.Severity });
+        builder.HasIndex(x => new { x.TargetId, x.ScannerFamily, x.RuleName, x.Status });
+        builder.HasIndex(x => new { x.ScannerFamily, x.LastDetectedAtUtc });
+    }
+}
+
+public sealed class AlertIocConfiguration : IEntityTypeConfiguration<AlertIoc>
+{
+    public void Configure(EntityTypeBuilder<AlertIoc> builder)
+    {
+        builder.ToTable("alert_iocs");
+        builder.HasKey(x => x.Id);
+
+        builder.HasOne<Alert>()
+            .WithMany()
+            .HasForeignKey(x => x.AlertId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(x => new { x.AlertId, x.IocId }).IsUnique();
+        builder.HasIndex(x => x.IocId);
     }
 }
 

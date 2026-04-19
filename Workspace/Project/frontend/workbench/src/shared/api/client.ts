@@ -18,6 +18,12 @@ type FormRequestOptions = {
   auth?: boolean
 }
 
+type BlobRequestOptions = {
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
+  signal?: AbortSignal
+  auth?: boolean
+}
+
 type ProblemDetailsFields = {
   title: string | null
   detail: string | null
@@ -228,6 +234,74 @@ export async function requestForm<TSchema>(
   }
 
   return parsed.data
+}
+
+function parseFileNameFromDisposition(value: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(value)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+
+  const simpleMatch = /filename="?([^"]+)"?/i.exec(value)
+  return simpleMatch?.[1] ?? null
+}
+
+export async function requestBlob(
+  path: string,
+  options: BlobRequestOptions = {},
+): Promise<{ blob: Blob; fileName: string | null; contentType: string | null }> {
+  const headers = new Headers()
+
+  if (options.auth !== false) {
+    const session = getSession()
+    if (session?.token) {
+      headers.set("Authorization", `Bearer ${session.token}`)
+    }
+  }
+
+  const response = await fetch(buildUrl(path), {
+    method: options.method ?? "GET",
+    headers,
+    cache: "no-store",
+    credentials: "omit",
+    signal: options.signal,
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearSession()
+    }
+
+    const contentType = response.headers.get("content-type") ?? ""
+    const payload = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text()
+    const problemDetails = parseProblemDetails(payload)
+    const message = deriveErrorMessage(payload, response.status, problemDetails)
+
+    throw new ApiError(message, response.status, payload, {
+      title: problemDetails?.title,
+      detail: problemDetails?.detail,
+      dependency: problemDetails?.dependency,
+      condition: problemDetails?.condition,
+      dependencyType: problemDetails?.dependencyType,
+      retryable: problemDetails?.retryable,
+    })
+  }
+
+  return {
+    blob: await response.blob(),
+    fileName: parseFileNameFromDisposition(response.headers.get("content-disposition")),
+    contentType: response.headers.get("content-type"),
+  }
 }
 
 export function getApiBaseForDisplay() {

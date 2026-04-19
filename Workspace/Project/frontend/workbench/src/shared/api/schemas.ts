@@ -30,6 +30,11 @@ export const v2AlertResponseSchema = z.object({
   status: safeString,
   ownerUserId: safeString,
   approvalTierRequired: safeString,
+  scannerFamily: safeString,
+  targetId: z.string().nullable(),
+  targetDisplay: safeString,
+  ruleName: safeString,
+  linkedIocCount: z.number().int(),
   firstDetectedAtUtc: z.string(),
   lastDetectedAtUtc: z.string(),
   createdAtUtc: z.string(),
@@ -40,6 +45,56 @@ export const alertListResponseSchema = z.object({
   totalCount: z.number().int(),
   page: z.number().int(),
   pageSize: z.number().int(),
+})
+export const v2AlertTargetSummarySchema = z.object({
+  id: z.string().nullable(),
+  display: safeString,
+  hostname: z.string().nullable(),
+  ipAddress: z.string().nullable(),
+  status: z.string().nullable(),
+  targetOsType: z.string().nullable(),
+})
+export const v2AlertLinkedIocYaraDetailSchema = z.object({
+  filePath: z.string().nullable(),
+  fileHash: z.string().nullable(),
+})
+export const v2AlertLinkedIocSigmaDetailSchema = z.object({
+  logSource: z.string().nullable(),
+  severity: z.string().nullable(),
+  commandLine: z.string().nullable(),
+})
+export const v2AlertLinkedIocNetworkDetailSchema = z.object({
+  sourceIp: z.string().nullable(),
+  destIp: z.string().nullable(),
+  protocol: z.string().nullable(),
+  severity: z.string().nullable(),
+  flowId: z.number().int().nullable(),
+})
+export const v2AlertLinkedIocSchema = z.object({
+  iocId: z.string().uuid(),
+  scannerFamily: safeString,
+  ruleName: safeString,
+  indicatorValue: safeString,
+  indicatorKind: safeString,
+  severity: safeString,
+  timestampUtc: z.string(),
+  rawPayload: z.string().nullable(),
+  yaraDetail: v2AlertLinkedIocYaraDetailSchema.nullable(),
+  sigmaDetail: v2AlertLinkedIocSigmaDetailSchema.nullable(),
+  networkDetail: v2AlertLinkedIocNetworkDetailSchema.nullable(),
+})
+export const v2AlertLinkedScanResultSchema = z.object({
+  resultId: z.string(),
+  jobId: z.string().nullable(),
+  status: safeString,
+  findingsCount: z.number().int(),
+  startedAtUtc: z.string().nullable(),
+  finishedAtUtc: z.string().nullable(),
+})
+export const v2AlertDetailResponseSchema = v2AlertResponseSchema.extend({
+  target: v2AlertTargetSummarySchema.nullable(),
+  linkedIocs: z.array(v2AlertLinkedIocSchema),
+  linkedScanResults: z.array(v2AlertLinkedScanResultSchema),
 })
 
 export const evidenceResponseSchema = z.object({
@@ -879,6 +934,13 @@ export type TokenResponse = z.infer<typeof tokenResponseSchema>
 export type AlertResponse = z.infer<typeof alertResponseSchema>
 export type V2AlertResponse = z.infer<typeof v2AlertResponseSchema>
 export type AlertListResponse = z.infer<typeof alertListResponseSchema>
+export type V2AlertTargetSummary = z.infer<typeof v2AlertTargetSummarySchema>
+export type V2AlertLinkedIocYaraDetail = z.infer<typeof v2AlertLinkedIocYaraDetailSchema>
+export type V2AlertLinkedIocSigmaDetail = z.infer<typeof v2AlertLinkedIocSigmaDetailSchema>
+export type V2AlertLinkedIocNetworkDetail = z.infer<typeof v2AlertLinkedIocNetworkDetailSchema>
+export type V2AlertLinkedIoc = z.infer<typeof v2AlertLinkedIocSchema>
+export type V2AlertLinkedScanResult = z.infer<typeof v2AlertLinkedScanResultSchema>
+export type V2AlertDetailResponse = z.infer<typeof v2AlertDetailResponseSchema>
 export type CaseResponse = AlertResponse
 export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>
 export type DecisionResponse = z.infer<typeof decisionResponseSchema>

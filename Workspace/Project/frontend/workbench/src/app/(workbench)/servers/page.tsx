@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
@@ -28,6 +29,9 @@ function formatOsLabel(value: string | null | undefined) {
 }
 
 export default function ServersPage() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { session } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? "team-dev"
 
@@ -71,6 +75,24 @@ export default function ServersPage() {
     ["legacy-pipeline", "targets", selectedNetworkId, refreshKey],
     (signal) => listLegacyTargets(selectedNetworkId || undefined, signal),
   )
+  const networks = networksQuery.data ?? []
+  const targets = targetsQuery.data ?? []
+  const focusedTargetId = searchParams.get("targetId") ?? ""
+  const focusedTarget = useMemo(
+    () => (focusedTargetId ? targets.find((target) => target.id === focusedTargetId) ?? null : null),
+    [focusedTargetId, targets],
+  )
+
+  useEffect(() => {
+    if (!focusedTargetId || targets.length === 0) {
+      return
+    }
+
+    const matchingTarget = targets.find((target) => target.id === focusedTargetId)
+    if (matchingTarget && matchingTarget.networkId !== selectedNetworkId) {
+      setSelectedNetworkId(matchingTarget.networkId)
+    }
+  }, [focusedTargetId, selectedNetworkId, targets])
 
   const submitNetwork = async () => {
     setSubmitting(true)
@@ -273,8 +295,9 @@ export default function ServersPage() {
     return <ClassifiedFailureState failure={classifyUiError(targetsQuery.error)} fallbackTitle="Servers unavailable" />
   }
 
-  const networks = networksQuery.data ?? []
-  const targets = targetsQuery.data ?? []
+  const clearFocusedTarget = () => {
+    router.replace(pathname)
+  }
 
   return (
     <section className="wb-page">
@@ -452,6 +475,19 @@ export default function ServersPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           {selectedNetworkId ? "Showing targets for the selected subnet." : "Showing targets across all subnets."}
         </p>
+        {focusedTarget ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+            <div>
+              <p className="font-medium">Focused target</p>
+              <p className="text-xs text-sky-100/85">
+                {focusedTarget.displayName ?? focusedTarget.hostname ?? focusedTarget.ipAddress} - {focusedTarget.ipAddress}
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="outline" onClick={clearFocusedTarget}>
+              Clear focus
+            </Button>
+          </div>
+        ) : null}
         {targets.length === 0 ? (
           <div className="mt-4">
             <EmptyState title="No targets yet" description="Run discovery on a subnet to populate the target inventory." />
@@ -471,7 +507,10 @@ export default function ServersPage() {
               </thead>
               <tbody>
                 {targets.map((target) => (
-                  <tr key={target.id} className="border-t border-border/50">
+                  <tr
+                    key={target.id}
+                    className={`border-t border-border/50 ${target.id === focusedTargetId ? "bg-sky-500/10 ring-1 ring-inset ring-sky-300/20" : ""}`}
+                  >
                     <td className="py-3">
                       {editingTargetId === target.id ? (
                         <div className="flex items-center gap-2">

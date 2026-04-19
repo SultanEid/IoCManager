@@ -5,6 +5,7 @@ using System.Text.Json;
 using Backend.Contracts.V2;
 using Backend.Infrastructure.Compatibility.LegacyAzure;
 using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.Persistence;
 using Backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -25,7 +26,9 @@ public interface ILegacyScanPipelineService
     Task<IReadOnlyList<LegacyPipelineScanPlanResponse>> ListPlansAsync(CancellationToken cancellationToken);
     Task<LegacyPipelineScanPlanResponse> CreatePlanAsync(LegacyPipelineScanPlanRequest request, CancellationToken cancellationToken);
     Task<LegacyPipelineScanPlanResponse?> UpdatePlanAsync(string planId, LegacyPipelineScanPlanRequest request, CancellationToken cancellationToken);
-    Task<LegacyPipelineScanJobResponse?> RunPlanAsync(string planId, LegacyPipelineScanPlanRunRequest request, CancellationToken cancellationToken);
+    Task<LegacyPipelineScanPlanResponse?> ClonePlanAsync(string planId, CancellationToken cancellationToken);
+    Task<LegacyPipelineScanPlanDeletionResponse?> DeletePlanAsync(string planId, CancellationToken cancellationToken);
+    Task<LegacyPipelineScanPlanRunResponse?> RunPlanAsync(string planId, LegacyPipelineScanPlanRunRequest request, CancellationToken cancellationToken);
     Task<LegacyPipelineCustomScanResponse> CreateCustomScanAsync(LegacyPipelineCustomScanRequest request, IReadOnlyList<IFormFile> files, IFormFile? pcapFile, CancellationToken cancellationToken);
     Task<IReadOnlyList<LegacyPipelineScanJobResponse>> ListJobsAsync(CancellationToken cancellationToken);
     Task<LegacyPipelineScanJobResponse?> StopJobAsync(string jobId, CancellationToken cancellationToken);
@@ -37,9 +40,31 @@ public interface ILegacyScanPipelineService
         string? status,
         bool includeOrphaned,
         CancellationToken cancellationToken);
+    Task<LegacyPipelineIocFindingListResponse> ListIocFindingsAsync(
+        string? scannerFamily,
+        string? targetId,
+        string? severity,
+        string? fromUtc,
+        string? toUtc,
+        string? q,
+        string? painLevel,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken);
+    Task<LegacyPipelineIocFindingDetailResponse?> GetIocFindingDetailAsync(string iocId, CancellationToken cancellationToken);
+    Task<LegacyPipelinePainAnalysisResponse> GetPainAnalysisAsync(
+        string? scannerFamily,
+        string? targetId,
+        string? severity,
+        string? fromUtc,
+        string? toUtc,
+        CancellationToken cancellationToken);
+    Task<LegacyPipelineOverviewSummaryResponse> GetOverviewSummaryAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<LegacyPipelineReportRecordResponse>> ListReportsAsync(CancellationToken cancellationToken);
+    Task<LegacyPipelineReportDetailResponse?> GetReportDetailAsync(string reportId, CancellationToken cancellationToken);
     Task<LegacyPipelineGeneratedReportResponse> GenerateReportAsync(LegacyPipelineGenerateReportRequest request, CancellationToken cancellationToken);
-    Task<LegacyPipelineDownloadResult?> ResolveReportDownloadAsync(string reportId, CancellationToken cancellationToken);
+    Task<LegacyPipelineDownloadResult?> ResolveReportDownloadAsync(string reportId, string? format, CancellationToken cancellationToken);
+    Task<LegacyPipelineReportDeletionResponse?> DeleteReportAsync(string reportId, CancellationToken cancellationToken);
     Task<int> EnqueueDuePlansAsync(CancellationToken cancellationToken);
     Task<int> ProcessQueuedJobsAsync(CancellationToken cancellationToken);
 }
@@ -51,6 +76,18 @@ internal sealed record LegacyPipelineResolvedResultRow(
     bool IsOrphaned,
     bool IsResolved,
     string TargetDisplay);
+
+internal sealed record LegacyPipelineResolvedIocFindingRow(
+    LegacyPipelineIocEntity Ioc,
+    LegacyPipelineTargetEntity? ResolvedTarget,
+    int? EffectiveTargetId,
+    LegacyPipelineScanResultEntity? ScanResult,
+    LegacyPipelineScanJobEntity? ScanJob,
+    string TargetDisplay,
+    string IndicatorValue,
+    string IndicatorKind,
+    string PainLevel,
+    string Severity);
 
 internal sealed class LegacyPipelineNetworkDeletionBlockedException : InvalidOperationException
 {
@@ -65,33 +102,39 @@ internal sealed class LegacyPipelineNetworkDeletionBlockedException : InvalidOpe
 
 public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineService
 {
+    private readonly CtiDbContext _ctiDbContext;
     private readonly LegacyScanPipelineDbContext _dbContext;
     private readonly DiscoveryTargetRangeParser _targetRangeParser;
     private readonly IDiscoveryObservationProvider _discoveryObservationProvider;
     private readonly SqlUserTableDirectoryService _directoryService;
     private readonly LegacyNetworkSshPasswordProtector _sshPasswordProtector;
     private readonly LegacySnortQuarantineSessionManager _snortQuarantineSessionManager;
+    private readonly LegacySuricataQuarantineSessionManager _suricataQuarantineSessionManager;
     private readonly IOptionsMonitor<ScanExecutionOptions> _scanExecutionOptions;
     private readonly IOptionsMonitor<LegacyScanPipelineOptions> _pipelineOptions;
     private readonly ILogger<LegacyScanPipelineService> _logger;
 
     public LegacyScanPipelineService(
+        CtiDbContext ctiDbContext,
         LegacyScanPipelineDbContext dbContext,
         DiscoveryTargetRangeParser targetRangeParser,
         IDiscoveryObservationProvider discoveryObservationProvider,
         SqlUserTableDirectoryService directoryService,
         LegacyNetworkSshPasswordProtector sshPasswordProtector,
         LegacySnortQuarantineSessionManager snortQuarantineSessionManager,
+        LegacySuricataQuarantineSessionManager suricataQuarantineSessionManager,
         IOptionsMonitor<ScanExecutionOptions> scanExecutionOptions,
         IOptionsMonitor<LegacyScanPipelineOptions> pipelineOptions,
         ILogger<LegacyScanPipelineService> logger)
     {
+        _ctiDbContext = ctiDbContext;
         _dbContext = dbContext;
         _targetRangeParser = targetRangeParser;
         _discoveryObservationProvider = discoveryObservationProvider;
         _directoryService = directoryService;
         _sshPasswordProtector = sshPasswordProtector;
         _snortQuarantineSessionManager = snortQuarantineSessionManager;
+        _suricataQuarantineSessionManager = suricataQuarantineSessionManager;
         _scanExecutionOptions = scanExecutionOptions;
         _pipelineOptions = pipelineOptions;
         _logger = logger;
@@ -476,20 +519,14 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             range.ExcludedTargets.Select(ip => ip.ToString()).Concat(LegacyScanPipelineHelpers.ExcludedTargetAddresses),
             StringComparer.OrdinalIgnoreCase);
 
-        var excludedTargets = await _dbContext.Targets
-            .Where(target => target.NetworkId == parsedNetworkId && excludedAddresses.Contains(target.IPAddress))
-            .ToArrayAsync(cancellationToken);
-        if (excludedTargets.Length > 0)
-        {
-            _dbContext.Targets.RemoveRange(excludedTargets);
-        }
-
         var existingTargets = await _dbContext.Targets
             .Where(target => target.NetworkId == parsedNetworkId && !excludedAddresses.Contains(target.IPAddress))
             .ToDictionaryAsync(target => target.IPAddress, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
         var reachableObservations = observations
-            .Where(observation => observation.Reachability == Backend.Domain.IocManager.DiscoveredHostReachability.Reachable)
+            .Where(observation =>
+                observation.Reachability == Backend.Domain.IocManager.DiscoveredHostReachability.Reachable
+                && !excludedAddresses.Contains(observation.IpAddress))
             .ToArray();
 
         var seenAddresses = new HashSet<string>(reachableObservations.Select(item => item.IpAddress), StringComparer.OrdinalIgnoreCase);
@@ -561,15 +598,9 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
     public async Task<LegacyPipelineScanPlanResponse> CreatePlanAsync(LegacyPipelineScanPlanRequest request, CancellationToken cancellationToken)
     {
         var actorUserId = await ResolveActorUserIdAsync(request.ActorUserId, cancellationToken);
-        var normalizedFamily = LegacyScanPipelineHelpers.NormalizeScannerFamily(request.ScannerFamily);
-        var rulePath = LegacyScanPipelineHelpers.ResolveRulePath(normalizedFamily, request.RulePath, request.RulePathPreset);
         var targetScope = await BuildTargetScopeAsync(request.NetworkIds, request.TargetIds, cancellationToken);
         var resolvedTargets = await ResolveTargetsForScopeAsync(targetScope.NetworkIds, targetScope.TargetIds, cancellationToken);
         ValidateTargetCount(resolvedTargets.Count);
-        if (string.Equals(normalizedFamily, "yara", StringComparison.OrdinalIgnoreCase))
-        {
-            ValidateYaraPlanTargets(resolvedTargets);
-        }
         var nowUtc = DateTimeOffset.UtcNow;
         var status = LegacyScanPipelineHelpers.NormalizePlanStatus(request.Status);
         var scheduleType = LegacyScanPipelineHelpers.NormalizeScheduleType(request.ScheduleType);
@@ -580,11 +611,19 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         {
             options["notes"] = request.Notes.Trim();
         }
+        var validatedPlan = await ValidateAndNormalizePlanDefinitionAsync(
+            request.ScannerFamilies,
+            request.RulePathsByFamily,
+            options,
+            resolvedTargets,
+            cancellationToken);
 
         var entity = new LegacyPipelineScanPlanEntity
         {
             Name = request.Name.Trim(),
-            ScannerConfigJson = JsonSerializer.Serialize(new LegacyPipelineScanPlanConfig(normalizedFamily, "hostPath", rulePath, options), LegacyScanPipelineSerializer.JsonOptions),
+            ScannerConfigJson = JsonSerializer.Serialize(
+                BuildStoredPlanConfig(validatedPlan.ScannerFamilies, validatedPlan.RulePathsByFamily, validatedPlan.Options),
+                LegacyScanPipelineSerializer.JsonOptions),
             CreatedAt = nowUtc.UtcDateTime,
             CreatedByUserId = actorUserId,
             TargetScopeJson = JsonSerializer.Serialize(targetScope, LegacyScanPipelineSerializer.JsonOptions),
@@ -609,15 +648,9 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             return null;
         }
 
-        var normalizedFamily = LegacyScanPipelineHelpers.NormalizeScannerFamily(request.ScannerFamily);
-        var rulePath = LegacyScanPipelineHelpers.ResolveRulePath(normalizedFamily, request.RulePath, request.RulePathPreset);
         var targetScope = await BuildTargetScopeAsync(request.NetworkIds, request.TargetIds, cancellationToken);
         var resolvedTargets = await ResolveTargetsForScopeAsync(targetScope.NetworkIds, targetScope.TargetIds, cancellationToken);
         ValidateTargetCount(resolvedTargets.Count);
-        if (string.Equals(normalizedFamily, "yara", StringComparison.OrdinalIgnoreCase))
-        {
-            ValidateYaraPlanTargets(resolvedTargets);
-        }
         var nowUtc = DateTimeOffset.UtcNow;
         var status = LegacyScanPipelineHelpers.NormalizePlanStatus(request.Status);
         var scheduleType = LegacyScanPipelineHelpers.NormalizeScheduleType(request.ScheduleType);
@@ -627,9 +660,17 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         {
             options["notes"] = request.Notes.Trim();
         }
+        var validatedPlan = await ValidateAndNormalizePlanDefinitionAsync(
+            request.ScannerFamilies,
+            request.RulePathsByFamily,
+            options,
+            resolvedTargets,
+            cancellationToken);
 
         plan.Name = request.Name.Trim();
-        plan.ScannerConfigJson = JsonSerializer.Serialize(new LegacyPipelineScanPlanConfig(normalizedFamily, "hostPath", rulePath, options), LegacyScanPipelineSerializer.JsonOptions);
+        plan.ScannerConfigJson = JsonSerializer.Serialize(
+            BuildStoredPlanConfig(validatedPlan.ScannerFamilies, validatedPlan.RulePathsByFamily, validatedPlan.Options),
+            LegacyScanPipelineSerializer.JsonOptions);
         plan.TargetScopeJson = JsonSerializer.Serialize(targetScope, LegacyScanPipelineSerializer.JsonOptions);
         plan.Status = status;
         plan.ScheduleType = scheduleType;
@@ -640,7 +681,60 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         return await GetPlanResponseAsync(parsedPlanId, cancellationToken);
     }
 
-    public async Task<LegacyPipelineScanJobResponse?> RunPlanAsync(string planId, LegacyPipelineScanPlanRunRequest request, CancellationToken cancellationToken)
+    public async Task<LegacyPipelineScanPlanResponse?> ClonePlanAsync(string planId, CancellationToken cancellationToken)
+    {
+        var parsedPlanId = LegacyScanPipelineHelpers.ParseRequiredIntId(planId, nameof(planId));
+        var plan = await _dbContext.ScanPlans.AsNoTracking().FirstOrDefaultAsync(item => item.PlanId == parsedPlanId, cancellationToken);
+        if (plan is null)
+        {
+            return null;
+        }
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var clone = new LegacyPipelineScanPlanEntity
+        {
+            Name = $"{plan.Name ?? "Unnamed Plan"} (Copy)",
+            ScannerConfigJson = plan.ScannerConfigJson,
+            CreatedAt = nowUtc.UtcDateTime,
+            CreatedByUserId = plan.CreatedByUserId,
+            TargetScopeJson = plan.TargetScopeJson,
+            Status = "Draft",
+            ScheduleType = plan.ScheduleType,
+            ScheduleJson = plan.ScheduleJson,
+            NextRunAt = null,
+            LastRunAt = null,
+            UpdatedAt = nowUtc.UtcDateTime,
+        };
+
+        _dbContext.ScanPlans.Add(clone);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return await GetPlanResponseAsync(clone.PlanId, cancellationToken);
+    }
+
+    public async Task<LegacyPipelineScanPlanDeletionResponse?> DeletePlanAsync(string planId, CancellationToken cancellationToken)
+    {
+        var parsedPlanId = LegacyScanPipelineHelpers.ParseRequiredIntId(planId, nameof(planId));
+        var plan = await _dbContext.ScanPlans.FirstOrDefaultAsync(item => item.PlanId == parsedPlanId, cancellationToken);
+        if (plan is null)
+        {
+            return null;
+        }
+
+        var linkedJobs = await _dbContext.ScanJobs.Where(item => item.PlanId == parsedPlanId).ToArrayAsync(cancellationToken);
+        foreach (var job in linkedJobs)
+        {
+            job.PlanId = null;
+        }
+
+        _dbContext.ScanPlans.Remove(plan);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return new LegacyPipelineScanPlanDeletionResponse(
+            parsedPlanId.ToString(CultureInfo.InvariantCulture),
+            plan.Name ?? "Unnamed Plan",
+            linkedJobs.Length);
+    }
+
+    public async Task<LegacyPipelineScanPlanRunResponse?> RunPlanAsync(string planId, LegacyPipelineScanPlanRunRequest request, CancellationToken cancellationToken)
     {
         var parsedPlanId = LegacyScanPipelineHelpers.ParseRequiredIntId(planId, nameof(planId));
         var plan = await _dbContext.ScanPlans.FirstOrDefaultAsync(item => item.PlanId == parsedPlanId, cancellationToken);
@@ -650,9 +744,15 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         }
 
         var actorUserId = await ResolveActorUserIdAsync(request.ActorUserId, cancellationToken);
-        var job = await QueuePlanJobAsync(plan, actorUserId, "PlanManualRun", DateTimeOffset.UtcNow, cancellationToken);
-        var scope = LegacyScanPipelineSerializer.DeserializeExecutionScope(job.ExecutionScopeJson);
-        return ToJobResponse(job, scope?.TargetIds ?? [], []);
+        var jobs = await QueuePlanJobsAsync(plan, actorUserId, "PlanManualRun", DateTimeOffset.UtcNow, cancellationToken);
+        return new LegacyPipelineScanPlanRunResponse(
+            jobs[0].BatchId?.ToString("D") ?? Guid.Empty.ToString("D"),
+            plan.PlanId.ToString(CultureInfo.InvariantCulture),
+            jobs.Select(job =>
+            {
+                var scope = LegacyScanPipelineSerializer.DeserializeExecutionScope(job.ExecutionScopeJson);
+                return ToJobResponse(job, scope?.TargetIds ?? [], []);
+            }).ToArray());
     }
 
     public async Task<LegacyPipelineCustomScanResponse> CreateCustomScanAsync(LegacyPipelineCustomScanRequest request, IReadOnlyList<IFormFile> files, IFormFile? pcapFile, CancellationToken cancellationToken)
@@ -664,13 +764,27 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             throw new ArgumentException("At least one scanner family is required.");
         }
 
+        if (normalizedFamilies.Contains("snort", StringComparer.OrdinalIgnoreCase)
+            && normalizedFamilies.Contains("suricata", StringComparer.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Choose either Snort or Suricata for a network scan run, not both.");
+        }
+
         var options = LegacyScanPipelineHelpers.NormalizeOptions(request.Options);
         var snortMode = normalizedFamilies.Contains("snort", StringComparer.OrdinalIgnoreCase)
             ? LegacyScanPipelineHelpers.NormalizeSnortMode(LegacyScanPipelineHelpers.GetOption(options, LegacyScanPipelineHelpers.SnortModeOptionKey))
             : null;
+        var suricataMode = normalizedFamilies.Contains("suricata", StringComparer.OrdinalIgnoreCase)
+            ? LegacyScanPipelineHelpers.NormalizeSuricataMode(LegacyScanPipelineHelpers.GetOption(options, LegacyScanPipelineHelpers.SuricataModeOptionKey))
+            : null;
         if (snortMode is not null && snortMode != "hunt" && normalizedFamilies.Length > 1)
         {
             throw new ArgumentException("Snort Quarantine and PCAP modes must be queued on their own in v1.");
+        }
+
+        if (suricataMode is not null && suricataMode != "hunt" && normalizedFamilies.Length > 1)
+        {
+            throw new ArgumentException("Suricata Quarantine and PCAP modes must be queued on their own in v1.");
         }
 
         var targetScope = await BuildTargetScopeAsync(request.NetworkIds, request.TargetIds, cancellationToken);
@@ -704,7 +818,7 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         {
             if (!LegacyScanPipelineHelpers.IsAllowedPcapPath(pcapFile.FileName))
             {
-                throw new ArgumentException("Snort PCAP uploads must use a .pcap or .pcapng extension.");
+                throw new ArgumentException("Network PCAP uploads must use a .pcap or .pcapng extension.");
             }
 
             tempDirectory ??= Path.Combine(LegacyScanPipelineHelpers.EnsureDirectory(_pipelineOptions.CurrentValue.TempRuleRootDirectory), Guid.NewGuid().ToString("N"));
@@ -791,10 +905,11 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
 
         var scope = LegacyScanPipelineSerializer.DeserializeExecutionScope(job.ExecutionScopeJson);
         if (scope is null
-            || !string.Equals(scope.ScannerFamily, "snort", StringComparison.OrdinalIgnoreCase)
+            || !(string.Equals(scope.ScannerFamily, "snort", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scope.ScannerFamily, "suricata", StringComparison.OrdinalIgnoreCase))
             || !string.Equals(LegacyScanPipelineHelpers.ResolveExecutionMode(scope.ScannerFamily, scope.Options), "quarantine", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException("Only running Snort Quarantine jobs can be stopped.");
+            throw new ArgumentException("Only running Snort or Suricata Quarantine jobs can be stopped.");
         }
 
         if (!string.Equals(job.Status, "Running", StringComparison.OrdinalIgnoreCase))
@@ -802,7 +917,14 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             throw new InvalidOperationException("This job is not currently running.");
         }
 
-        await _snortQuarantineSessionManager.StopAsync(parsedJobId, cancellationToken);
+        if (string.Equals(scope.ScannerFamily, "suricata", StringComparison.OrdinalIgnoreCase))
+        {
+            await _suricataQuarantineSessionManager.StopAsync(parsedJobId, cancellationToken);
+        }
+        else
+        {
+            await _snortQuarantineSessionManager.StopAsync(parsedJobId, cancellationToken);
+        }
 
         var refreshedJob = await _dbContext.ScanJobs.AsNoTracking().FirstOrDefaultAsync(item => item.JobId == parsedJobId, cancellationToken)
             ?? throw new InvalidOperationException("Stopped job could not be reloaded.");
@@ -906,14 +1028,32 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         return items.Select(ToReportRecordResponse).ToArray();
     }
 
+    public async Task<LegacyPipelineReportDetailResponse?> GetReportDetailAsync(string reportId, CancellationToken cancellationToken)
+    {
+        var parsedReportId = LegacyScanPipelineHelpers.ParseRequiredIntId(reportId, nameof(reportId));
+        var report = await _dbContext.Reports
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.ReportId == parsedReportId, cancellationToken);
+        if (report is null)
+        {
+            return null;
+        }
+
+        return ToReportDetailResponse(report);
+    }
+
     public async Task<LegacyPipelineGeneratedReportResponse> GenerateReportAsync(LegacyPipelineGenerateReportRequest request, CancellationToken cancellationToken)
     {
         var actorUserId = await ResolveActorUserIdAsync(request.ActorUserId, cancellationToken);
-        var title = string.IsNullOrWhiteSpace(request.Title) ? $"{request.ReportType} Report" : request.Title.Trim();
         var reportType = LegacyScanPipelineHelpers.NormalizeReportType(request.ReportType);
+        var reportTypeDisplayName = LegacyScanPipelineHelpers.GetReportTypeDisplayName(reportType);
+        var title = string.IsNullOrWhiteSpace(request.Title)
+            ? (reportTypeDisplayName.EndsWith("Report", StringComparison.OrdinalIgnoreCase) ? reportTypeDisplayName : $"{reportTypeDisplayName} Report")
+            : request.Title.Trim();
         var scope = LegacyScanPipelineHelpers.BuildReportScopeLabel(request.JobId, request.TargetId, request.NetworkId);
         var generatedAtUtc = DateTimeOffset.UtcNow;
         var sections = await BuildReportSectionsAsync(request, cancellationToken);
+        var query = ToReportQueryResponse(request);
 
         LegacyPipelineReportRecordResponse? persisted = null;
         if (request.Persist)
@@ -923,8 +1063,8 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             var timestamp = generatedAtUtc.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
             var pdfPath = Path.Combine(reportDirectory, $"{slug}_{timestamp}.pdf");
             var csvPath = Path.Combine(reportDirectory, $"{slug}_{timestamp}.csv");
-            LegacyScanPipelineFileWriters.WriteSimplePdf(pdfPath, title, reportType, scope, sections);
-            LegacyScanPipelineFileWriters.WriteSimpleCsv(csvPath, sections);
+            LegacyScanPipelineFileWriters.WriteSimplePdf(pdfPath, title, reportTypeDisplayName, scope, generatedAtUtc, query, sections);
+            LegacyScanPipelineFileWriters.WriteSimpleCsv(csvPath, title, reportTypeDisplayName, scope, generatedAtUtc, query, sections);
 
             var entity = new LegacyPipelineReportEntity
             {
@@ -946,25 +1086,62 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             persisted = ToReportRecordResponse(entity);
         }
 
-        return new LegacyPipelineGeneratedReportResponse(title, reportType, scope, generatedAtUtc, sections, persisted);
+        return new LegacyPipelineGeneratedReportResponse(title, reportType, scope, generatedAtUtc, query, sections, persisted);
     }
 
-    public async Task<LegacyPipelineDownloadResult?> ResolveReportDownloadAsync(string reportId, CancellationToken cancellationToken)
+    public async Task<LegacyPipelineDownloadResult?> ResolveReportDownloadAsync(string reportId, string? format, CancellationToken cancellationToken)
     {
         var parsedReportId = LegacyScanPipelineHelpers.ParseRequiredIntId(reportId, nameof(reportId));
         var report = await _dbContext.Reports.AsNoTracking().FirstOrDefaultAsync(item => item.ReportId == parsedReportId, cancellationToken);
-        if (report is null || string.IsNullOrWhiteSpace(report.FilePath) || !File.Exists(report.FilePath))
+        if (report is null)
         {
             return null;
         }
 
-        var extension = (report.FileExtension ?? Path.GetExtension(report.FilePath).TrimStart('.')).ToLowerInvariant();
+        var normalizedFormat = LegacyScanPipelineHelpers.CleanOrNull(format)?.ToLowerInvariant();
+        if (normalizedFormat is not null && normalizedFormat is not "pdf" and not "csv")
+        {
+            throw new ArgumentException("Report download format must be either 'pdf' or 'csv'.");
+        }
+
+        var requestedPath = normalizedFormat == "csv"
+            ? ResolveCsvArtifactPath(report)
+            : report.FilePath;
+
+        if (string.IsNullOrWhiteSpace(requestedPath) || !File.Exists(requestedPath))
+        {
+            return null;
+        }
+
+        var extension = Path.GetExtension(requestedPath).TrimStart('.').ToLowerInvariant();
         var contentType = extension switch
         {
             "csv" => "text/csv",
             _ => "application/pdf",
         };
-        return new LegacyPipelineDownloadResult(contentType, Path.GetFileName(report.FilePath), report.FilePath);
+        return new LegacyPipelineDownloadResult(contentType, Path.GetFileName(requestedPath), requestedPath);
+    }
+
+    public async Task<LegacyPipelineReportDeletionResponse?> DeleteReportAsync(string reportId, CancellationToken cancellationToken)
+    {
+        var parsedReportId = LegacyScanPipelineHelpers.ParseRequiredIntId(reportId, nameof(reportId));
+        var report = await _dbContext.Reports.FirstOrDefaultAsync(item => item.ReportId == parsedReportId, cancellationToken);
+        if (report is null)
+        {
+            return null;
+        }
+
+        var deletedFiles = 0;
+        deletedFiles += TryDeleteReportArtifact(report.FilePath) ? 1 : 0;
+        deletedFiles += TryDeleteReportArtifact(ResolveCsvArtifactPath(report)) ? 1 : 0;
+
+        _dbContext.Reports.Remove(report);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new LegacyPipelineReportDeletionResponse(
+            report.ReportId.ToString(CultureInfo.InvariantCulture),
+            report.Title ?? "Untitled Report",
+            deletedFiles);
     }
 
     public async Task<int> EnqueueDuePlansAsync(CancellationToken cancellationToken)
@@ -983,12 +1160,12 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         foreach (var plan in plans)
         {
             var actorUserId = plan.CreatedByUserId ?? await ResolveActorUserIdAsync("don", cancellationToken);
-            await QueuePlanJobAsync(plan, actorUserId, "PlanScheduled", nowUtc, cancellationToken);
+            var jobs = await QueuePlanJobsAsync(plan, actorUserId, "PlanScheduled", nowUtc, cancellationToken);
             var schedule = LegacyScanPipelineSerializer.DeserializeSchedule(plan.ScheduleJson) ?? new LegacyPipelineSchedule("Manual", new());
             plan.LastRunAt = nowUtc.UtcDateTime;
             plan.NextRunAt = ComputeNextRunUtc(nowUtc, plan.ScheduleType ?? schedule.Type, schedule.Values)?.UtcDateTime;
             plan.UpdatedAt = nowUtc.UtcDateTime;
-            queued++;
+            queued += jobs.Count;
         }
 
         if (queued > 0)

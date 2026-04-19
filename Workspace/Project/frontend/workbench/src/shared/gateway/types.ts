@@ -1,6 +1,7 @@
 import type {
   AlertResponse,
   AlertListResponse,
+  V2AlertDetailResponse,
   AlertRuleWorkflowResponse,
   AuditLogListResponse,
   CaseRuleWorkflowResponse,
@@ -558,6 +559,7 @@ export type AlertListQuery = {
   status?: string
   severity?: string
   family?: RuleFamily
+  targetId?: string
   serverId?: string
   ownerUserId?: string
   fromUtc?: string
@@ -648,6 +650,8 @@ export type RetryDistributionJobInput = {
 export interface Gateway {
   login(username: string, password: string): Promise<TokenResponse>
   listAlertRegistry(query?: AlertListQuery, signal?: AbortSignal): Promise<AlertListResponse>
+  getAlertDetail(alertId: string, signal?: AbortSignal): Promise<V2AlertDetailResponse>
+  updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
   listReports(query?: ReportListQuery, signal?: AbortSignal): Promise<ReportListResponse>
   generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>
   getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse>

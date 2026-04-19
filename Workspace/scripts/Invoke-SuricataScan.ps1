@@ -9,6 +9,7 @@ param (
     [string]$Mode,
 
     [string]$IP,
+    [string]$QuarantineIPs,
     [string]$FilePath,
     [datetime]$Since,
     [int]$MinutesBack = 60,
@@ -23,10 +24,13 @@ param (
     [string]$MasterRulePath = "C:\Tools\Suricata\rules\local.rules",
     [string]$ResultsBaseDir = "C:\Tools\Suricata\results",
     [string]$ScratchDir = "C:\Tools\forensic_logs_temp",
-    [string]$SensorReloadCommand = "systemctl restart suricata"
+    [string]$SensorReloadCommand = "systemctl restart suricata",
+    [switch]$SkipRuleSync,
+    [string]$QuarantineCapturePath
 )
 
-$script:RunTimestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$script:RunTimestamp = Get-Date -Format "yyyyMMdd_HHmmss_fff"
+$script:RunNonce = [guid]::NewGuid().ToString('N')
 $script:BashSingleQuoteEscape = [string][char]39 + '"' + [string][char]39 + '"' + [string][char]39
 
 function Build-Envelope {
@@ -59,6 +63,21 @@ function Save-TargetAlert {
 
     $targetFile = Join-Path $targetDir "scan_${script:RunTimestamp}.json"
     $EnvelopedJson | Out-File -FilePath $targetFile -Append -Encoding UTF8
+}
+
+function Save-QuarantineCapture {
+    param($EnvelopedJson)
+
+    if ([string]::IsNullOrWhiteSpace($QuarantineCapturePath)) {
+        return
+    }
+
+    $captureDirectory = Split-Path -Parent $QuarantineCapturePath
+    if (-not [string]::IsNullOrWhiteSpace($captureDirectory) -and -not (Test-Path $captureDirectory)) {
+        New-Item -ItemType Directory -Force -Path $captureDirectory | Out-Null
+    }
+
+    $EnvelopedJson | Out-File -FilePath $QuarantineCapturePath -Append -Encoding UTF8
 }
 
 function Out-InteractiveTable {
@@ -257,6 +276,54 @@ function Test-SuricataAlertWithinWindow {
     return ($null -ne $eventTimeUtc -and $eventTimeUtc -ge $WindowStartUtc)
 }
 
+function Convert-SuricataFastLogLineToObject {
+    param([string]$Line)
+
+    if ([string]::IsNullOrWhiteSpace($Line)) {
+        return $null
+    }
+
+    $pattern = '^(?<timestamp>\d{2}/\d{2}/\d{4}-\d{2}:\d{2}:\d{2}\.\d+)\s+\[\*\*\]\s+\[(?<gid>\d+):(?<sid>\d+):(?<rev>\d+)\]\s+(?<signature>.+?)\s+\[\*\*\]\s+\[Classification:\s+(?<classification>.*?)\]\s+\[Priority:\s+(?<priority>\d+)\]\s+\{(?<proto>[^}]+)\}\s+(?<srcEndpoint>\S+)\s+->\s+(?<destEndpoint>\S+)$'
+    $lineMatch = [regex]::Match($Line, $pattern)
+    if (-not $lineMatch.Success) {
+        return $null
+    }
+
+    $srcIp = $lineMatch.Groups['srcEndpoint'].Value
+    $srcPort = $null
+    $srcEndpointMatch = [regex]::Match($srcIp, '^(?<ip>\d+\.\d+\.\d+\.\d+):(?<port>\d+)$')
+    if ($srcEndpointMatch.Success) {
+        $srcIp = $srcEndpointMatch.Groups['ip'].Value
+        $srcPort = [int]$srcEndpointMatch.Groups['port'].Value
+    }
+
+    $destIp = $lineMatch.Groups['destEndpoint'].Value
+    $destPort = $null
+    $destEndpointMatch = [regex]::Match($destIp, '^(?<ip>\d+\.\d+\.\d+\.\d+):(?<port>\d+)$')
+    if ($destEndpointMatch.Success) {
+        $destIp = $destEndpointMatch.Groups['ip'].Value
+        $destPort = [int]$destEndpointMatch.Groups['port'].Value
+    }
+
+    [pscustomobject]@{
+        timestamp = $lineMatch.Groups['timestamp'].Value
+        event_type = 'alert'
+        src_ip = $srcIp
+        src_port = $srcPort
+        dest_ip = $destIp
+        dest_port = $destPort
+        proto = $lineMatch.Groups['proto'].Value
+        alert = [pscustomobject]@{
+            signature = $lineMatch.Groups['signature'].Value.Trim()
+            severity = $lineMatch.Groups['priority'].Value
+            gid = $lineMatch.Groups['gid'].Value
+            signature_id = $lineMatch.Groups['sid'].Value
+            rev = $lineMatch.Groups['rev'].Value
+            category = $lineMatch.Groups['classification'].Value
+        }
+    }
+}
+
 function Sync-SensorRules {
     if (-not (Test-Path $MasterRulePath)) {
         return
@@ -296,55 +363,83 @@ function Sync-SensorRules {
     }
 }
 
-Sync-SensorRules
+if ($Mode -ne "Pcap" -and -not $SkipRuleSync) {
+    Sync-SensorRules
+}
 
 switch ($Mode) {
     "Quarantine" {
-        if (-not $IP) {
-            throw "IP is required for Quarantine mode."
+        $filterIps = @()
+        if (-not [string]::IsNullOrWhiteSpace($IP)) {
+            $filterIps += $IP
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($QuarantineIPs)) {
+            $filterIps += $QuarantineIPs.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_.Trim() }
+        }
+
+        $filterIps = $filterIps | Select-Object -Unique
+        if ($filterIps.Count -eq 0) {
+            throw "At least one target IP is required for Quarantine mode."
         }
 
         if ($Interactive) {
             Write-Host "[*] MODE: SURICATA QUARANTINE" -ForegroundColor DarkYellow
             Write-Host "[*] RUN ID: scan_${script:RunTimestamp}.json" -ForegroundColor DarkYellow
-            Write-Host "[*] INSPECTION FILTER: $IP" -ForegroundColor DarkYellow
+            Write-Host "[*] INSPECTION FILTER: $($filterIps -join ', ')" -ForegroundColor DarkYellow
             Write-Host "[!] Press Ctrl+C to stop.`n" -ForegroundColor DarkGray
         }
 
-        $remoteCmd = "stdbuf -oL -eL tail -n 0 -F $(Quote-BashArg $RemoteLogPath) | grep -a --line-buffered $(Quote-BashArg $IP)"
+        $remoteCmd = "tail -n 5000 $(Quote-BashArg $RemoteLogPath)"
+        $seenAlerts = New-Object 'System.Collections.Generic.HashSet[string]'
+        $windowStartUtc = [datetime]::UtcNow
 
         try {
-            & ssh -o BatchMode=yes "$SSHUser@$SensorIP" $remoteCmd | ForEach-Object {
-                $line = $_
-                if ($line -notmatch '"event_type"\s*:\s*"alert"') {
-                    continue
-                }
-
-                try {
-                    $log = $line | ConvertFrom-Json
-                    if ($log.src_ip -ne $IP -and $log.dest_ip -ne $IP) {
+            while ($true) {
+                $lines = Invoke-SensorCommand -Command $remoteCmd -IgnoreExitCode
+                foreach ($line in $lines) {
+                    if ([string]::IsNullOrWhiteSpace($line) -or $line -notmatch '"event_type"\s*:\s*"alert"') {
                         continue
                     }
 
-                    $envelopedJson = Build-Envelope -LogObj $log -TargetServer "$SSHUser@$SensorIP" -OsType "linux" -CmdLine $remoteCmd
-                    Save-TargetAlert -TargetIp $log.dest_ip -EnvelopedJson $envelopedJson
-
-                    if ($Interactive) {
-                        $time = Get-Date -Format "HH:mm:ss"
-                        $srcPort = if ($null -ne $log.PSObject.Properties['src_port']) { $log.src_port } else { "-" }
-                        $dstPort = if ($null -ne $log.PSObject.Properties['dest_port']) { $log.dest_port } else { "-" }
-
-                        Write-Host "[$time] [ALERT] " -ForegroundColor Red -NoNewline
-                        Write-Host "$($log.alert.signature) " -ForegroundColor White -NoNewline
-                        Write-Host "(Sev: $($log.alert.severity))" -ForegroundColor DarkRed
-                        Write-Host "    -> SRC: $($log.src_ip):$srcPort" -ForegroundColor Yellow
-                        Write-Host "    -> DST: $($log.dest_ip):$dstPort" -ForegroundColor Yellow
-                        Write-Host "-------------------------------------------------------" -ForegroundColor DarkGray
-                    } else {
-                        Write-Output $envelopedJson
+                    if (-not $seenAlerts.Add($line)) {
+                        continue
                     }
-                } catch {
+
+                    try {
+                        $log = $line | ConvertFrom-Json
+                        if ($filterIps -notcontains $log.src_ip -and $filterIps -notcontains $log.dest_ip) {
+                            continue
+                        }
+
+                        if (-not (Test-SuricataAlertWithinWindow -LogObject $log -WindowStartUtc $windowStartUtc)) {
+                            continue
+                        }
+
+                        $matchedTargetIp = if ($filterIps -contains $log.src_ip) { $log.src_ip } elseif ($filterIps -contains $log.dest_ip) { $log.dest_ip } else { $log.dest_ip }
+                        $envelopedJson = Build-Envelope -LogObj $log -TargetServer "$SSHUser@$SensorIP" -OsType "linux" -CmdLine $remoteCmd
+                        Save-TargetAlert -TargetIp $matchedTargetIp -EnvelopedJson $envelopedJson
+                        Save-QuarantineCapture -EnvelopedJson $envelopedJson
+
+                        if ($Interactive) {
+                            $time = Get-Date -Format "HH:mm:ss"
+                            $srcPort = if ($null -ne $log.PSObject.Properties['src_port']) { $log.src_port } else { "-" }
+                            $dstPort = if ($null -ne $log.PSObject.Properties['dest_port']) { $log.dest_port } else { "-" }
+
+                            Write-Host "[$time] [ALERT] " -ForegroundColor Red -NoNewline
+                            Write-Host "$($log.alert.signature) " -ForegroundColor White -NoNewline
+                            Write-Host "(Sev: $($log.alert.severity))" -ForegroundColor DarkRed
+                            Write-Host "    -> SRC: $($log.src_ip):$srcPort" -ForegroundColor Yellow
+                            Write-Host "    -> DST: $($log.dest_ip):$dstPort" -ForegroundColor Yellow
+                            Write-Host "-------------------------------------------------------" -ForegroundColor DarkGray
+                        } else {
+                            Write-Output $envelopedJson
+                        }
+                    } catch {
+                    }
                 }
+
+                Start-Sleep -Seconds 1
             }
         } catch {
             if ($Interactive) {
@@ -431,49 +526,77 @@ switch ($Mode) {
             return
         }
 
-        if (-not (Test-Path $LocalSuricataExe)) {
-            throw "Local Suricata executable not found: $LocalSuricataExe"
-        }
+        $alerts = @()
+        $cmdLineStr = ""
+        $outputLines = @()
+        $fastLogLines = @()
+        $useLocalSuricata = (Test-Path $LocalSuricataExe) -and (Test-Path $LocalSuricataConfig)
 
-        if (-not (Test-Path $LocalSuricataConfig)) {
-            throw "Local Suricata config not found: $LocalSuricataConfig"
-        }
+        if ($useLocalSuricata) {
+            $outDir = Join-Path $ScratchDir "suricata_$script:RunTimestamp"
+            $outEve = Join-Path $outDir "eve.json"
+            $outFast = Join-Path $outDir "fast.log"
+            $stdoutFile = Join-Path $outDir "suricata_stdout.log"
+            $stderrFile = Join-Path $outDir "suricata_stderr.log"
 
-        $outDir = Join-Path $ScratchDir "suricata_$script:RunTimestamp"
-        $outEve = Join-Path $outDir "eve.json"
-        $stdoutFile = Join-Path $outDir "suricata_stdout.log"
-        $stderrFile = Join-Path $outDir "suricata_stderr.log"
+            New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+            foreach ($file in @($outEve, $outFast, $stdoutFile, $stderrFile)) {
+                if (Test-Path $file) {
+                    Remove-Item $file -Force
+                }
+            }
 
-        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-        foreach ($file in @($outEve, $stdoutFile, $stderrFile)) {
-            if (Test-Path $file) {
-                Remove-Item $file -Force
+            $suriArgs = @('-r', $FilePath, '-c', $LocalSuricataConfig, '-S', $MasterRulePath, '-l', $outDir, '-k', 'none')
+            $cmdLineStr = "$LocalSuricataExe " + ($suriArgs -join ' ')
+
+            $exitCode = Invoke-LocalProcess -Executable $LocalSuricataExe -Arguments $suriArgs -StdOutPath $stdoutFile -StdErrPath $stderrFile
+            if ($exitCode -ne 0) {
+                $stderr = if (Test-Path $stderrFile) { (Get-Content $stderrFile -Raw).Trim() } else { '' }
+                throw "Suricata PCAP execution failed with exit code $exitCode. $stderr"
+            }
+
+            if (Test-Path $outEve) {
+                $outputLines = @(Get-Content $outEve)
+            }
+
+            if ($outputLines.Count -eq 0 -and (Test-Path $outFast)) {
+                $fastLogLines = @(Get-Content $outFast)
+            }
+        } else {
+            Sync-SensorRules
+            $remotePcapPath = "/tmp/detechtive_suricata_pcap_${script:RunTimestamp}_${script:RunNonce}$([System.IO.Path]::GetExtension($FilePath))"
+            $remoteOutputDir = "/tmp/detechtive_suricata_output_${script:RunTimestamp}_${script:RunNonce}"
+            try {
+                Invoke-SensorUpload -LocalPath $FilePath -RemotePath $remotePcapPath
+                Invoke-SensorCommand -AsRoot -Command "mkdir -p $(Quote-BashArg $remoteOutputDir)" | Out-Null
+                $remoteCmd = "/usr/bin/suricata -r $(Quote-BashArg $remotePcapPath) -c /etc/suricata/suricata.yaml -S $(Quote-BashArg $RemoteRulePath) -l $(Quote-BashArg $remoteOutputDir) -k none"
+                $cmdLineStr = $remoteCmd
+                Invoke-SensorCommand -AsRoot -Command $remoteCmd | Out-Null
+                $outputLines = @(Invoke-SensorCommand -Command "if [ -f $(Quote-BashArg ($remoteOutputDir + '/eve.json')) ]; then cat $(Quote-BashArg ($remoteOutputDir + '/eve.json')); fi" -IgnoreExitCode)
+                if ($outputLines.Count -eq 0) {
+                    $fastLogLines = @(Invoke-SensorCommand -Command "if [ -f $(Quote-BashArg ($remoteOutputDir + '/fast.log')) ]; then cat $(Quote-BashArg ($remoteOutputDir + '/fast.log')); fi" -IgnoreExitCode)
+                }
+            } finally {
+                Invoke-SensorCommand -AsRoot -Command "rm -rf -- $(Quote-BashArg $remoteOutputDir) $(Quote-BashArg $remotePcapPath)" -IgnoreExitCode | Out-Null
             }
         }
 
-        $suriArgs = @('-r', $FilePath, '-c', $LocalSuricataConfig, '-l', $outDir, '-k', 'none')
-        $cmdLineStr = "$LocalSuricataExe " + ($suriArgs -join ' ')
+        foreach ($rawLine in $outputLines) {
+            if ([string]::IsNullOrWhiteSpace($rawLine)) {
+                continue
+            }
 
-        $exitCode = Invoke-LocalProcess -Executable $LocalSuricataExe -Arguments $suriArgs -StdOutPath $stdoutFile -StdErrPath $stderrFile
-        if ($exitCode -ne 0) {
-            $stderr = if (Test-Path $stderrFile) { (Get-Content $stderrFile -Raw).Trim() } else { '' }
-            throw "Suricata PCAP execution failed with exit code $exitCode. $stderr"
-        }
-
-        if (-not (Test-Path $outEve)) {
-            return
-        }
-
-        $alerts = @()
-        foreach ($rawLine in Get-Content $outEve) {
             try {
                 $logObj = $rawLine | ConvertFrom-Json
                 if ($logObj.event_type -ne 'alert') {
                     continue
                 }
 
-                $envelopedJson = Build-Envelope -LogObj $logObj -TargetServer 'localhost' -OsType 'windows' -CmdLine $cmdLineStr
-                Save-TargetAlert -TargetIp $logObj.dest_ip -EnvelopedJson $envelopedJson
+                $targetServer = if ($useLocalSuricata) { 'localhost' } else { "$SSHUser@$SensorIP" }
+                $osType = if ($useLocalSuricata) { 'windows' } else { 'linux' }
+                $envelopedJson = Build-Envelope -LogObj $logObj -TargetServer $targetServer -OsType $osType -CmdLine $cmdLineStr
+                $matchedTargetIp = if ($IP -and $logObj.src_ip -eq $IP) { $logObj.src_ip } elseif ($IP -and $logObj.dest_ip -eq $IP) { $logObj.dest_ip } else { $logObj.dest_ip }
+                Save-TargetAlert -TargetIp $matchedTargetIp -EnvelopedJson $envelopedJson
 
                 if ($Interactive) {
                     $alerts += [pscustomobject]@{
@@ -487,6 +610,35 @@ switch ($Mode) {
                     Write-Output $envelopedJson
                 }
             } catch {
+            }
+        }
+
+        foreach ($line in $fastLogLines) {
+            $logObj = Convert-SuricataFastLogLineToObject -Line $line
+            if ($null -eq $logObj) {
+                continue
+            }
+
+            if ($IP -and $logObj.src_ip -ne $IP -and $logObj.dest_ip -ne $IP) {
+                continue
+            }
+
+            $targetServer = if ($useLocalSuricata) { 'localhost' } else { "$SSHUser@$SensorIP" }
+            $osType = if ($useLocalSuricata) { 'windows' } else { 'linux' }
+            $envelopedJson = Build-Envelope -LogObj $logObj -TargetServer $targetServer -OsType $osType -CmdLine $cmdLineStr
+            $matchedTargetIp = if ($IP -and $logObj.src_ip -eq $IP) { $logObj.src_ip } elseif ($IP -and $logObj.dest_ip -eq $IP) { $logObj.dest_ip } else { $logObj.dest_ip }
+            Save-TargetAlert -TargetIp $matchedTargetIp -EnvelopedJson $envelopedJson
+
+            if ($Interactive) {
+                $alerts += [pscustomobject]@{
+                    Timestamp = $logObj.timestamp
+                    Attacker = $logObj.src_ip
+                    Target = $logObj.dest_ip
+                    Signature = $logObj.alert.signature
+                    Severity = $logObj.alert.severity
+                }
+            } else {
+                Write-Output $envelopedJson
             }
         }
 

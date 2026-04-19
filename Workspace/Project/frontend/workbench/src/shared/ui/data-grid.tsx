@@ -46,9 +46,9 @@ export function DataGrid<TData>({ data, columns, onRowClick, rowClassName }: Dat
   })
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
+    <div className="overflow-hidden rounded-[1.4rem] border border-border/75 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_92%,transparent),color-mix(in_srgb,var(--background)_88%,transparent))] shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
       <Table>
-        <TableHeader className="sticky top-0 z-10 bg-surface-2/85 backdrop-blur supports-[backdrop-filter]:bg-surface-2/75">
+        <TableHeader className="sticky top-0 z-10 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_90%,transparent),color-mix(in_srgb,var(--surface-1)_78%,transparent))] backdrop-blur supports-[backdrop-filter]:bg-surface-2/78">
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id} className="hover:bg-transparent">
               {headerGroup.headers.map((header) => {
@@ -91,7 +91,7 @@ export function DataGrid<TData>({ data, columns, onRowClick, rowClassName }: Dat
                 key={row.id}
                 tabIndex={onRowClick ? 0 : undefined}
                 className={cn(
-                  "h-10",
+                  "h-11",
                   onRowClick
                     ? "cursor-pointer focus-visible:bg-surface-2/85 focus-visible:outline-none"
                     : "",
@@ -110,7 +110,7 @@ export function DataGrid<TData>({ data, columns, onRowClick, rowClassName }: Dat
                 }
               >
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="py-2.5">
+                  <TableCell key={cell.id} className="py-3">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}

@@ -73,7 +73,7 @@ public sealed class CasesController : ControllerBase
 
         if (existing is not null)
         {
-            existing.TouchDetection(nowUtc, request.RequestedByUserId, nowUtc);
+            existing.RefreshDetection(request.Title, request.Summary, severity, nowUtc, request.RequestedByUserId, nowUtc);
             await _dbContext.SaveChangesAsync(cancellationToken);
             return Ok(existing.ToLegacyCaseResponse());
         }
@@ -84,6 +84,10 @@ public sealed class CasesController : ControllerBase
             severity,
             request.OwnerUserId,
             request.ApprovalTierRequired,
+            "manual",
+            null,
+            "Unscoped",
+            request.Title,
             nowUtc,
             request.RequestedByUserId,
             nowUtc);

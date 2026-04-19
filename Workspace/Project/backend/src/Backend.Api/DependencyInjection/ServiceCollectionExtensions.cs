@@ -111,6 +111,7 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddScoped<IAuthSensitiveAuditService, AuthSensitiveAuditService>();
+        services.AddScoped<IAlertRegistrySchemaInitializer, AlertRegistrySchemaInitializer>();
         services.AddScoped<ILegacyScanPipelineSchemaInitializer, LegacyScanPipelineSchemaInitializer>();
         services.AddScoped<LegacyScanPipelineService>();
         services.AddScoped<ILegacyScanPipelineService>(provider => provider.GetRequiredService<LegacyScanPipelineService>());
@@ -121,6 +122,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<TargetServerConnectionSecretProtector>();
         services.AddSingleton<LegacyNetworkSshPasswordProtector>();
         services.AddSingleton<LegacySnortQuarantineSessionManager>();
+        services.AddSingleton<LegacySuricataQuarantineSessionManager>();
         services.AddSingleton<DiscoveryTargetRangeParser>();
         services.AddSingleton<IDiscoveryObservationProvider, DiscoveryObservationProvider>();
         services.AddSingleton<IDiscoveryRunQueue, DiscoveryRunQueue>();

@@ -174,9 +174,43 @@ public sealed class LegacyScanPipelineController : ControllerBase
         }
     }
 
+    [HttpPost("plans/{planId}/clone")]
+    [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
+    public async Task<ActionResult<LegacyPipelineScanPlanResponse>> ClonePlan(
+        string planId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cloned = await _service.ClonePlanAsync(planId, cancellationToken);
+            return cloned is null ? NotFound() : Ok(cloned);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpDelete("plans/{planId}")]
+    [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
+    public async Task<ActionResult<LegacyPipelineScanPlanDeletionResponse>> DeletePlan(
+        string planId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var deleted = await _service.DeletePlanAsync(planId, cancellationToken);
+            return deleted is null ? NotFound() : Ok(deleted);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     [HttpPost("plans/{planId}/run")]
     [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
-    public async Task<ActionResult<LegacyPipelineScanJobResponse>> RunPlan(
+    public async Task<ActionResult<LegacyPipelineScanPlanRunResponse>> RunPlan(
         string planId,
         [FromBody] LegacyPipelineScanPlanRunRequest request,
         CancellationToken cancellationToken)
@@ -259,9 +293,85 @@ public sealed class LegacyScanPipelineController : ControllerBase
         }
     }
 
+    [HttpGet("iocs")]
+    public async Task<ActionResult<LegacyPipelineIocFindingListResponse>> ListIocFindings(
+        [FromQuery] string? scannerFamily,
+        [FromQuery] string? targetId,
+        [FromQuery] string? severity,
+        [FromQuery] string? fromUtc,
+        [FromQuery] string? toUtc,
+        [FromQuery] string? q,
+        [FromQuery] string? painLevel,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await _service.ListIocFindingsAsync(scannerFamily, targetId, severity, fromUtc, toUtc, q, painLevel, page, pageSize, cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("iocs/{iocId}")]
+    public async Task<ActionResult<LegacyPipelineIocFindingDetailResponse>> GetIocFindingDetail(
+        string iocId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var detail = await _service.GetIocFindingDetailAsync(iocId, cancellationToken);
+            return detail is null ? NotFound() : Ok(detail);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("pain-analysis")]
+    public async Task<ActionResult<LegacyPipelinePainAnalysisResponse>> GetPainAnalysis(
+        [FromQuery] string? scannerFamily,
+        [FromQuery] string? targetId,
+        [FromQuery] string? severity,
+        [FromQuery] string? fromUtc,
+        [FromQuery] string? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await _service.GetPainAnalysisAsync(scannerFamily, targetId, severity, fromUtc, toUtc, cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("overview-summary")]
+    public async Task<ActionResult<LegacyPipelineOverviewSummaryResponse>> GetOverviewSummary(CancellationToken cancellationToken)
+        => Ok(await _service.GetOverviewSummaryAsync(cancellationToken));
+
     [HttpGet("reports")]
     public async Task<ActionResult<IReadOnlyList<LegacyPipelineReportRecordResponse>>> ListReports(CancellationToken cancellationToken)
         => Ok(await _service.ListReportsAsync(cancellationToken));
+
+    [HttpGet("reports/{reportId}")]
+    public async Task<ActionResult<LegacyPipelineReportDetailResponse>> GetReportDetail(string reportId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var detail = await _service.GetReportDetailAsync(reportId, cancellationToken);
+            return detail is null ? NotFound() : Ok(detail);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
 
     [HttpPost("reports/generate")]
     [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
@@ -280,12 +390,27 @@ public sealed class LegacyScanPipelineController : ControllerBase
     }
 
     [HttpGet("reports/{reportId}/download")]
-    public async Task<IActionResult> DownloadReport(string reportId, CancellationToken cancellationToken)
+    public async Task<IActionResult> DownloadReport(string reportId, [FromQuery] string? format, CancellationToken cancellationToken)
     {
         try
         {
-            var file = await _service.ResolveReportDownloadAsync(reportId, cancellationToken);
+            var file = await _service.ResolveReportDownloadAsync(reportId, format, cancellationToken);
             return file is null ? NotFound() : PhysicalFile(file.FilePath, file.ContentType, file.FileName);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpDelete("reports/{reportId}")]
+    [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
+    public async Task<ActionResult<LegacyPipelineReportDeletionResponse>> DeleteReport(string reportId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var deleted = await _service.DeleteReportAsync(reportId, cancellationToken);
+            return deleted is null ? NotFound() : Ok(deleted);
         }
         catch (ArgumentException ex)
         {

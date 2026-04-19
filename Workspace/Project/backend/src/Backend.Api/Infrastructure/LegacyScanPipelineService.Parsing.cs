@@ -200,14 +200,41 @@ public sealed partial class LegacyScanPipelineService
             }
             case "suricata":
             {
+                var suricataMode = LegacyScanPipelineHelpers.NormalizeSuricataMode(LegacyScanPipelineHelpers.GetOption(scope.Options, LegacyScanPipelineHelpers.SuricataModeOptionKey));
                 startInfo.ArgumentList.Add("-Mode");
-                startInfo.ArgumentList.Add("Hunt");
+                startInfo.ArgumentList.Add(suricataMode switch
+                {
+                    "pcap" => "Pcap",
+                    "quarantine" => "Quarantine",
+                    _ => "Hunt",
+                });
                 startInfo.ArgumentList.Add("-IP");
                 startInfo.ArgumentList.Add(target.IPAddress);
-                startInfo.ArgumentList.Add("-MinutesBack");
-                startInfo.ArgumentList.Add(LegacyScanPipelineHelpers.GetOption(scope.Options, "minutesBack") ?? options.DefaultSigmaMinutesBack.ToString(CultureInfo.InvariantCulture));
                 startInfo.ArgumentList.Add("-MasterRulePath");
                 startInfo.ArgumentList.Add(effectiveRulePath!);
+
+                if (string.Equals(suricataMode, "hunt", StringComparison.OrdinalIgnoreCase))
+                {
+                    startInfo.ArgumentList.Add("-MinutesBack");
+                    startInfo.ArgumentList.Add(LegacyScanPipelineHelpers.GetOption(scope.Options, "minutesBack") ?? options.DefaultSigmaMinutesBack.ToString(CultureInfo.InvariantCulture));
+                }
+                else if (string.Equals(suricataMode, "pcap", StringComparison.OrdinalIgnoreCase))
+                {
+                    var pcapPath = LegacyScanPipelineHelpers.GetOption(scope.Options, LegacyScanPipelineHelpers.StagedPcapPathOptionKey)
+                        ?? LegacyScanPipelineHelpers.GetOption(scope.Options, "pcapPath");
+                    if (string.IsNullOrWhiteSpace(pcapPath) || !File.Exists(pcapPath))
+                    {
+                        throw new FileNotFoundException("No effective PCAP file was available for Suricata PCAP execution.");
+                    }
+
+                    startInfo.ArgumentList.Add("-FilePath");
+                    startInfo.ArgumentList.Add(pcapPath);
+                }
+                else
+                {
+                    throw new InvalidOperationException("Suricata Quarantine jobs must be started through the session coordinator.");
+                }
+
                 break;
             }
         }
