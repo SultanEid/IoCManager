@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/sigma-package.schema.json",
+  "title": "Sigma Detection Package",
+  "description": "Detection package specialization for Sigma rules.",
+  "allOf": [
+    {
+      "$ref": "https://ioc-manager.local/schemas/detection-package.schema.json"
+    },
+    {
+      "type": "object",
+      "required": [
+        "rule_family",
+        "rule_metadata"
+      ],
+      "properties": {
+        "rule_family": {
+          "const": "sigma"
+        },
+        "rule_metadata": {
+          "$ref": "#/$defs/sigma_rule_metadata"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sigma_rule_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "rule_id",
+        "title",
+        "id",
+        "logsource",
+        "status"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stable",
+            "test",
+            "experimental",
+            "deprecated"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "informational"
+          ]
+        },
+        "logsource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "category",
+            "product"
+          ],
+          "properties": {
+            "category": {
+              "type": "string",
+              "minLength": 1
+            },
+            "product": {
+              "type": "string",
+              "minLength": 1
+            },
+            "service": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "rule_family": "sigma",
+      "full_rule_text": "title: Potential Rundll32 LOLBIN Abuse\\nid: 0af2f8a0-7c72-4d29-aaeb-87c80f0cdf7f\\nstatus: stable\\nlogsource:\\n  category: process_creation\\n  product: windows\\ndetection:\\n  selection:\\n    Image|endswith: rundll32.exe\\n    CommandLine|contains: javascript:\\n  condition: selection",
+      "rule_metadata": {
+        "source": "sigma-hq",
+        "rule_id": "SIGMA-RUNDLL32-001",
+        "title": "Potential Rundll32 LOLBIN Abuse",
+        "id": "0af2f8a0-7c72-4d29-aaeb-87c80f0cdf7f",
+        "status": "stable",
+        "description": "Detects suspicious JavaScript execution via rundll32.",
+        "author": "soc-content",
+        "tags": [
+          "attack.defense_evasion",
+          "attack.t1218.011"
+        ],
+        "level": "high",
+        "logsource": {
+          "category": "process_creation",
+          "product": "windows"
+        }
+      },
+      "raw_hit_payload": {
+        "event_id": "evt-2026-332",
+        "image": "windows/system32/rundll32.exe",
+        "command_line": "rundll32.exe javascript:stage"
+      },
+      "object_metadata": {
+        "object_id": "proc-4442",
+        "object_type": "process_event",
+        "source_system": "siem"
+      }
+    }
+  ]
+}

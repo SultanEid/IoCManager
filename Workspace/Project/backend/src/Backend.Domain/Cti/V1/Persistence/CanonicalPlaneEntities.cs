@@ -535,7 +535,14 @@ public sealed class CtiFeedback : AuditableEntity
 
     public Guid CaseId { get; private set; }
     public Guid? DecisionId { get; private set; }
-    public FeedbackVerdict Verdict { get; private set; } = FeedbackVerdict.NeedsMoreEvidence;
+    public FeedbackVerdict Verdict { get; private set; } = FeedbackVerdict.InsufficientEvidence;
+    public decimal Confidence { get; private set; }
+    public decimal FalsePositiveRisk { get; private set; }
+    public CasePriority ReviewPriority { get; private set; } = CasePriority.Medium;
+    public bool ShouldPromoteToIndicator { get; private set; }
+    public bool ShouldSuppress { get; private set; }
+    public bool ShouldAllowlist { get; private set; }
+    public bool ShouldEscalate { get; private set; }
     public string Notes { get; private set; } = string.Empty;
     public string SubmittedByUserId { get; private set; } = string.Empty;
     public DateTimeOffset SubmittedAtUtc { get; private set; }
@@ -544,11 +551,13 @@ public sealed class CtiFeedback : AuditableEntity
         Guid caseId,
         Guid? decisionId,
         FeedbackVerdict verdict,
+        FeedbackAuxiliaryOutputs auxiliaryOutputs,
         string notes,
         string submittedByUserId,
         DateTimeOffset submittedAtUtc)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(submittedByUserId);
+        ArgumentNullException.ThrowIfNull(auxiliaryOutputs);
 
         if (caseId == Guid.Empty)
         {
@@ -561,6 +570,13 @@ public sealed class CtiFeedback : AuditableEntity
             CaseId = caseId,
             DecisionId = decisionId,
             Verdict = verdict,
+            Confidence = auxiliaryOutputs.Confidence,
+            FalsePositiveRisk = auxiliaryOutputs.FalsePositiveRisk,
+            ReviewPriority = auxiliaryOutputs.ReviewPriority,
+            ShouldPromoteToIndicator = auxiliaryOutputs.ShouldPromoteToIndicator,
+            ShouldSuppress = auxiliaryOutputs.ShouldSuppress,
+            ShouldAllowlist = auxiliaryOutputs.ShouldAllowlist,
+            ShouldEscalate = auxiliaryOutputs.ShouldEscalate,
             Notes = notes.Trim(),
             SubmittedByUserId = actor,
             SubmittedAtUtc = submittedAtUtc,

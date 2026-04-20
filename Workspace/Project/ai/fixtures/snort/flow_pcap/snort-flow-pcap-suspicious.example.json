@@ -1,0 +1,50 @@
+{
+  "rule_family": "snort",
+  "full_rule_text": "alert tcp $HOME_NET any -> $EXTERNAL_NET 443 (msg:\"Flow + PCAP correlated beacon\"; flow:to_server,established; sid:530001; rev:2; classtype:trojan-activity;)",
+  "rule_metadata": {
+    "source": "internal-flow-correlation",
+    "rule_id": "SNRT-FLOW-3001",
+    "sid": 530001,
+    "rev": 2,
+    "msg": "Flow + PCAP correlated beacon",
+    "classification": "trojan-activity"
+  },
+  "flow": {
+    "flow_id": "flow-pcap-fixture-001",
+    "src_ip": "10.60.12.2",
+    "src_port": 51512,
+    "dst_ip": "198.51.100.99",
+    "dst_port": 443,
+    "protocol": "tcp",
+    "directionality": "to_server",
+    "observed_at": "2026-04-15T18:41:00Z"
+  },
+  "pcap": {
+    "capture_id": "pcap-001",
+    "file_path": "captures/pcap-001.pcap",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "packet_count": 148,
+    "byte_count": 91240,
+    "capture_start": "2026-04-15T18:40:53Z",
+    "capture_end": "2026-04-15T18:41:07Z"
+  },
+  "object_metadata": {
+    "object_id": "flow-pcap-fixture-001",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:suspicious",
+      "flow_pcap_fixture"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T18:41:00Z",
+    "first_seen": "2026-04-15T18:41:00Z",
+    "last_seen": "2026-04-15T18:41:00Z",
+    "hit_count_24h": 2,
+    "hit_count_7d": 4,
+    "prevalence_ratio": 0.0007,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  }
+}

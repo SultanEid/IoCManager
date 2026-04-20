@@ -9,6 +9,7 @@ using Backend.Domain.Reports;
 using Backend.Domain.Rules;
 using Backend.Domain.RuleLifecycle;
 using Backend.Domain.IocManager;
+using Backend.Domain.AiAdjudication;
 using Backend.Domain.Cti.V1.Persistence;
 using Backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -156,6 +157,14 @@ public sealed class CtiDbContext
     public DbSet<AuditLog> AuditLogsV2 => Set<AuditLog>();
     public DbSet<RetentionPolicy> RetentionPoliciesV2 => Set<RetentionPolicy>();
     public DbSet<ArchiveRecord> ArchiveRecordsV2 => Set<ArchiveRecord>();
+    public DbSet<AiAdjudicationRequest> AiAdjudicationRequests => Set<AiAdjudicationRequest>();
+    public DbSet<AiAdjudicationJob> AiAdjudicationJobs => Set<AiAdjudicationJob>();
+    public DbSet<AiAdjudicationResult> AiAdjudicationResults => Set<AiAdjudicationResult>();
+    public DbSet<AiAdjudicationExplanation> AiAdjudicationExplanations => Set<AiAdjudicationExplanation>();
+    public DbSet<AiActionPlanRecommendation> AiActionPlanRecommendations => Set<AiActionPlanRecommendation>();
+    public DbSet<AiAdjudicationOverride> AiAdjudicationOverrides => Set<AiAdjudicationOverride>();
+    public DbSet<AiAdjudicationSimilarDetection> AiAdjudicationSimilarDetections => Set<AiAdjudicationSimilarDetection>();
+    public DbSet<AiAdjudicationEvidenceSource> AiAdjudicationEvidenceSources => Set<AiAdjudicationEvidenceSource>();
 
     public override int SaveChanges()
     {

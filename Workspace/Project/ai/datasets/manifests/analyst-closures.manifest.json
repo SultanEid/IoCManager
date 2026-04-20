@@ -1,0 +1,25 @@
+{
+  "source_name": "analyst-closures",
+  "source_type": "internal_analyst_closures",
+  "location": {
+    "local_path": "ai/datasets/raw/analyst-closures/"
+  },
+  "access_notes": [
+    "Include only finalized analyst outcomes with traceable case and decision references.",
+    "Exclude notes that cannot be attributed to a reviewed case timeline."
+  ],
+  "ingestion_mode": "manual_internal_import",
+  "parser_name": "analyst_closure_parser_v1",
+  "normalization_target": "analyst_outcome_reference_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": false
+}

@@ -1,0 +1,114 @@
+{
+  "label_type": "action_plan_labels",
+  "version": "2.0",
+  "actions": [
+    {
+      "action": "isolate_host",
+      "category": "containment",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "quarantine_file",
+      "category": "containment",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "block_hash",
+      "category": "blocking",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "block_domain",
+      "category": "blocking",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "block_url",
+      "category": "blocking",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "block_ip",
+      "category": "blocking",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "search_fleet",
+      "category": "investigation",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "collect_memory",
+      "category": "investigation",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "collect_process_tree",
+      "category": "investigation",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "collect_persistence_artifacts",
+      "category": "investigation",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "collect_network_context",
+      "category": "investigation",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "tighten_rule",
+      "category": "rule_hygiene",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "suppress_rule_candidate",
+      "category": "rule_hygiene",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "open_review",
+      "category": "governance",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "notify_admin",
+      "category": "communication",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "notify_analyst",
+      "category": "communication",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "notify_it_operator",
+      "category": "communication",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "no_immediate_action",
+      "category": "safety",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    }
+  ]
+}

@@ -289,6 +289,7 @@ export function ManagedServerDetailPage({ serverId }: { serverId: string }) {
                       <TableHead>Family</TableHead>
                       <TableHead>Disposition</TableHead>
                       <TableHead>Observed</TableHead>
+                      <TableHead className="text-right">AI</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -298,6 +299,14 @@ export function ManagedServerDetailPage({ serverId }: { serverId: string }) {
                         <TableCell>{item.scannerFamily}</TableCell>
                         <TableCell><StatusBadge value={item.disposition} /></TableCell>
                         <TableCell>{new Date(item.observedAtUtc).toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          <Link
+                            href={`/scans/${encodeURIComponent(item.id)}`}
+                            className="text-xs font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
+                          >
+                            Open adjudication
+                          </Link>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

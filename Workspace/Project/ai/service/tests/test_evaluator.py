@@ -41,6 +41,10 @@ def test_evaluator_respects_time_window(snapshot_root: Path) -> None:
 
     assert sample_all > sample_recent
     assert 0.0 <= overall_all.pr_auc <= 1.0
-    assert 0.0 <= overall_recent.pr_auc <= 1.0
-    assert "analyst_override_rate" in overall_all.unavailable_metrics
+    assert overall_recent.pr_auc is None or 0.0 <= overall_recent.pr_auc <= 1.0
+    assert overall_all.confusion_matrix.tp >= 0
+    assert overall_all.confusion_matrix.abstained_positive >= 0
+    assert overall_all.calibration_bins
+    assert overall_all.brier_score is not None
+    assert "analyst_override_rate" not in overall_all.unavailable_metrics
     assert "rollback_rate" in overall_all.unavailable_metrics

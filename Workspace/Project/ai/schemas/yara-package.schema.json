@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/yara-package.schema.json",
+  "title": "YARA Detection Package",
+  "description": "Detection package specialization for YARA rules.",
+  "allOf": [
+    {
+      "$ref": "https://ioc-manager.local/schemas/detection-package.schema.json"
+    },
+    {
+      "type": "object",
+      "required": [
+        "rule_family",
+        "rule_metadata"
+      ],
+      "properties": {
+        "rule_family": {
+          "const": "yara"
+        },
+        "rule_metadata": {
+          "$ref": "#/$defs/yara_rule_metadata"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "yara_rule_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "rule_id",
+        "rule_name",
+        "tags",
+        "meta"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "strings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "condition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "rule_family": "yara",
+      "full_rule_text": "rule Suspicious_Memory_Inject {\n  meta:\n    id = \"YARA-2026-001\"\n    severity = \"high\"\n  strings:\n    $a = \"VirtualAllocEx\" ascii wide\n    $b = \"WriteProcessMemory\" ascii wide\n  condition:\n    all of them\n}",
+      "rule_metadata": {
+        "source": "threat-research",
+        "rule_id": "YARA-2026-001",
+        "rule_name": "Suspicious_Memory_Inject",
+        "namespace": "windows.malware",
+        "author": "sec-team",
+        "description": "Detects common memory injection primitives.",
+        "tags": [
+          "malware",
+          "memory_injection"
+        ],
+        "strings": [
+          "VirtualAllocEx",
+          "WriteProcessMemory"
+        ],
+        "condition": "all of them",
+        "meta": {
+          "id": "YARA-2026-001",
+          "severity": "high"
+        }
+      },
+      "raw_hit_payload": {
+        "engine": "yara-scanner-2",
+        "target_path": "C:\\temp\\sample.bin",
+        "matched_strings": [
+          "VirtualAllocEx",
+          "WriteProcessMemory"
+        ]
+      },
+      "object_metadata": {
+        "object_id": "file-888",
+        "object_type": "file",
+        "source_system": "edr"
+      }
+    }
+  ]
+}

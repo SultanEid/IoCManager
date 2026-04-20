@@ -2,7 +2,7 @@ Use plan mode first. Before implementing, inspect the current routes, components
 
 Hard constraints:
 
-Turn this product back into an IoC Manager aligned to the PDF, not a full CTI platform.
+Turn this product back into an IoC Manager aligned to the PDF, not a broad intelligence platform.
 Keep ASP.NET on the backend.
 Migrate persistence to MS SQL / EF Core SQL Server.
 Power BI will be used for charts/visual analytics.

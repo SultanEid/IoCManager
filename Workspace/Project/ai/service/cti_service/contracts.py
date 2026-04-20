@@ -26,11 +26,17 @@ class EvidenceItemResponse(ApiModel):
 
 
 DecisionVerdict = Literal[
-    "confirmed_malicious",
-    "likely_malicious",
+    "benign",
     "likely_benign",
+    "suspicious",
+    "likely_malicious",
+    "malicious",
+    "false_positive",
     "insufficient_evidence",
+    "stale_or_revoked",
 ]
+
+ReviewPriority = Literal["low", "medium", "high", "critical"]
 
 DecisionAction = Literal[
     "deploy",
@@ -41,6 +47,54 @@ DecisionAction = Literal[
     "quarantine_for_review",
 ]
 
+ActionPlanAction = Literal[
+    "isolate_host",
+    "quarantine_file",
+    "block_hash",
+    "block_domain",
+    "block_url",
+    "block_ip",
+    "search_fleet",
+    "collect_memory",
+    "collect_process_tree",
+    "collect_persistence_artifacts",
+    "collect_network_context",
+    "tighten_rule",
+    "suppress_rule_candidate",
+    "open_review",
+    "notify_admin",
+    "notify_analyst",
+    "notify_it_operator",
+    "no_immediate_action",
+]
+
+ActionPlanExecutionMode = Literal["manual_only"]
+ActionPlanEscalationTarget = Literal[
+    "none",
+    "analyst_queue",
+    "security_admin",
+    "it_operator",
+    "incident_response",
+]
+
+PromotionSuppressionDecision = Literal[
+    "keep_as_observable",
+    "promote_to_indicator",
+    "suppress_as_benign",
+    "allowlist",
+    "mark_stale_or_revoked",
+    "needs_human_review",
+]
+
+ReviewerRole = Literal[
+    "tier1_analyst",
+    "tier2_detection_engineer",
+    "incident_responder",
+]
+
+SafetyEnrichmentStatus = Literal["available", "degraded", "unavailable"]
+SafetyMaxRecommendationSeverity = Literal["review_only", "containment_allowed"]
+
 
 class DecisionProvenanceItemResponse(ApiModel):
     source: str
@@ -50,14 +104,294 @@ class DecisionProvenanceItemResponse(ApiModel):
     citation_ref: str | None = None
 
 
+HistoricalLearningEventType = Literal[
+    "analyst_override",
+    "final_closure",
+    "recommendation_feedback",
+    "post_action_outcome",
+    "suppression_allowlist_decision",
+    "rollback_outcome",
+]
+
+HistoricalRecommendationDisposition = Literal["accepted", "rejected"]
+HistoricalPostActionOutcome = Literal["success", "regression", "neutral"]
+HistoricalSuppressionDecision = Literal["suppression", "allowlist", "none"]
+
+
+class HistoricalFeatureProvenanceItemResponse(ApiModel):
+    feature: str
+    source_event_id: str
+    event_type: str
+    occurred_at_utc: datetime
+    contribution: float = Field(ge=0.0, le=1.0)
+    detail: str | None = None
+
+
+class HistoricalLearningQualityResponse(ApiModel):
+    eligible_count: int = Field(default=0, ge=0)
+    dropped_count: int = Field(default=0, ge=0)
+    drop_reasons: dict[str, int] = Field(default_factory=dict)
+    lookback_days: int = Field(default=90, ge=1, le=3650)
+
+
+class HistoricalSimilarDetectionResponse(ApiModel):
+    detection_id: str = Field(min_length=1)
+    rule_family: str = Field(min_length=1)
+    rule_id: str = Field(min_length=1)
+    relation_type: str = Field(min_length=1)
+    observed_at: datetime
+    confidence: float = Field(ge=0.0, le=1.0)
+    similarity_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    similarity_reasons: list[str] = Field(default_factory=list)
+    prior_verdicts: list[str] = Field(default_factory=list)
+    prior_accepted_actions: list[str] = Field(default_factory=list)
+    prior_outcomes: list[str] = Field(default_factory=list)
+
+
+class HistoricalLearningContextResponse(ApiModel):
+    features: dict[str, float] = Field(default_factory=dict)
+    feature_provenance: list[HistoricalFeatureProvenanceItemResponse] = Field(default_factory=list)
+    quality: HistoricalLearningQualityResponse
+    similar_detections: list[HistoricalSimilarDetectionResponse] = Field(default_factory=list)
+
+
+class HistoricalLearningContextInput(ApiModel):
+    features: dict[str, float] = Field(default_factory=dict)
+    feature_provenance: list[dict[str, Any]] = Field(default_factory=list)
+    quality: dict[str, Any] = Field(default_factory=dict)
+    similar_detections: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class FeedbackSimilarityIndicatorInput(ApiModel):
+    indicator_type: str = Field(min_length=1)
+    indicator_value: str = Field(min_length=1)
+
+    @field_validator("indicator_type", mode="before")
+    @classmethod
+    def _normalize_indicator_type(cls, value: Any) -> str:
+        text = str(value).strip().lower()
+        if not text:
+            raise ValueError("indicator_type cannot be empty.")
+        return text
+
+    @field_validator("indicator_value", mode="before")
+    @classmethod
+    def _normalize_indicator_value(cls, value: Any) -> str:
+        text = str(value).strip()
+        if not text:
+            raise ValueError("indicator_value cannot be empty.")
+        return text
+
+
+class FeedbackSimilarityContextInput(ApiModel):
+    rule_family: str | None = None
+    rule_id: str | None = None
+    ioc_indicators: list[FeedbackSimilarityIndicatorInput] = Field(default_factory=list)
+    behavior_patterns: list[str] = Field(default_factory=list)
+    signer: str | None = None
+    publisher: str | None = None
+    asset_group: str | None = None
+    lineage_shape: str | None = None
+    network_destination_families: list[str] = Field(default_factory=list)
+    analyst_closure_pattern: str | None = None
+
+    @field_validator(
+        "rule_family",
+        "rule_id",
+        "signer",
+        "publisher",
+        "asset_group",
+        "lineage_shape",
+        "analyst_closure_pattern",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_text(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("behavior_patterns", "network_destination_families", mode="before")
+    @classmethod
+    def _normalize_text_list(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("must be a list.")
+        output: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            text = str(item).strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            output.append(text)
+        return output
+
+
+class EvidenceFusionEvidenceItemResponse(ApiModel):
+    channel: str
+    source: str
+    evidence_id: str | None = None
+    reference: str | None = None
+    category: str
+    polarity: Literal["positive", "negative", "neutral"]
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    summary: str
+    anchor: str
+
+
+class EvidenceFusionMissingItemResponse(ApiModel):
+    gap_id: str
+    channel: str
+    description: str
+    importance: Literal["low", "medium", "high"] = "medium"
+
+
+class EvidenceFusionDeduplicationResponse(ApiModel):
+    input_count: int = Field(ge=0)
+    unique_count: int = Field(ge=0)
+    duplicate_count: int = Field(ge=0)
+
+
+class EvidenceFusionExplanationResponse(ApiModel):
+    positive_evidence: list[EvidenceFusionEvidenceItemResponse] = Field(default_factory=list)
+    negative_evidence: list[EvidenceFusionEvidenceItemResponse] = Field(default_factory=list)
+    contradictory_evidence: list[EvidenceFusionEvidenceItemResponse] = Field(default_factory=list)
+    missing_evidence: list[EvidenceFusionMissingItemResponse] = Field(default_factory=list)
+    coverage: dict[str, bool] = Field(default_factory=dict)
+    deduplication: EvidenceFusionDeduplicationResponse
+    explanation_lines: list[str] = Field(default_factory=list)
+
+
+class PromotionSuppressionDecisionResponse(ApiModel):
+    decision: PromotionSuppressionDecision
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str = Field(min_length=1)
+    required_reviewer_role: ReviewerRole | None = None
+
+    @model_validator(mode="after")
+    def _validate_required_reviewer_role(self) -> "PromotionSuppressionDecisionResponse":
+        if self.decision == "needs_human_review":
+            if self.required_reviewer_role is None:
+                raise ValueError("required_reviewer_role is required when decision is needs_human_review.")
+            return self
+        if self.required_reviewer_role is not None:
+            raise ValueError("required_reviewer_role must be null unless decision is needs_human_review.")
+        return self
+
+
+class ActionPlanPolicyCheckResponse(ApiModel):
+    check: str = Field(min_length=1)
+    passed: bool
+    details: str = Field(min_length=1)
+
+
+class ActionPlanActionScoreResponse(ApiModel):
+    action: ActionPlanAction
+    eligible: bool
+    score: float = Field(ge=0.0, le=1.0)
+    rationale: str = Field(min_length=1)
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class ActionPlanRecommendedActionResponse(ApiModel):
+    action: ActionPlanAction
+    rank: int = Field(ge=1)
+    score: float = Field(ge=0.0, le=1.0)
+    rationale: str = Field(min_length=1)
+    prerequisites: list[str] = Field(default_factory=list)
+    cautions: list[str] = Field(default_factory=list)
+    escalation_target: ActionPlanEscalationTarget
+    required_reviewer_role: ReviewerRole
+    requires_human_approval: bool = True
+    execution_mode: ActionPlanExecutionMode = "manual_only"
+
+    @model_validator(mode="after")
+    def _validate_manual_only(self) -> "ActionPlanRecommendedActionResponse":
+        if not self.requires_human_approval:
+            raise ValueError("requires_human_approval must be true for all action plan actions.")
+        if self.execution_mode != "manual_only":
+            raise ValueError("execution_mode must be manual_only.")
+        return self
+
+
+class ActionPlanMachineReadableResponse(ApiModel):
+    input_snapshot: dict[str, Any] = Field(default_factory=dict)
+    policy_checks: list[ActionPlanPolicyCheckResponse] = Field(default_factory=list)
+    action_scores: list[ActionPlanActionScoreResponse] = Field(default_factory=list)
+    selection: dict[str, Any] = Field(default_factory=dict)
+
+
+class ActionPlanResponse(ApiModel):
+    summary: str = Field(min_length=1)
+    recommended_actions: list[ActionPlanRecommendedActionResponse] = Field(default_factory=list, min_length=1, max_length=3)
+    prerequisites: list[str] = Field(default_factory=list)
+    cautions: list[str] = Field(default_factory=list)
+    never_auto_executes: bool = True
+    policy_constrained: bool = True
+    evidence_based: bool = True
+    machine_readable: ActionPlanMachineReadableResponse
+
+    @model_validator(mode="after")
+    def _validate_guards(self) -> "ActionPlanResponse":
+        if not self.never_auto_executes:
+            raise ValueError("never_auto_executes must be true.")
+        if not self.policy_constrained:
+            raise ValueError("policy_constrained must be true.")
+        if not self.evidence_based:
+            raise ValueError("evidence_based must be true.")
+        unique_actions = {item.action for item in self.recommended_actions}
+        if len(unique_actions) != len(self.recommended_actions):
+            raise ValueError("recommended_actions must not contain duplicate actions.")
+        return self
+
+
+class SafetyDiagnosticsResponse(ApiModel):
+    auto_remediation_allowed: bool = False
+    weak_evidence: bool
+    contradictory_evidence: bool
+    contradiction_score: float = Field(ge=0.0, le=1.0)
+    missing_critical_fields: list[str] = Field(default_factory=list)
+    partial_evidence: bool
+    enrichment_status: SafetyEnrichmentStatus
+    false_positive_risk: float = Field(ge=0.0, le=1.0)
+    severity_cap_applied: bool
+    max_recommendation_severity: SafetyMaxRecommendationSeverity
+    degradation_reasons: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_auto_remediation_disabled(self) -> "SafetyDiagnosticsResponse":
+        if self.auto_remediation_allowed:
+            raise ValueError("auto_remediation_allowed must always be false.")
+        if self.severity_cap_applied and self.max_recommendation_severity != "review_only":
+            raise ValueError("max_recommendation_severity must be review_only when severity_cap_applied is true.")
+        return self
+
+
 class GroundedDecisionResponse(ApiModel):
     verdict: DecisionVerdict
     action: DecisionAction
     confidence: float = Field(ge=0.0, le=1.0)
+    false_positive_risk: float = Field(ge=0.0, le=1.0)
+    review_priority: ReviewPriority
+    should_promote_to_indicator: bool
+    should_suppress: bool
+    should_allowlist: bool
+    should_escalate: bool
     provenance: list[DecisionProvenanceItemResponse] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     abstain_reason: str | None = None
     next_best_evidence: list[str] = Field(default_factory=list)
+    evidence_fusion: EvidenceFusionExplanationResponse | None = None
+    historical_learning: HistoricalLearningContextResponse | None = None
+    safety_diagnostics: SafetyDiagnosticsResponse
+    promotion_suppression_decision: PromotionSuppressionDecisionResponse
+    action_plan: ActionPlanResponse
 
     @model_validator(mode="after")
     def _validate_abstain_reason(self) -> "GroundedDecisionResponse":
@@ -106,6 +440,7 @@ class ScoreCaseRequest(ApiModel):
     ioc_value: str = Field(min_length=1)
     host_context: dict[str, Any] = Field(default_factory=dict)
     rule_context: dict[str, Any] = Field(default_factory=dict)
+    detection_package: dict[str, Any] | None = None
 
     @field_validator("ioc_type")
     @classmethod
@@ -116,6 +451,18 @@ class ScoreCaseRequest(ApiModel):
     @classmethod
     def _normalize_ioc_value(cls, value: str) -> str:
         return value.strip()
+
+
+class HistoricalLearningQueryRequest(ScoreCaseRequest):
+    top_k: int = Field(default=10, ge=1, le=100)
+    lookback_days: int = Field(default=90, ge=1, le=3650)
+
+
+class HistoricalLearningQueryResponse(ApiModel):
+    historical_features: dict[str, float] = Field(default_factory=dict)
+    similar_detections: list[HistoricalSimilarDetectionResponse] = Field(default_factory=list)
+    feature_provenance: list[HistoricalFeatureProvenanceItemResponse] = Field(default_factory=list)
+    quality: HistoricalLearningQualityResponse
 
 
 class CaseScoreVectorResponse(ApiModel):
@@ -303,6 +650,7 @@ class ExplainCaseResponse(ApiModel):
     feature_snapshot_hash: str
     replay_bundle_hash: str
     generated_at_utc: datetime
+    llm_assist: dict[str, Any] | None = None
 
 
 class ReportIngestionRequest(ApiModel):
@@ -442,9 +790,117 @@ class GraphLinkCandidateResponse(ApiModel):
 class SubmitFeedbackRequest(ApiModel):
     case_id: str = Field(min_length=1)
     decision_id: str | None = None
+    ioc_type: str | None = None
+    ioc_value: str | None = None
+    source_system: str | None = None
+    event_type: HistoricalLearningEventType | None = None
+    occurred_at_utc: datetime | None = None
+    is_final: bool | None = None
+    detection_family: str | None = None
     verdict: str = Field(min_length=1)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    false_positive_risk: float | None = Field(default=None, ge=0.0, le=1.0)
+    review_priority: ReviewPriority | None = None
+    should_promote_to_indicator: bool | None = None
+    should_suppress: bool | None = None
+    should_allowlist: bool | None = None
+    should_escalate: bool | None = None
+    recommendation_code: str | None = None
+    recommendation_disposition: HistoricalRecommendationDisposition | None = None
+    closure_label: str | None = None
+    closure_verdict: str | None = None
+    override_recommended_verdict: str | None = None
+    override_final_verdict: str | None = None
+    override_applied: bool | None = None
+    post_action_outcome: HistoricalPostActionOutcome | None = None
+    suppression_decision: HistoricalSuppressionDecision | None = None
+    rollback_performed: bool | None = None
+    rollback_succeeded: bool | None = None
+    similarity_context: FeedbackSimilarityContextInput | None = None
     notes: str = ""
     submitted_by_user_id: str = Field(min_length=1)
+
+    @field_validator("ioc_type")
+    @classmethod
+    def _normalize_optional_ioc_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        return normalized or None
+
+    @field_validator("ioc_value")
+    @classmethod
+    def _normalize_optional_ioc_value(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator(
+        "source_system",
+        "detection_family",
+        "recommendation_code",
+        "closure_label",
+        "closure_verdict",
+        "override_recommended_verdict",
+        "override_final_verdict",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_strings(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @model_validator(mode="after")
+    def _validate_event_type_fields(self) -> "SubmitFeedbackRequest":
+        if self.event_type is None:
+            return self
+
+        if self.event_type == "analyst_override":
+            if self.override_applied is None:
+                raise ValueError("override_applied is required when event_type is analyst_override.")
+            if not self.override_recommended_verdict or not self.override_final_verdict:
+                raise ValueError(
+                    "override_recommended_verdict and override_final_verdict are required when event_type is analyst_override."
+                )
+            return self
+
+        if self.event_type == "final_closure":
+            if not self.is_final:
+                raise ValueError("is_final must be true when event_type is final_closure.")
+            if not self.closure_label and not self.closure_verdict:
+                raise ValueError("closure_label or closure_verdict is required when event_type is final_closure.")
+            return self
+
+        if self.event_type == "recommendation_feedback":
+            if not self.recommendation_code or self.recommendation_disposition is None:
+                raise ValueError(
+                    "recommendation_code and recommendation_disposition are required when event_type is recommendation_feedback."
+                )
+            return self
+
+        if self.event_type == "post_action_outcome":
+            if self.post_action_outcome is None:
+                raise ValueError("post_action_outcome is required when event_type is post_action_outcome.")
+            return self
+
+        if self.event_type == "suppression_allowlist_decision":
+            if self.suppression_decision not in {"suppression", "allowlist"}:
+                raise ValueError(
+                    "suppression_decision must be suppression or allowlist when event_type is suppression_allowlist_decision."
+                )
+            return self
+
+        if self.event_type == "rollback_outcome":
+            if self.rollback_performed is None:
+                raise ValueError("rollback_performed is required when event_type is rollback_outcome.")
+            if self.rollback_performed and self.rollback_succeeded is None:
+                raise ValueError("rollback_succeeded is required when rollback_performed is true.")
+            return self
+
+        return self
 
 
 class FeedbackIngestResponse(ApiModel):
@@ -460,8 +916,34 @@ class EvaluateModelRequest(ApiModel):
     window_end_utc: datetime | None = None
     horizon_hours: int = Field(default=72, ge=1, le=720)
     slice_fields: list[str] = Field(
-        default_factory=lambda: ["ioc_type", "source_system", "recency_bucket", "trust_bucket"]
+        default_factory=lambda: [
+            "rule_family",
+            "ioc_type",
+            "source_system",
+            "time_bucket",
+            "recency_bucket",
+            "trust_bucket",
+            "evidence_availability_bucket",
+        ]
     )
+
+
+class EvaluationConfusionMatrix(ApiModel):
+    tp: int = Field(default=0, ge=0)
+    fp: int = Field(default=0, ge=0)
+    tn: int = Field(default=0, ge=0)
+    fn: int = Field(default=0, ge=0)
+    abstained_positive: int = Field(default=0, ge=0)
+    abstained_negative: int = Field(default=0, ge=0)
+
+
+class EvaluationCalibrationBin(ApiModel):
+    index: int = Field(ge=0)
+    lower_bound: float = Field(ge=0.0, le=1.0)
+    upper_bound: float = Field(ge=0.0, le=1.0)
+    sample_size: int = Field(ge=0)
+    average_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    empirical_positive_rate: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class EvaluationOverallMetrics(ApiModel):
@@ -472,11 +954,16 @@ class EvaluationOverallMetrics(ApiModel):
     recall_at_k: float | None = None
     pr_auc: float | None = None
     calibration_error: float | None = None
+    brier_score: float | None = None
+    false_positive_rate: float | None = None
+    false_negative_rate: float | None = None
     unsafe_recommendation_rate: float | None = None
     analyst_override_rate: float | None = None
     rollback_rate: float | None = None
     abstain_rate: float | None = None
     coverage: float | None = None
+    confusion_matrix: EvaluationConfusionMatrix = Field(default_factory=EvaluationConfusionMatrix)
+    calibration_bins: list[EvaluationCalibrationBin] = Field(default_factory=list)
     outcomes: dict[str, int] = Field(default_factory=dict)
     unavailable_metrics: list[str] = Field(default_factory=list)
 
@@ -491,10 +978,15 @@ class EvaluationSliceMetrics(ApiModel):
     f1: float | None = None
     pr_auc: float | None = None
     calibration_error: float | None = None
+    brier_score: float | None = None
+    false_positive_rate: float | None = None
+    false_negative_rate: float | None = None
     analyst_override_rate: float | None = None
     rollback_rate: float | None = None
     abstain_rate: float | None = None
     coverage: float | None = None
+    confusion_matrix: EvaluationConfusionMatrix = Field(default_factory=EvaluationConfusionMatrix)
+    calibration_bins: list[EvaluationCalibrationBin] = Field(default_factory=list)
     outcomes: dict[str, int] = Field(default_factory=dict)
     unavailable_metrics: list[str] = Field(default_factory=list)
 

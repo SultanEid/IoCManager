@@ -1,0 +1,64 @@
+{
+  "rule_family": "sigma",
+  "full_rule_text": "title: False Positive Dev Tool Download Pattern\nid: 4af4f1fe-b6fd-4d16-9811-6f5371a5f3c3\nstatus: experimental\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: curl.exe\n    CommandLine|contains: /raw/scripts/bootstrap.ps1\n  condition: selection",
+  "rule_metadata": {
+    "source": "sigma-hq-local",
+    "rule_id": "SIGMA-SCEN-1004",
+    "title": "False Positive Dev Tool Download Pattern",
+    "id": "4af4f1fe-b6fd-4d16-9811-6f5371a5f3c3",
+    "status": "experimental",
+    "description": "Heuristic pattern can match legitimate developer environment bootstrap activity.",
+    "author": "soc-content",
+    "tags": [
+      "false_positive",
+      "dev_tools"
+    ],
+    "level": "medium",
+    "logsource": {
+      "category": "process_creation",
+      "product": "windows"
+    }
+  },
+  "raw_hit_payload": {
+    "event_id": "evt-sigma-fp-004",
+    "host": "eng-wkstn-22",
+    "image": "C:\\Windows\\System32\\curl.exe",
+    "command_line": "curl.exe https://repo.internal.example/raw/scripts/bootstrap.ps1 -o bootstrap.ps1"
+  },
+  "object_metadata": {
+    "object_id": "proc-sigma-fp-004",
+    "object_type": "process_event",
+    "source_system": "siem",
+    "labels": [
+      "scenario:false_positive",
+      "developer_workflow"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T09:40:00Z",
+    "first_seen": "2026-03-20T09:30:00Z",
+    "last_seen": "2026-04-15T09:40:00Z",
+    "hit_count_24h": 19,
+    "hit_count_7d": 101,
+    "prevalence_ratio": 0.13,
+    "recency_bucket": "persistent",
+    "trend": "stable"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": true,
+    "baseline_match": true,
+    "baseline_name": "engineering-bootstrap-processes",
+    "allowlist_source": "devops-approved-tools"
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-344",
+        "case_id": "case-4691",
+        "verdict": "false_positive",
+        "timestamp": "2026-04-09T10:10:00Z",
+        "notes": "Matches internal repository bootstrap script fetch."
+      }
+    ]
+  }
+}

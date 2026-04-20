@@ -4,6 +4,7 @@ using Backend.Domain.IocManager;
 using Backend.Infrastructure.Persistence;
 using Backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -16,17 +17,20 @@ namespace Backend.Api.Controllers.V2;
 public sealed class IdentityController : ControllerBase
 {
     private readonly CtiDbContext _dbContext;
-    private readonly SqlUserTableDirectoryService _directoryService;
     private readonly IAuthSensitiveAuditService _auditService;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly RoleManager<ApplicationRole> _roleManager;
 
     public IdentityController(
         CtiDbContext dbContext,
-        SqlUserTableDirectoryService directoryService,
-        IAuthSensitiveAuditService auditService)
+        IAuthSensitiveAuditService auditService,
+        UserManager<ApplicationUser> userManager,
+        RoleManager<ApplicationRole> roleManager)
     {
         _dbContext = dbContext;
-        _directoryService = directoryService;
         _auditService = auditService;
+        _userManager = userManager;
+        _roleManager = roleManager;
     }
 
     [HttpGet("users")]
@@ -34,12 +38,25 @@ public sealed class IdentityController : ControllerBase
     [ProducesResponseType<IReadOnlyList<UserResponse>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<UserResponse>>> ListUsers(CancellationToken cancellationToken)
     {
-        var users = await _directoryService.ListUsersAsync(cancellationToken);
-        var response = users
-            .Select(x => new UserResponse(x.UserId.ToString(), x.UserName, x.Email, x.UserName, x.Role))
-            .ToArray();
+        var users = await _userManager.Users
+            .AsNoTracking()
+            .OrderBy(x => x.UserName)
+            .ToArrayAsync(cancellationToken);
 
-        return Ok(response);
+        var response = new List<UserResponse>(users.Length);
+        foreach (var user in users)
+        {
+            var roles = await _userManager.GetRolesAsync(user);
+            var role = roles.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).FirstOrDefault() ?? string.Empty;
+            response.Add(new UserResponse(
+                user.Id.ToString(),
+                user.UserName ?? string.Empty,
+                user.Email,
+                string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? string.Empty : user.DisplayName,
+                role));
+        }
+
+        return Ok(response.ToArray());
     }
 
     [HttpPost("users")]
@@ -54,41 +71,59 @@ public sealed class IdentityController : ControllerBase
             return BadRequest("A single role is required.");
         }
 
-        SqlUserTableDirectoryRecord user;
-        try
+        var roleName = request.Roles[0].Trim();
+        if (!await _roleManager.RoleExistsAsync(roleName))
         {
-            user = await _directoryService.CreateUserAsync(
-                request.UserName,
-                request.Email,
-                request.Password,
-                request.Roles[0],
-                cancellationToken);
+            return BadRequest($"Role '{roleName}' was not found.");
         }
-        catch (ArgumentException exception)
+
+        if (await _userManager.FindByNameAsync(request.UserName.Trim()) is not null
+            || await _userManager.FindByEmailAsync(request.Email.Trim()) is not null)
         {
-            return BadRequest(exception.Message);
+            return Conflict("User name or email already exists.");
         }
-        catch (InvalidOperationException exception)
+
+        var displayName = string.IsNullOrWhiteSpace(request.DisplayName)
+            ? request.UserName.Trim()
+            : request.DisplayName.Trim();
+
+        var user = new ApplicationUser
         {
-            return Conflict(exception.Message);
+            UserName = request.UserName.Trim(),
+            Email = request.Email.Trim(),
+            EmailConfirmed = true,
+            DisplayName = displayName,
+        };
+
+        var createResult = await _userManager.CreateAsync(user, request.Password);
+        if (!createResult.Succeeded)
+        {
+            return BadRequest(string.Join("; ", createResult.Errors.Select(x => x.Description)));
+        }
+
+        var addRoleResult = await _userManager.AddToRoleAsync(user, roleName);
+        if (!addRoleResult.Succeeded)
+        {
+            await _userManager.DeleteAsync(user);
+            return BadRequest(string.Join("; ", addRoleResult.Errors.Select(x => x.Description)));
         }
 
         await _auditService.TryWriteAsync(
             User,
             "identity.user.create",
             "identity_user",
-            user.UserId.ToString(),
+            user.Id.ToString(),
             new
             {
                 user.UserName,
-                Role = user.Role,
+                Role = roleName,
             },
             cancellationToken);
 
         return CreatedAtAction(
             nameof(ListUsers),
-            new { id = user.UserId },
-            new UserResponse(user.UserId.ToString(), user.UserName, user.Email, request.DisplayName.Trim(), user.Role));
+            new { id = user.Id },
+            new UserResponse(user.Id.ToString(), user.UserName ?? string.Empty, user.Email, displayName, roleName));
     }
 
     [HttpGet("roles")]
@@ -96,12 +131,13 @@ public sealed class IdentityController : ControllerBase
     [ProducesResponseType<IReadOnlyList<RoleResponse>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<RoleResponse>>> ListRoles(CancellationToken cancellationToken)
     {
-        var roles = await _directoryService.ListRolesAsync(cancellationToken);
-        var response = roles
-            .Select(name => new RoleResponse(name, name))
-            .ToArray();
-
-        return Ok(response);
+        var roles = await _roleManager.Roles
+            .AsNoTracking()
+            .OrderBy(x => x.Name)
+            .Where(x => x.Name != null)
+            .Select(x => new RoleResponse(x.Id.ToString(), x.Name!))
+            .ToArrayAsync(cancellationToken);
+        return Ok(roles);
     }
 
     [HttpPost("roles")]
@@ -110,15 +146,38 @@ public sealed class IdentityController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<RoleResponse>> CreateRole([FromBody] CreateRoleRequest request, CancellationToken cancellationToken)
     {
+        var normalizedName = request.Name.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedName))
+        {
+            return BadRequest("Role name is required.");
+        }
+
+        if (await _roleManager.RoleExistsAsync(normalizedName))
+        {
+            return Conflict($"Role '{normalizedName}' already exists.");
+        }
+
+        var role = new ApplicationRole
+        {
+            Name = normalizedName,
+            NormalizedName = normalizedName.ToUpperInvariant(),
+        };
+
+        var createResult = await _roleManager.CreateAsync(role);
+        if (!createResult.Succeeded)
+        {
+            return BadRequest(string.Join("; ", createResult.Errors.Select(x => x.Description)));
+        }
+
         await _auditService.TryWriteAsync(
             User,
             "identity.role.create",
             "identity_role",
-            request.Name.Trim(),
-            new { Name = request.Name.Trim() },
+            role.Id.ToString(),
+            new { Name = normalizedName },
             cancellationToken);
 
-        return BadRequest("Roles are derived from dbo.User records and cannot be provisioned separately.");
+        return Ok(new RoleResponse(role.Id.ToString(), normalizedName));
     }
 
     [HttpGet("permissions")]
@@ -169,18 +228,66 @@ public sealed class IdentityController : ControllerBase
     [ProducesResponseType<IReadOnlyList<RolePermissionResponse>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<RolePermissionResponse>>> ListRolePermissions([FromQuery] Guid? roleId, CancellationToken cancellationToken)
     {
-        await Task.CompletedTask;
-        return Ok(Array.Empty<RolePermissionResponse>());
+        var query = _dbContext.RolePermissions
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (roleId.HasValue)
+        {
+            query = query.Where(x => x.RoleId == roleId.Value);
+        }
+
+        var items = await query
+            .OrderBy(x => x.RoleId)
+            .ThenBy(x => x.PermissionId)
+            .Select(x => x.ToRolePermissionResponse())
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(items);
     }
 
     [HttpPost("role-permissions")]
     [Authorize(Policy = AuthorizationPolicies.AdminAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
+    [ProducesResponseType<RolePermissionResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<RolePermissionResponse>(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<RolePermissionResponse>> AssignRolePermission(
         [FromBody] AssignRolePermissionRequest request,
         CancellationToken cancellationToken)
     {
+        var roleExists = await _roleManager.Roles.AnyAsync(x => x.Id == request.RoleId, cancellationToken);
+        if (!roleExists)
+        {
+            return BadRequest($"Role '{request.RoleId}' was not found.");
+        }
+
+        var permissionExists = await _dbContext.Permissions.AnyAsync(x => x.Id == request.PermissionId, cancellationToken);
+        if (!permissionExists)
+        {
+            return BadRequest($"Permission '{request.PermissionId}' was not found.");
+        }
+
+        var existing = await _dbContext.RolePermissions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.RoleId == request.RoleId && x.PermissionId == request.PermissionId,
+                cancellationToken);
+
+        if (existing is not null)
+        {
+            return Conflict(existing.ToRolePermissionResponse());
+        }
+
+        var entity = RolePermission.Create(
+            request.RoleId,
+            request.PermissionId,
+            request.ActorUserId,
+            DateTimeOffset.UtcNow);
+
+        _dbContext.RolePermissions.Add(entity);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
         await _auditService.TryWriteAsync(
             User,
             "identity.role-permission.assign",
@@ -193,6 +300,9 @@ public sealed class IdentityController : ControllerBase
             },
             cancellationToken);
 
-        return BadRequest("Role-permission assignments are unavailable when dbo.User is the only active identity source.");
+        return CreatedAtAction(
+            nameof(ListRolePermissions),
+            new { roleId = request.RoleId },
+            entity.ToRolePermissionResponse());
     }
 }

@@ -1,0 +1,57 @@
+{
+  "provider": "VirusTotal",
+  "report_id": "vt-rep-001",
+  "report_style": "virustotal_style_summary",
+  "generated_at": "2026-04-15T19:04:00Z",
+  "sample": {
+    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "file_name": "systemhealth_update.dat",
+    "file_type": "binary data",
+    "size_bytes": 64320
+  },
+  "behavioral_summary": {
+    "high_level": "Cross-engine consensus and sandbox behavior indicate high-confidence malicious impact pattern.",
+    "observed_capabilities": [
+      "backup_disruption",
+      "ransom_note_behavior",
+      "command_and_control"
+    ],
+    "persistence_observed": true,
+    "evasion_observed": true
+  },
+  "network_summary": {
+    "domains": [
+      "control.sync-queue.example"
+    ],
+    "ip_contacts": [
+      "198.51.100.88"
+    ],
+    "http_requests": [
+      {
+        "method": "POST",
+        "uri_path": "/tasking/v2",
+        "user_agent": "Mozilla/5.0"
+      }
+    ]
+  },
+  "process_summary": {
+    "tree": [
+      {
+        "image": "vssadmin.exe",
+        "command_line": "vssadmin.exe delete shadows /all /quiet",
+        "children": [
+          "cmd.exe /c echo YOUR_FILES_ARE_ENCRYPTED > C:\\readme.txt"
+        ]
+      }
+    ],
+    "mutexes": [
+      "Global\\LOCKER_STAGE_MUTEX"
+    ],
+    "dropped_files": [
+      "C:\\readme.txt",
+      "C:\\ProgramData\\SystemHealth\\svc-host.dat"
+    ]
+  },
+  "confidence": 0.94,
+  "analyst_notes": "Synthetic VT-style aggregate summary; indicators are safe non-operational placeholders."
+}

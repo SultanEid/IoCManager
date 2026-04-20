@@ -1,0 +1,109 @@
+{
+  "rule_family": "yara",
+  "full_rule_text": "rule Suspicious_Encoded_PowerShell_Stager {\n  meta:\n    id = \"YARA-SCEN-0003\"\n    severity = \"medium\"\n    category = \"script_obfuscation\"\n  strings:\n    $a = \"FromBase64String\" ascii wide\n    $b = \"IEX(\" ascii wide\n  condition:\n    all of them\n}",
+  "rule_metadata": {
+    "source": "soc-detections",
+    "rule_id": "YARA-SCEN-0003",
+    "rule_name": "Suspicious_Encoded_PowerShell_Stager",
+    "namespace": "windows.script",
+    "author": "content-team",
+    "description": "Flags script fragments associated with encoded PowerShell execution chains.",
+    "tags": [
+      "suspicious",
+      "execution"
+    ],
+    "strings": [
+      "FromBase64String",
+      "IEX("
+    ],
+    "condition": "all of them",
+    "meta": {
+      "id": "YARA-SCEN-0003",
+      "severity": "medium",
+      "category": "script_obfuscation"
+    }
+  },
+  "raw_hit_payload": {
+    "engine": "yara-scanner-2",
+    "target_path": "C:\\Users\\Public\\scripts\\sync-helper.ps1",
+    "matched_strings": [
+      "FromBase64String",
+      "IEX("
+    ],
+    "execution_context": "interactive_user"
+  },
+  "object_metadata": {
+    "object_id": "file-yara-susp-003",
+    "object_type": "file",
+    "source_system": "edr",
+    "labels": [
+      "scenario:suspicious",
+      "needs_triage"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T14:10:00Z",
+    "first_seen": "2026-04-15T13:58:00Z",
+    "last_seen": "2026-04-15T14:10:00Z",
+    "hit_count_24h": 3,
+    "hit_count_7d": 3,
+    "prevalence_ratio": 0.0008,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "endpoint-powershell-standard",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "cuckoo-rep-001",
+        "source": "cuckoo",
+        "reference": "internal://behavior-reports/cuckoo-rep-001",
+        "observed_at": "2026-04-15T14:11:00Z",
+        "summary": "Observed encoded command-line launcher with short-lived outbound callback."
+      }
+    ]
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-230",
+        "case_id": "case-4562",
+        "verdict": "escalated",
+        "timestamp": "2026-04-15T14:12:00Z",
+        "notes": "Potential staging script pending endpoint memory capture."
+      },
+      {
+        "analyst_id": "u-198",
+        "case_id": "case-4480",
+        "verdict": "benign",
+        "timestamp": "2026-04-02T09:02:00Z",
+        "notes": "Similar tokens seen in an internal automation script."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-sigma-702",
+        "rule_family": "sigma",
+        "rule_id": "SIGMA-PS-ENC-701",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T14:10:30Z",
+        "confidence": 0.69
+      },
+      {
+        "detection_id": "det-snort-311",
+        "rule_family": "snort",
+        "rule_id": "SNRT-331001",
+        "relation_type": "contradictory_signal",
+        "observed_at": "2026-04-15T14:09:40Z",
+        "confidence": 0.32
+      }
+    ]
+  }
+}

@@ -343,11 +343,31 @@ export const caseRuleWorkflowResponseSchema = z.object({
 })
 export const alertRuleWorkflowResponseSchema = caseRuleWorkflowResponseSchema
 
+export const feedbackVerdictSchema = z.enum([
+  "benign",
+  "likely_benign",
+  "suspicious",
+  "likely_malicious",
+  "malicious",
+  "false_positive",
+  "insufficient_evidence",
+  "stale_or_revoked",
+])
+
+export const feedbackReviewPrioritySchema = z.enum(["low", "medium", "high", "critical"])
+
 export const feedbackResponseSchema = z.object({
   id: z.string().uuid(),
   caseId: z.string().uuid(),
   decisionId: z.string().uuid().nullable(),
-  verdict: z.string(),
+  verdict: feedbackVerdictSchema,
+  confidence: z.number().min(0).max(1),
+  falsePositiveRisk: z.number().min(0).max(1),
+  reviewPriority: feedbackReviewPrioritySchema,
+  shouldPromoteToIndicator: z.boolean(),
+  shouldSuppress: z.boolean(),
+  shouldAllowlist: z.boolean(),
+  shouldEscalate: z.boolean(),
   notes: z.string(),
   submittedByUserId: z.string(),
   submittedAtUtc: z.string(),
@@ -388,6 +408,40 @@ export const userResponseSchema = z.object({
 export const roleResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
+})
+
+export const permissionResponseSchema = z.object({
+  id: z.string().uuid(),
+  key: z.string(),
+  description: z.string(),
+  createdAtUtc: z.string(),
+})
+
+export const rolePermissionResponseSchema = z.object({
+  roleId: z.string().uuid(),
+  permissionId: z.string().uuid(),
+  grantedByUserId: z.string(),
+  grantedAtUtc: z.string(),
+})
+
+export const retentionPolicyResponseSchema = z.object({
+  id: z.string().uuid(),
+  dataType: z.string(),
+  retainDays: z.number().int(),
+  archiveAfterDays: z.number().int(),
+  isEnabled: z.boolean(),
+  createdAtUtc: z.string(),
+  updatedAtUtc: z.string(),
+})
+
+export const archiveRecordResponseSchema = z.object({
+  id: z.string().uuid(),
+  retentionPolicyId: z.string().uuid(),
+  entityType: z.string(),
+  entityId: z.string(),
+  archiveUri: z.string(),
+  archivedAtUtc: z.string(),
+  createdAtUtc: z.string(),
 })
 
 export const subnetResponseSchema = z.object({
@@ -818,6 +872,257 @@ export const detectionHistoryResponseSchema = z.object({
   items: z.array(detectionHistoryItemResponseSchema),
 })
 
+export const detectionLinkedAlertCaseResponseSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  status: z.string(),
+  severity: z.string(),
+  updatedAtUtc: z.string(),
+})
+
+export const detectionDetailResponseSchema = z.object({
+  id: z.string().uuid(),
+  fingerprint: z.string(),
+  scannerFamily: z.string(),
+  serverId: z.string().uuid(),
+  serverHostname: z.string().nullable(),
+  scanJobId: z.string().uuid().nullable(),
+  jobAttemptId: z.string().uuid().nullable(),
+  targetExecutionId: z.string().uuid().nullable(),
+  ruleRevisionId: z.string().uuid().nullable(),
+  ruleName: z.string().nullable(),
+  iocId: z.string().uuid().nullable(),
+  iocType: z.string().nullable(),
+  iocValue: z.string().nullable(),
+  disposition: z.string(),
+  confidence: z.number(),
+  observedAtUtc: z.string(),
+  firstObservedAtUtc: z.string(),
+  lastObservedAtUtc: z.string(),
+  occurrenceCount: z.number().int(),
+  isExecutionArtifact: z.boolean(),
+  evidenceJson: z.string(),
+  rawPayloadHash: z.string(),
+  source: z.string().nullable(),
+  linkedAlerts: z.array(detectionLinkedAlertCaseResponseSchema),
+  linkedCases: z.array(detectionLinkedAlertCaseResponseSchema),
+})
+
+const rawJsonObjectSchema = z.record(z.string(), z.unknown())
+
+export const aiAdjudicationLinksResponseSchema = z.object({
+  result: z.string(),
+  explanation: z.string(),
+  actionPlan: z.string(),
+  similarDetections: z.string(),
+  evidenceSources: z.string(),
+  overrideClosure: z.string(),
+})
+
+export const submitAiAdjudicationAcceptedResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  status: z.string(),
+  submittedAtUtc: z.string(),
+  links: aiAdjudicationLinksResponseSchema,
+})
+
+export const aiDecisionProvenanceResponseSchema = z.object({
+  source: z.string(),
+  key: z.string(),
+  value: z.string(),
+  evidenceId: z.string().nullable(),
+  citationRef: z.string().nullable(),
+})
+
+export const aiSafetyDiagnosticsResponseSchema = z.object({
+  autoRemediationAllowed: z.boolean(),
+  weakEvidence: z.boolean(),
+  contradictoryEvidence: z.boolean(),
+  contradictionScore: z.number(),
+  missingCriticalFields: z.array(z.string()),
+  partialEvidence: z.boolean(),
+  enrichmentStatus: z.enum(["available", "degraded", "unavailable"]),
+  falsePositiveRisk: z.number(),
+  severityCapApplied: z.boolean(),
+  maxRecommendationSeverity: z.enum(["review_only", "containment_allowed"]),
+  degradationReasons: z.array(z.string()),
+})
+
+export const aiAdjudicationDecisionResponseSchema = z.object({
+  verdict: z.string(),
+  action: z.string(),
+  confidence: z.number(),
+  falsePositiveRisk: z.number(),
+  reviewPriority: z.string(),
+  shouldPromoteToIndicator: z.boolean(),
+  shouldSuppress: z.boolean(),
+  shouldAllowlist: z.boolean(),
+  shouldEscalate: z.boolean(),
+  reasons: z.array(z.string()),
+  provenance: z.array(aiDecisionProvenanceResponseSchema),
+  nextBestEvidence: z.array(z.string()),
+  abstainReason: z.string().nullable(),
+  scoredAtUtc: z.string(),
+  safetyDiagnostics: aiSafetyDiagnosticsResponseSchema.nullable().optional().default(null),
+  raw: rawJsonObjectSchema,
+})
+
+export const aiAdjudicationResultResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  status: z.string(),
+  submittedAtUtc: z.string(),
+  startedAtUtc: z.string().nullable(),
+  completedAtUtc: z.string().nullable(),
+  failureCode: z.string().nullable(),
+  failureMessage: z.string().nullable(),
+  modelVersion: z.string().nullable(),
+  datasetVersion: z.string().nullable(),
+  decision: aiAdjudicationDecisionResponseSchema.nullable(),
+  explanationAvailable: z.boolean(),
+  actionPlanAvailable: z.boolean(),
+  similarDetectionsAvailable: z.boolean(),
+  evidenceSourcesAvailable: z.boolean(),
+})
+
+export const aiExplanationCitationResponseSchema = z.object({
+  sourceId: z.string(),
+  sourceType: z.string(),
+  snippet: z.string(),
+  sourceUri: z.string().nullable(),
+  startOffset: z.number().int().nullable(),
+  endOffset: z.number().int().nullable(),
+  confidence: z.number().nullable(),
+})
+
+export const aiPhrasingDiagnosticsResponseSchema = z.object({
+  origin: z.enum(["deterministic", "llm_assist"]),
+  status: z.string().nullable(),
+  enabled: z.boolean().nullable(),
+  provider: z.string().nullable(),
+  model: z.string().nullable(),
+  raw: rawJsonObjectSchema.nullable(),
+})
+
+export const aiAdjudicationExplanationResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  status: z.string(),
+  summary: z.string().nullable(),
+  decisionState: z.string().nullable(),
+  recommendedAction: z.string().nullable(),
+  rationale: z.array(z.string()),
+  citations: z.array(aiExplanationCitationResponseSchema),
+  nextBestEvidence: z.array(z.string()),
+  policyVersion: z.string().nullable(),
+  modelVersion: z.string().nullable(),
+  datasetVersion: z.string().nullable(),
+  generatedAtUtc: z.string().nullable(),
+  raw: rawJsonObjectSchema.nullable(),
+  phrasingDiagnostics: aiPhrasingDiagnosticsResponseSchema.nullable(),
+})
+
+export const aiRecommendedActionResponseSchema = z.object({
+  action: z.string(),
+  rank: z.number().int(),
+  score: z.number(),
+  rationale: z.string(),
+  prerequisites: z.array(z.string()),
+  cautions: z.array(z.string()),
+  escalationTarget: z.string(),
+  requiredReviewerRole: z.string(),
+  requiresHumanApproval: z.boolean(),
+  executionMode: z.string(),
+})
+
+export const aiAdjudicationActionPlanResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  status: z.string(),
+  summary: z.string().nullable(),
+  recommendedActions: z.array(aiRecommendedActionResponseSchema),
+  prerequisites: z.array(z.string()),
+  cautions: z.array(z.string()),
+  neverAutoExecutes: z.boolean().nullable(),
+  policyConstrained: z.boolean().nullable(),
+  evidenceBased: z.boolean().nullable(),
+  generatedAtUtc: z.string().nullable(),
+  raw: rawJsonObjectSchema.nullable(),
+  phrasingDiagnostics: aiPhrasingDiagnosticsResponseSchema.nullable(),
+})
+
+export const aiAdjudicationPendingResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  status: z.string(),
+  message: z.string(),
+})
+
+export const aiAdjudicationExplanationOrPendingResponseSchema = z.union([
+  aiAdjudicationExplanationResponseSchema,
+  aiAdjudicationPendingResponseSchema,
+])
+
+export const aiAdjudicationActionPlanOrPendingResponseSchema = z.union([
+  aiAdjudicationActionPlanResponseSchema,
+  aiAdjudicationPendingResponseSchema,
+])
+
+export const aiSimilarDetectionResponseSchema = z.object({
+  id: z.string().uuid(),
+  detectionId: z.string(),
+  ruleFamily: z.string(),
+  ruleId: z.string(),
+  relationType: z.string(),
+  observedAtUtc: z.string(),
+  confidence: z.number(),
+  similarityScore: z.number(),
+  similarityReasons: z.array(z.string()),
+  priorVerdicts: z.array(z.string()),
+  priorAcceptedActions: z.array(z.string()),
+  priorOutcomes: z.array(z.string()),
+  rank: z.number().int(),
+})
+
+export const aiSimilarDetectionsResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  limit: z.number().int(),
+  nextCursor: z.string().nullable(),
+  items: z.array(aiSimilarDetectionResponseSchema),
+})
+
+export const aiEvidenceSourceResponseSchema = z.object({
+  id: z.string().uuid(),
+  channel: z.string(),
+  source: z.string(),
+  evidenceId: z.string().nullable(),
+  reference: z.string().nullable(),
+  category: z.string(),
+  polarity: z.string(),
+  confidence: z.number().nullable(),
+  summary: z.string(),
+  anchor: z.string(),
+  rank: z.number().int(),
+})
+
+export const aiEvidenceSourcesResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  limit: z.number().int(),
+  nextCursor: z.string().nullable(),
+  items: z.array(aiEvidenceSourceResponseSchema),
+})
+
+export const aiOverrideOrClosureResponseSchema = z.object({
+  adjudicationId: z.string().uuid(),
+  overrideId: z.string().uuid(),
+  actionType: z.string(),
+  previousStatus: z.string(),
+  newStatus: z.string(),
+  reason: z.string(),
+  notes: z.string().nullable(),
+  overrideVerdict: z.string().nullable(),
+  closureDisposition: z.string().nullable(),
+  isFinal: z.boolean(),
+  submittedByUserId: z.string(),
+  submittedAtUtc: z.string(),
+})
+
 export const managedServerConnectionSecretMetadataResponseSchema = z.object({
   targetServerId: z.string().uuid(),
   hasConnectionSecret: z.boolean(),
@@ -964,12 +1269,18 @@ export type RollbackPlanResponse = z.infer<typeof rollbackPlanResponseSchema>
 export type RuleSimulationResultResponse = z.infer<typeof ruleSimulationResultResponseSchema>
 export type AlertRuleWorkflowResponse = z.infer<typeof alertRuleWorkflowResponseSchema>
 export type CaseRuleWorkflowResponse = AlertRuleWorkflowResponse
+export type FeedbackVerdict = z.infer<typeof feedbackVerdictSchema>
+export type FeedbackReviewPriority = z.infer<typeof feedbackReviewPrioritySchema>
 export type FeedbackResponse = z.infer<typeof feedbackResponseSchema>
 export type HealthInfo = z.infer<typeof healthInfoSchema>
 export type HealthAdmin = z.infer<typeof healthAdminSchema>
 export type HealthReady = z.infer<typeof healthReadySchema>
 export type UserResponse = z.infer<typeof userResponseSchema>
 export type RoleResponse = z.infer<typeof roleResponseSchema>
+export type PermissionResponse = z.infer<typeof permissionResponseSchema>
+export type RolePermissionResponse = z.infer<typeof rolePermissionResponseSchema>
+export type RetentionPolicyResponse = z.infer<typeof retentionPolicyResponseSchema>
+export type ArchiveRecordResponse = z.infer<typeof archiveRecordResponseSchema>
 export type SubnetResponse = z.infer<typeof subnetResponseSchema>
 export type TargetServerResponse = z.infer<typeof targetServerResponseSchema>
 export type TargetGroupResponse = z.infer<typeof targetGroupResponseSchema>
@@ -1007,6 +1318,27 @@ export type AuditLogListResponse = z.infer<typeof auditLogListResponseSchema>
 export type DetectionHistoryProvenanceResponse = z.infer<typeof detectionHistoryProvenanceResponseSchema>
 export type DetectionHistoryItemResponse = z.infer<typeof detectionHistoryItemResponseSchema>
 export type DetectionHistoryResponse = z.infer<typeof detectionHistoryResponseSchema>
+export type DetectionLinkedAlertCaseResponse = z.infer<typeof detectionLinkedAlertCaseResponseSchema>
+export type DetectionDetailResponse = z.infer<typeof detectionDetailResponseSchema>
+export type AiAdjudicationLinksResponse = z.infer<typeof aiAdjudicationLinksResponseSchema>
+export type SubmitAiAdjudicationAcceptedResponse = z.infer<typeof submitAiAdjudicationAcceptedResponseSchema>
+export type AiDecisionProvenanceResponse = z.infer<typeof aiDecisionProvenanceResponseSchema>
+export type AiSafetyDiagnosticsResponse = z.infer<typeof aiSafetyDiagnosticsResponseSchema>
+export type AiAdjudicationDecisionResponse = z.infer<typeof aiAdjudicationDecisionResponseSchema>
+export type AiAdjudicationResultResponse = z.infer<typeof aiAdjudicationResultResponseSchema>
+export type AiExplanationCitationResponse = z.infer<typeof aiExplanationCitationResponseSchema>
+export type AiPhrasingDiagnosticsResponse = z.infer<typeof aiPhrasingDiagnosticsResponseSchema>
+export type AiAdjudicationExplanationResponse = z.infer<typeof aiAdjudicationExplanationResponseSchema>
+export type AiRecommendedActionResponse = z.infer<typeof aiRecommendedActionResponseSchema>
+export type AiAdjudicationActionPlanResponse = z.infer<typeof aiAdjudicationActionPlanResponseSchema>
+export type AiAdjudicationPendingResponse = z.infer<typeof aiAdjudicationPendingResponseSchema>
+export type AiAdjudicationExplanationOrPendingResponse = z.infer<typeof aiAdjudicationExplanationOrPendingResponseSchema>
+export type AiAdjudicationActionPlanOrPendingResponse = z.infer<typeof aiAdjudicationActionPlanOrPendingResponseSchema>
+export type AiSimilarDetectionResponse = z.infer<typeof aiSimilarDetectionResponseSchema>
+export type AiSimilarDetectionsResponse = z.infer<typeof aiSimilarDetectionsResponseSchema>
+export type AiEvidenceSourceResponse = z.infer<typeof aiEvidenceSourceResponseSchema>
+export type AiEvidenceSourcesResponse = z.infer<typeof aiEvidenceSourcesResponseSchema>
+export type AiOverrideOrClosureResponse = z.infer<typeof aiOverrideOrClosureResponseSchema>
 export type DiscoveryRunResponse = z.infer<typeof discoveryRunResponseSchema>
 export type DiscoveredHostResponse = z.infer<typeof discoveredHostResponseSchema>
 export type PromoteDiscoveredHostResponse = z.infer<typeof promoteDiscoveredHostResponseSchema>

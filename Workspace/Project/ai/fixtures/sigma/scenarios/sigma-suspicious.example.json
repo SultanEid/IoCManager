@@ -1,0 +1,76 @@
+{
+  "rule_family": "sigma",
+  "full_rule_text": "title: Suspicious Script Host with Encoded Argument\nid: e2534f8f-f1b2-47dd-8eef-2248cf7db100\nstatus: test\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: wscript.exe\n    CommandLine|contains: //E:jscript\n    CommandLine|contains: -enc\n  condition: selection",
+  "rule_metadata": {
+    "source": "sigma-hq-local",
+    "rule_id": "SIGMA-SCEN-1002",
+    "title": "Suspicious Script Host with Encoded Argument",
+    "id": "e2534f8f-f1b2-47dd-8eef-2248cf7db100",
+    "status": "test",
+    "description": "Detects potential obfuscated script host execution requiring contextual triage.",
+    "author": "soc-content",
+    "tags": [
+      "suspicious",
+      "defense_evasion"
+    ],
+    "level": "medium",
+    "logsource": {
+      "category": "process_creation",
+      "product": "windows"
+    }
+  },
+  "raw_hit_payload": {
+    "event_id": "evt-sigma-susp-002",
+    "host": "wkstn-sales-55",
+    "image": "C:\\Windows\\System32\\wscript.exe",
+    "command_line": "wscript.exe //E:jscript launcher.js -enc U0FNUExFX0RBVEE="
+  },
+  "object_metadata": {
+    "object_id": "proc-sigma-susp-002",
+    "object_type": "process_event",
+    "source_system": "siem",
+    "labels": [
+      "scenario:suspicious",
+      "obfuscation_indicator"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T15:35:00Z",
+    "first_seen": "2026-04-15T15:30:00Z",
+    "last_seen": "2026-04-15T15:35:00Z",
+    "hit_count_24h": 2,
+    "hit_count_7d": 2,
+    "prevalence_ratio": 0.0004,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "office-endpoint-script-executions",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "cuckoo-rep-001",
+        "source": "cuckoo",
+        "reference": "internal://behavior-reports/cuckoo-rep-001",
+        "observed_at": "2026-04-15T15:36:00Z",
+        "summary": "Sample launched script host and short-lived child process chain."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-yara-script-20",
+        "rule_family": "yara",
+        "rule_id": "YARA-SCEN-0003",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T15:35:20Z",
+        "confidence": 0.64
+      }
+    ]
+  }
+}

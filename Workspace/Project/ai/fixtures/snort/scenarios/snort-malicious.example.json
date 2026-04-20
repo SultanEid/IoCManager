@@ -1,0 +1,106 @@
+{
+  "rule_family": "snort",
+  "full_rule_text": "alert tcp $HOME_NET any -> $EXTERNAL_NET 443 (msg:\"Malicious C2 channel with staged tasking\"; flow:to_server,established; content:\"/tasking/v2\"; http_uri; content:\"X-C2-Session\"; http_header; sid:510003; rev:1; classtype:trojan-activity;)",
+  "rule_metadata": {
+    "source": "ids-content-local",
+    "rule_id": "SNRT-SCEN-2003",
+    "sid": 510003,
+    "rev": 1,
+    "msg": "Malicious C2 channel with staged tasking",
+    "classification": "trojan-activity",
+    "priority": 1,
+    "references": [
+      "url,internal-wiki/rules/SNRT-SCEN-2003"
+    ],
+    "metadata": {
+      "deployment": "egress-ids"
+    }
+  },
+  "raw_hit_payload": {
+    "sensor": "snort-east-1",
+    "src_ip": "10.12.8.90",
+    "dst_ip": "198.51.100.88",
+    "dst_port": 443,
+    "http_headers": {
+      "X-C2-Session": "sess-7acb2",
+      "User-Agent": "Mozilla/5.0"
+    }
+  },
+  "object_metadata": {
+    "object_id": "flow-snort-mal-003",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:malicious",
+      "c2_traffic"
+    ]
+  },
+  "asset_context": {
+    "asset_id": "asset-payroll-003",
+    "asset_name": "payroll-db-node-03",
+    "asset_type": "server",
+    "criticality": "critical",
+    "internet_exposed": false,
+    "environment": "prod"
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T19:03:42Z",
+    "first_seen": "2026-04-15T19:03:42Z",
+    "last_seen": "2026-04-15T19:03:42Z",
+    "hit_count_24h": 1,
+    "hit_count_7d": 1,
+    "prevalence_ratio": 0.0001,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "critical-server-egress",
+    "allowlist_source": "network-baseline"
+  },
+  "linked_enrichment": {
+    "enrichments": [
+      {
+        "kind": "dns",
+        "value": {
+          "domain": "control.sync-queue.example",
+          "ttl": 45
+        },
+        "source": "dns-sensor",
+        "confidence": 0.77
+      }
+    ]
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "cape-rep-001",
+        "source": "cape",
+        "reference": "internal://behavior-reports/cape-rep-001",
+        "observed_at": "2026-04-15T19:04:00Z",
+        "summary": "Sandbox telemetry shows staged network tasking behavior aligned with this flow."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-yara-mal-05",
+        "rule_family": "yara",
+        "rule_id": "YARA-SCEN-0005",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T19:03:45Z",
+        "confidence": 0.84
+      },
+      {
+        "detection_id": "det-sigma-mal-44",
+        "rule_family": "sigma",
+        "rule_id": "SIGMA-SCEN-1003",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T19:03:48Z",
+        "confidence": 0.86
+      }
+    ]
+  }
+}

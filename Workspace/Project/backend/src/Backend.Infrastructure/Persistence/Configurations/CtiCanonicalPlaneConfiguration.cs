@@ -1,4 +1,5 @@
 using Backend.Domain.Cti.V1.Persistence;
+using Backend.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -303,10 +304,26 @@ public sealed class CtiFeedbackConfiguration : IEntityTypeConfiguration<CtiFeedb
 {
     public void Configure(EntityTypeBuilder<CtiFeedback> builder)
     {
-        builder.ToTable("cti_feedback");
+        builder.ToTable("cti_feedback", table =>
+        {
+            table.HasCheckConstraint("ck_cti_feedback_confidence", "[Confidence] >= 0 AND [Confidence] <= 1");
+            table.HasCheckConstraint("ck_cti_feedback_false_positive_risk", "[FalsePositiveRisk] >= 0 AND [FalsePositiveRisk] <= 1");
+        });
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Verdict).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.Verdict)
+            .HasConversion(
+                value => FeedbackTaxonomy.ToWireValue(value),
+                value => FeedbackTaxonomy.ParseVerdictOrThrow(value, nameof(CtiFeedback.Verdict)))
+            .HasMaxLength(32)
+            .IsRequired();
+        builder.Property(x => x.Confidence).HasPrecision(5, 4).IsRequired();
+        builder.Property(x => x.FalsePositiveRisk).HasPrecision(5, 4).IsRequired();
+        builder.Property(x => x.ReviewPriority).HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(x => x.ShouldPromoteToIndicator).IsRequired();
+        builder.Property(x => x.ShouldSuppress).IsRequired();
+        builder.Property(x => x.ShouldAllowlist).IsRequired();
+        builder.Property(x => x.ShouldEscalate).IsRequired();
         builder.Property(x => x.Notes).HasMaxLength(4000).IsRequired();
         builder.Property(x => x.SubmittedByUserId).HasMaxLength(128).IsRequired();
 

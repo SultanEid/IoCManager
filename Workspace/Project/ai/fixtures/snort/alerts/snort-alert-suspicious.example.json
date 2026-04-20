@@ -1,0 +1,46 @@
+{
+  "alert": {
+    "event_id": "snort-alert-fixture-001",
+    "timestamp": "2026-04-15T17:02:10Z",
+    "sensor": "snort-west-2",
+    "rule": {
+      "source": "ids-content-local",
+      "rule_id": "SNRT-ALERT-9001",
+      "sid": 510002,
+      "rev": 1,
+      "msg": "Suspicious periodic beacon cadence",
+      "classtype": "trojan-activity",
+      "text": "alert tcp $HOME_NET any -> $EXTERNAL_NET 443 (msg:\"Suspicious periodic beacon cadence\"; flow:to_server,established; content:\"/api/poll\"; http_uri; threshold:type both, track by_src, count 12, seconds 60; sid:510002; rev:1; classtype:trojan-activity;)"
+    },
+    "src_ip": "10.20.77.42",
+    "src_port": 51020,
+    "dst_ip": "198.51.100.44",
+    "dst_port": 443,
+    "flow": "to_server,established",
+    "threshold": {
+      "type": "both",
+      "track": "by_src",
+      "count": 12,
+      "seconds": 60
+    }
+  },
+  "object_metadata": {
+    "object_id": "flow-snort-alert-9001",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:suspicious",
+      "snort_alert_fixture"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T17:02:10Z",
+    "first_seen": "2026-04-15T16:58:00Z",
+    "last_seen": "2026-04-15T17:02:10Z",
+    "hit_count_24h": 5,
+    "hit_count_7d": 5,
+    "prevalence_ratio": 0.001,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  }
+}

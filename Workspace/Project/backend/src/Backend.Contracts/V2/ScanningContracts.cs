@@ -156,6 +156,40 @@ public sealed record DetectionHistoryResponse(
     int Skip,
     IReadOnlyList<DetectionHistoryItemResponse> Items);
 
+public sealed record DetectionLinkedAlertCaseResponse(
+    Guid Id,
+    string Title,
+    string Status,
+    string Severity,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record DetectionDetailResponse(
+    Guid Id,
+    string Fingerprint,
+    string ScannerFamily,
+    Guid ServerId,
+    string? ServerHostname,
+    Guid? ScanJobId,
+    Guid? JobAttemptId,
+    Guid? TargetExecutionId,
+    Guid? RuleRevisionId,
+    string? RuleName,
+    Guid? IocId,
+    string? IocType,
+    string? IocValue,
+    string Disposition,
+    decimal Confidence,
+    DateTimeOffset ObservedAtUtc,
+    DateTimeOffset FirstObservedAtUtc,
+    DateTimeOffset LastObservedAtUtc,
+    int OccurrenceCount,
+    bool IsExecutionArtifact,
+    string EvidenceJson,
+    string RawPayloadHash,
+    string? Source,
+    IReadOnlyList<DetectionLinkedAlertCaseResponse> LinkedAlerts,
+    IReadOnlyList<DetectionLinkedAlertCaseResponse> LinkedCases);
+
 public sealed record DetectionSearchQuery : PagedQuery
 {
     public Guid? ServerId { get; init; }

@@ -108,9 +108,9 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     commandAliases: ["Servers", "Targets", "Server Management", "Server Discovery"],
   },
   {
-    id: "results-ingestion",
-    href: "/results-ingestion",
-    aliases: ["/reports-ingestion"],
+    id: "scans",
+    href: "/scans",
+    aliases: ["/results-ingestion", "/reports-ingestion"],
     module: "Operations",
     label: "Scans",
     title: "Scans",
@@ -180,7 +180,7 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     module: "Settings",
     label: "Settings",
     title: "Settings",
-    subtitle: "Environment health, retention controls, and role-gated administrative settings.",
+    subtitle: "Environment health for every operator, with retention, access, and scanner administration for authorized roles.",
     icon: Settings,
     commandAliases: ["Settings", "Administration"],
   },
@@ -371,7 +371,7 @@ function parseIngestionPath(pathname: string): { suffix: string | null } | null 
 }
 
 function parseResultIngestionPath(pathname: string): boolean {
-  return /^\/(?:results-ingestion|reports-ingestion)(?:\/.*)?$/.test(pathname)
+  return /^\/(?:scans|results-ingestion|reports-ingestion)(?:\/.*)?$/.test(pathname)
 }
 
 function parseScanPlanPath(pathname: string): boolean {
@@ -550,10 +550,10 @@ export function resolveWorkbenchRoute(pathname: string): ResolvedWorkbenchRoute 
   }
 
   if (parseResultIngestionPath(normalized)) {
-    const route = ROUTE_BY_HREF.get("/results-ingestion") ?? null
+    const route = ROUTE_BY_HREF.get("/scans") ?? null
     return {
       pathname: normalized,
-      canonicalPath: "/results-ingestion",
+      canonicalPath: "/scans",
       module: "Operations",
       title: route?.title ?? "Scans",
       subtitle: route?.subtitle ?? "Search scan outcomes and normalized detection history.",
@@ -704,7 +704,7 @@ export function isWorkbenchNavActive(pathname: string, href: string) {
     return true
   }
 
-  if (href === "/results-ingestion" && resolved.canonicalPath.startsWith("/results-ingestion")) {
+  if (href === "/scans" && resolved.canonicalPath.startsWith("/scans")) {
     return true
   }
 

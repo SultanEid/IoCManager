@@ -1,0 +1,29 @@
+{
+  "source_name": "vx-underground",
+  "source_type": "external_feed",
+  "location": {
+    "remote_reference": {
+      "uri": "https://<provider-endpoint-or-export>/vx-underground",
+      "format_hint": "jsonl_or_csv",
+      "retrieval_hint": "connector_deferred_phase0"
+    }
+  },
+  "access_notes": [
+    "Access terms and data licensing must be reviewed before enabling imports.",
+    "Planned raw staging path: ai/datasets/raw/vx-underground/."
+  ],
+  "ingestion_mode": "deferred_remote_import",
+  "parser_name": "vx_underground_parser_v1",
+  "normalization_target": "observable_enrichment_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": false
+}

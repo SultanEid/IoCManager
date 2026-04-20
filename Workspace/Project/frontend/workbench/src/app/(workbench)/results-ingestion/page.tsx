@@ -796,7 +796,7 @@ export default function ScansPage() {
               Subnets drive the main selection flow. Explicit targets stay available when you want to narrow or supplement the scope.
             </p>
           </div>
-          <div className="grid gap-4 2xl:grid-cols-[1.2fr_1fr]">
+          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="rounded-xl border border-border/70 bg-background/35 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>

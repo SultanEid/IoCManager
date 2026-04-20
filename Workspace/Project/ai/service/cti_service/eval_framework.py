@@ -7,6 +7,19 @@ import hashlib
 import math
 from typing import Iterable
 
+from .evaluation_metrics import (
+    AdjudicationEvaluationRow,
+    ActionPlanMetricSummary,
+    ActionPlanSliceSummary,
+    CalibrationBin,
+    EvaluationConfusionMatrix,
+    compute_action_plan_metrics,
+    compute_adjudication_metrics,
+    determine_evidence_availability_bucket,
+    slice_action_plan_metrics,
+    slice_adjudication_metrics,
+)
+
 
 @dataclass(frozen=True)
 class EvaluationRecord:
@@ -17,7 +30,13 @@ class EvaluationRecord:
     decision_state: str
     model_version: str | None = None
     dataset_version: str | None = None
+    rule_family: str = "unknown"
+    source_system: str = "unknown"
+    ioc_type: str = "unknown"
     source_trust: float = 0.5
+    evidence_used_count: int = 0
+    evidence_missing_count: int = 0
+    contradictory_evidence_count: int = 0
     analyst_overrode: bool = False
     high_impact: bool = False
     queue_rank: int | None = None
@@ -40,24 +59,61 @@ class EvaluationRecord:
 
 @dataclass(frozen=True)
 class EvaluationMetricBundle:
-    precision_at_k: float | None
-    recall_at_k: float | None
-    calibration_error: float | None
-    unsafe_recommendation_rate: float | None
-    analyst_override_rate: float | None
-    canary_success_rate: float | None
-    rollback_rate: float | None
-    queue_high_impact_lift: float | None
-    deployment_regret: float | None
-    outcomes: dict[str, int]
-    unavailable_metrics: list[str]
-    sample_size: int
+    precision: float | None = None
+    recall: float | None = None
+    f1: float | None = None
+    precision_at_k: float | None = None
+    recall_at_k: float | None = None
+    pr_auc: float | None = None
+    calibration_error: float | None = None
+    brier_score: float | None = None
+    false_positive_rate: float | None = None
+    false_negative_rate: float | None = None
+    unsafe_recommendation_rate: float | None = None
+    analyst_override_rate: float | None = None
+    canary_success_rate: float | None = None
+    rollback_rate: float | None = None
+    abstain_rate: float | None = None
+    coverage: float | None = None
+    queue_high_impact_lift: float | None = None
+    deployment_regret: float | None = None
+    confusion_matrix: EvaluationConfusionMatrix = EvaluationConfusionMatrix(0, 0, 0, 0, 0, 0)
+    calibration_bins: list[CalibrationBin] = None  # type: ignore[assignment]
+    outcomes: dict[str, int] = None  # type: ignore[assignment]
+    unavailable_metrics: list[str] = None  # type: ignore[assignment]
+    sample_size: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "calibration_bins", list(self.calibration_bins or []))
+        object.__setattr__(self, "outcomes", dict(self.outcomes or {}))
+        object.__setattr__(self, "unavailable_metrics", list(self.unavailable_metrics or []))
 
 
 @dataclass(frozen=True)
 class BacktestSlice:
     bucket: str
     metrics: EvaluationMetricBundle
+
+
+@dataclass(frozen=True)
+class ActionPlanEvaluationReport:
+    generated_at_utc: str
+    input_file: str
+    sample_size: int
+    top_k: int
+    overall: ActionPlanMetricSummary
+    slices: list[ActionPlanSliceSummary]
+
+
+@dataclass(frozen=True)
+class AdjudicationEvaluationReport:
+    generated_at_utc: str
+    input_file: str
+    sample_size: int
+    top_k: int
+    candidate: EvaluationMetricBundle
+    baselines: dict[str, dict[str, float | int | None | list[str] | dict[str, int] | dict[str, object]]]
+    time_backtest: list[BacktestSlice]
 
 
 @dataclass(frozen=True)
@@ -70,26 +126,48 @@ def compute_metric_bundle(records: Iterable[EvaluationRecord], top_k: int = 10) 
     rows = list(records)
     if not rows:
         return EvaluationMetricBundle(
+            precision=None,
+            recall=None,
+            f1=None,
             precision_at_k=None,
             recall_at_k=None,
+            pr_auc=None,
             calibration_error=None,
+            brier_score=None,
+            false_positive_rate=None,
+            false_negative_rate=None,
             unsafe_recommendation_rate=None,
             analyst_override_rate=None,
             canary_success_rate=None,
             rollback_rate=None,
+            abstain_rate=None,
+            coverage=None,
             queue_high_impact_lift=None,
             deployment_regret=None,
+            confusion_matrix=EvaluationConfusionMatrix(0, 0, 0, 0, 0, 0),
+            calibration_bins=[],
             outcomes={},
             unavailable_metrics=[
+                "precision",
+                "recall",
+                "f1",
                 "precision_at_k",
                 "recall_at_k",
+                "pr_auc",
                 "calibration_error",
+                "brier_score",
+                "false_positive_rate",
+                "false_negative_rate",
                 "unsafe_recommendation_rate",
                 "analyst_override_rate",
                 "canary_success_rate",
                 "rollback_rate",
+                "abstain_rate",
+                "coverage",
                 "queue_high_impact_lift",
                 "deployment_regret",
+                "confusion_matrix",
+                "calibration_bins",
                 "outcomes.confident_correct",
                 "outcomes.confident_wrong",
                 "outcomes.abstained",
@@ -99,20 +177,36 @@ def compute_metric_bundle(records: Iterable[EvaluationRecord], top_k: int = 10) 
             sample_size=0,
         )
 
-    ranked = sorted(rows, key=lambda item: item.score, reverse=True)
-    k = max(1, min(top_k, len(ranked)))
-    positives = sum(1 for item in rows if item.label == 1)
-    hits_at_k = sum(1 for item in ranked[:k] if item.label == 1)
+    adjudication_rows = [
+        AdjudicationEvaluationRow(
+            label=item.label,
+            score=item.score,
+            abstained=item.is_abstention,
+            rule_family=item.rule_family,
+            source_system=item.source_system,
+            ioc_type=item.ioc_type,
+            event_time=item.event_time,
+            source_trust=item.source_trust,
+            evidence_used_count=item.evidence_used_count,
+            evidence_missing_count=item.evidence_missing_count,
+            contradictory_evidence_count=item.contradictory_evidence_count,
+            analyst_overrode=item.analyst_overrode,
+            rolled_back=item.rolled_back,
+        )
+        for item in rows
+    ]
+    adjudication_metrics = compute_adjudication_metrics(
+        adjudication_rows,
+        threshold=0.55,
+        top_k=top_k,
+    )
 
     recommended = [item for item in rows if item.is_recommendation]
-    unsafe_recommendations = [item for item in recommended if item.label == 0]
     overrides = [item for item in recommended if item.analyst_overrode]
     canary_rows = [item for item in rows if item.canary_succeeded is not None]
     rollback_rows = [item for item in rows if item.rolled_back is not None]
-    scored_rows = [item for item in rows if item.score >= 0.0]
 
     unavailable_metrics: list[str] = []
-    unsafe_recommendation_rate = float(len(unsafe_recommendations) / len(recommended)) if recommended else None
     analyst_override_rate = float(len(overrides) / len(recommended)) if recommended else None
     canary_success_rate = (
         float(sum(1 for item in canary_rows if item.canary_succeeded) / len(canary_rows))
@@ -127,7 +221,7 @@ def compute_metric_bundle(records: Iterable[EvaluationRecord], top_k: int = 10) 
     queue_high_impact_lift = _queue_high_impact_lift(rows)
     deployment_regret = _deployment_regret(rows)
 
-    if unsafe_recommendation_rate is None:
+    if adjudication_metrics.unsafe_recommendation_rate is None:
         unavailable_metrics.append("unsafe_recommendation_rate")
     if analyst_override_rate is None:
         unavailable_metrics.append("analyst_override_rate")
@@ -145,23 +239,32 @@ def compute_metric_bundle(records: Iterable[EvaluationRecord], top_k: int = 10) 
         unavailable_metrics.append("outcomes.overridden")
 
     return EvaluationMetricBundle(
-        precision_at_k=float(hits_at_k / k),
-        recall_at_k=float(hits_at_k / max(1, positives)),
-        calibration_error=_expected_calibration_error(scored_rows, bins=10),
-        unsafe_recommendation_rate=unsafe_recommendation_rate,
+        precision=adjudication_metrics.precision,
+        recall=adjudication_metrics.recall,
+        f1=adjudication_metrics.f1,
+        precision_at_k=adjudication_metrics.precision_at_k,
+        recall_at_k=adjudication_metrics.recall_at_k,
+        pr_auc=adjudication_metrics.pr_auc,
+        calibration_error=adjudication_metrics.calibration_error,
+        brier_score=adjudication_metrics.brier_score,
+        false_positive_rate=adjudication_metrics.false_positive_rate,
+        false_negative_rate=adjudication_metrics.false_negative_rate,
+        unsafe_recommendation_rate=adjudication_metrics.unsafe_recommendation_rate,
         analyst_override_rate=analyst_override_rate,
         canary_success_rate=canary_success_rate,
         rollback_rate=rollback_rate,
+        abstain_rate=adjudication_metrics.abstain_rate,
+        coverage=adjudication_metrics.coverage,
         queue_high_impact_lift=queue_high_impact_lift,
         deployment_regret=deployment_regret,
+        confusion_matrix=adjudication_metrics.confusion_matrix,
+        calibration_bins=adjudication_metrics.calibration_bins,
         outcomes={
-            "confident_correct": sum(1 for item in recommended if item.label == 1),
-            "confident_wrong": len(unsafe_recommendations),
-            "abstained": sum(1 for item in rows if item.is_abstention),
+            **adjudication_metrics.outcomes,
             "overridden": len(overrides),
             "rolled_back": sum(1 for item in rollback_rows if item.rolled_back),
         },
-        unavailable_metrics=unavailable_metrics,
+        unavailable_metrics=sorted(set(adjudication_metrics.unavailable_metrics + unavailable_metrics)),
         sample_size=len(rows),
     )
 
@@ -330,26 +433,6 @@ def _decision_state_from_score(score: float) -> str:
     if score >= 0.55:
         return "recommend"
     return "defer"
-
-
-def _expected_calibration_error(records: list[EvaluationRecord], bins: int) -> float:
-    if not records:
-        return 0.0
-
-    ece = 0.0
-    n = len(records)
-    for index in range(bins):
-        lower = index / bins
-        upper = (index + 1) / bins
-        bucket = [item for item in records if lower <= item.score < upper or (index == bins - 1 and item.score == 1.0)]
-        if not bucket:
-            continue
-
-        avg_confidence = sum(item.score for item in bucket) / len(bucket)
-        avg_accuracy = sum(item.label for item in bucket) / len(bucket)
-        ece += abs(avg_confidence - avg_accuracy) * (len(bucket) / n)
-
-    return float(ece)
 
 
 def _stable_random_score(case_id: str) -> float:

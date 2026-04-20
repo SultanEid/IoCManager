@@ -1,0 +1,64 @@
+{
+  "rule_family": "snort",
+  "full_rule_text": "alert tcp $HOME_NET any -> $EXTERNAL_NET 443 (msg:\"False positive API scanner signature\"; flow:to_server,established; content:\"/v1/health\"; http_uri; content:\"X-Internal-Scanner\"; http_header; sid:510004; rev:1; classtype:policy-violation;)",
+  "rule_metadata": {
+    "source": "ids-content-local",
+    "rule_id": "SNRT-SCEN-2004",
+    "sid": 510004,
+    "rev": 1,
+    "msg": "False positive API scanner signature",
+    "classification": "policy-violation",
+    "priority": 3,
+    "references": [
+      "url,internal-wiki/rules/SNRT-SCEN-2004"
+    ],
+    "metadata": {
+      "deployment": "egress-ids"
+    }
+  },
+  "raw_hit_payload": {
+    "sensor": "snort-west-2",
+    "src_ip": "10.18.5.12",
+    "dst_ip": "203.0.113.61",
+    "dst_port": 443,
+    "http_headers": {
+      "X-Internal-Scanner": "qa-service-probe"
+    }
+  },
+  "object_metadata": {
+    "object_id": "flow-snort-fp-004",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:false_positive",
+      "internal_probe"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T07:42:00Z",
+    "first_seen": "2026-03-10T07:30:00Z",
+    "last_seen": "2026-04-15T07:42:00Z",
+    "hit_count_24h": 34,
+    "hit_count_7d": 230,
+    "prevalence_ratio": 0.19,
+    "recency_bucket": "persistent",
+    "trend": "stable"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": true,
+    "baseline_match": true,
+    "baseline_name": "internal-qa-scanners",
+    "allowlist_source": "network-allowlist-v2"
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-420",
+        "case_id": "case-4771",
+        "verdict": "false_positive",
+        "timestamp": "2026-04-12T07:55:00Z",
+        "notes": "Known QA scanning header."
+      }
+    ]
+  }
+}

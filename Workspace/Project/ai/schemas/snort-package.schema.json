@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/snort-package.schema.json",
+  "title": "Snort Detection Package",
+  "description": "Detection package specialization for Snort rules.",
+  "allOf": [
+    {
+      "$ref": "https://ioc-manager.local/schemas/detection-package.schema.json"
+    },
+    {
+      "type": "object",
+      "required": [
+        "rule_family",
+        "rule_metadata"
+      ],
+      "properties": {
+        "rule_family": {
+          "const": "snort"
+        },
+        "rule_metadata": {
+          "$ref": "#/$defs/snort_rule_metadata"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "snort_rule_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "rule_id",
+        "sid",
+        "rev",
+        "msg",
+        "classification"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "msg": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "rule_family": "snort",
+      "full_rule_text": "alert tcp any any -> any 443 (msg:\"Suspicious TLS beacon pattern\"; flow:to_server,established; content:\"Host|3A|\"; sid:445501; rev:3; classtype:trojan-activity;)",
+      "rule_metadata": {
+        "source": "ids-content",
+        "rule_id": "SNRT-445501",
+        "sid": 445501,
+        "rev": 3,
+        "msg": "Suspicious TLS beacon pattern",
+        "classification": "trojan-activity",
+        "priority": 2,
+        "references": [
+          "url,internal-wiki/rules/SNRT-445501"
+        ],
+        "metadata": {
+          "deployment": "edge-ids"
+        }
+      },
+      "raw_hit_payload": {
+        "sensor": "snort-east-1",
+        "src_ip": "10.10.2.14",
+        "dst_ip": "185.199.108.153",
+        "dst_port": 443
+      },
+      "object_metadata": {
+        "object_id": "flow-7712",
+        "object_type": "network_flow",
+        "source_system": "ids"
+      }
+    }
+  ]
+}

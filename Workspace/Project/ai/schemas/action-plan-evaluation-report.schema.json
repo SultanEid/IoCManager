@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/action-plan-evaluation-report.schema.json",
+  "title": "Action Plan Evaluation Report",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "sampleSize",
+    "overall",
+    "slices"
+  ],
+  "properties": {
+    "sampleSize": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "overall": {
+      "type": "object",
+      "required": [
+        "exactMatchRate",
+        "topKUsefulnessRate",
+        "unsafeRecommendationRate",
+        "overEscalationRate",
+        "underEscalationRate",
+        "unavailableMetrics"
+      ]
+    },
+    "slices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sliceField",
+          "sliceValue",
+          "sampleSize"
+        ]
+      }
+    }
+  }
+}

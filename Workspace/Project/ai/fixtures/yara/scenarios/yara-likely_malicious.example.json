@@ -1,0 +1,120 @@
+{
+  "rule_family": "yara",
+  "full_rule_text": "rule LikelyMalicious_Credential_Access_Primitives {\n  meta:\n    id = \"YARA-SCEN-0004\"\n    severity = \"high\"\n    category = \"credential_access\"\n  strings:\n    $a = \"MiniDumpWriteDump\" ascii wide\n    $b = \"LSASS\" ascii wide\n  condition:\n    all of them\n}",
+  "rule_metadata": {
+    "source": "soc-detections",
+    "rule_id": "YARA-SCEN-0004",
+    "rule_name": "LikelyMalicious_Credential_Access_Primitives",
+    "namespace": "windows.credential_access",
+    "author": "content-team",
+    "description": "Detects memory dump API and process targeting markers often used for credential theft.",
+    "tags": [
+      "likely_malicious",
+      "credential_access"
+    ],
+    "strings": [
+      "MiniDumpWriteDump",
+      "LSASS"
+    ],
+    "condition": "all of them",
+    "meta": {
+      "id": "YARA-SCEN-0004",
+      "severity": "high",
+      "category": "credential_access"
+    }
+  },
+  "raw_hit_payload": {
+    "engine": "yara-scanner-2",
+    "target_path": "C:\\Users\\Public\\Temp\\diag-helper.dll",
+    "matched_strings": [
+      "MiniDumpWriteDump",
+      "LSASS"
+    ],
+    "module_loaded_in": "rundll32.exe"
+  },
+  "object_metadata": {
+    "object_id": "file-yara-lmal-004",
+    "object_type": "file",
+    "source_system": "edr",
+    "labels": [
+      "scenario:likely_malicious",
+      "credential_access_pattern"
+    ]
+  },
+  "asset_context": {
+    "asset_id": "asset-it-017",
+    "asset_name": "it-admin-vm-017",
+    "asset_type": "server",
+    "criticality": "high",
+    "internet_exposed": false,
+    "environment": "prod",
+    "tags": [
+      "identity",
+      "domain-joined"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T16:44:00Z",
+    "first_seen": "2026-04-15T16:39:00Z",
+    "last_seen": "2026-04-15T16:44:00Z",
+    "hit_count_24h": 2,
+    "hit_count_7d": 2,
+    "prevalence_ratio": 0.0003,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "identity-admin-tooling",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "linked_enrichment": {
+    "enrichments": [
+      {
+        "kind": "sandbox",
+        "value": {
+          "behavioral_score": 83,
+          "flags": [
+            "credential_access_api_usage",
+            "unexpected_service_account_context"
+          ]
+        },
+        "source": "sandbox-cluster",
+        "reference": "internal://behavior-reports/cape-rep-001",
+        "confidence": 0.84
+      }
+    ]
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "cape-rep-001",
+        "source": "cape",
+        "reference": "internal://behavior-reports/cape-rep-001",
+        "observed_at": "2026-04-15T16:45:00Z",
+        "summary": "Process attempted credential store access and staged obfuscated commands."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-sigma-cred-119",
+        "rule_family": "sigma",
+        "rule_id": "SIGMA-LSASS-119",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T16:44:20Z",
+        "confidence": 0.79
+      },
+      {
+        "detection_id": "det-snort-ldap-88",
+        "rule_family": "snort",
+        "rule_id": "SNRT-882100",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T16:44:35Z",
+        "confidence": 0.57
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "label_type": "analyst_closure_labels",
+  "version": "1.0",
+  "labels": [
+    {
+      "label": "true_positive",
+      "title": "True Positive",
+      "description": "Confirmed malicious detection with sufficient corroborated evidence.",
+      "maps_to_verdict": "confirmed_malicious",
+      "requires_case_note": true
+    },
+    {
+      "label": "false_positive",
+      "title": "False Positive",
+      "description": "Detection does not represent malicious behavior in this context.",
+      "maps_to_verdict": "likely_benign",
+      "requires_case_note": true
+    },
+    {
+      "label": "benign",
+      "title": "Benign",
+      "description": "Observed behavior is expected and aligned with approved baseline activity.",
+      "maps_to_verdict": "likely_benign",
+      "requires_case_note": false
+    },
+    {
+      "label": "insufficient_evidence",
+      "title": "Insufficient Evidence",
+      "description": "Available evidence is inadequate for a confident positive or benign closure.",
+      "maps_to_verdict": "insufficient_evidence",
+      "requires_case_note": true
+    },
+    {
+      "label": "escalated",
+      "title": "Escalated",
+      "description": "Escalated to incident response or lead analyst for deeper investigation.",
+      "maps_to_verdict": "likely_malicious",
+      "requires_case_note": true
+    },
+    {
+      "label": "needs_review",
+      "title": "Needs Review",
+      "description": "Additional analyst review is required before final closure.",
+      "maps_to_verdict": "insufficient_evidence",
+      "requires_case_note": true
+    }
+  ]
+}

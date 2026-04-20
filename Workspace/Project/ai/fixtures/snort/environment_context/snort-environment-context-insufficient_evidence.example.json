@@ -1,0 +1,65 @@
+{
+  "record_id": "envctx-001",
+  "environment_context": {
+    "environment": "prod",
+    "network_zone": "dmz",
+    "sensor": "snort-dmz-1",
+    "sensor_type": "network_ids",
+    "sensor_version": "3.2.1",
+    "tenant": "corp",
+    "site": "riyadh-dc",
+    "business_unit": "payments",
+    "segment": "egress-gateway",
+    "capture_profile": "full_headers"
+  },
+  "asset_context": {
+    "asset_id": "asset-egress-001",
+    "asset_name": "egress-gateway-01",
+    "asset_type": "gateway",
+    "owner": "soc-network",
+    "business_unit": "payments",
+    "criticality": "high",
+    "internet_exposed": true,
+    "environment": "prod",
+    "tags": [
+      "edge",
+      "snort"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T19:22:00Z",
+    "first_seen": "2026-04-15T19:22:00Z",
+    "last_seen": "2026-04-15T19:22:00Z",
+    "hit_count_24h": 1,
+    "hit_count_7d": 1,
+    "prevalence_ratio": 0.0002,
+    "recency_bucket": "new",
+    "trend": "unknown"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "dmz-egress-observed",
+    "allowlist_source": "network-baseline-v3",
+    "baseline_notes": [
+      "No prior baseline entry"
+    ]
+  },
+  "raw_hit_payload": {
+    "src_ip": "10.70.0.4",
+    "dst_ip": "203.0.113.99",
+    "dst_port": 443,
+    "protocol": "tcp",
+    "sensor": "snort-dmz-1",
+    "observed_at": "2026-04-15T19:22:00Z"
+  },
+  "object_metadata": {
+    "object_id": "envctx-flow-001",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:insufficient_evidence",
+      "environment_context_fixture"
+    ]
+  }
+}

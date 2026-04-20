@@ -1,0 +1,65 @@
+{
+  "rule_family": "sigma",
+  "full_rule_text": "title: Benign Scheduled Backup Utility\nid: fbc0f7a6-2d6b-45f7-b607-e25eb5fb3c01\nstatus: stable\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: backupcli.exe\n    CommandLine|contains: --nightly-sync\n  condition: selection",
+  "rule_metadata": {
+    "source": "sigma-hq-local",
+    "rule_id": "SIGMA-SCEN-1001",
+    "title": "Benign Scheduled Backup Utility",
+    "id": "fbc0f7a6-2d6b-45f7-b607-e25eb5fb3c01",
+    "status": "stable",
+    "description": "Matches known-good backup execution used by infrastructure automation.",
+    "author": "soc-content",
+    "tags": [
+      "benign",
+      "backup"
+    ],
+    "level": "low",
+    "logsource": {
+      "category": "process_creation",
+      "product": "windows",
+      "service": "sysmon"
+    }
+  },
+  "raw_hit_payload": {
+    "event_id": "evt-sigma-benign-001",
+    "host": "backup-node-4",
+    "image": "C:\\Program Files\\BackupSuite\\backupcli.exe",
+    "command_line": "backupcli.exe --nightly-sync --job core-assets"
+  },
+  "object_metadata": {
+    "object_id": "proc-sigma-benign-001",
+    "object_type": "process_event",
+    "source_system": "siem",
+    "labels": [
+      "scenario:benign",
+      "scheduled_task"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T01:00:00Z",
+    "first_seen": "2026-02-01T01:00:00Z",
+    "last_seen": "2026-04-15T01:00:00Z",
+    "hit_count_24h": 12,
+    "hit_count_7d": 84,
+    "prevalence_ratio": 0.22,
+    "recency_bucket": "persistent",
+    "trend": "stable"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": true,
+    "baseline_match": true,
+    "baseline_name": "nightly-backup-jobs",
+    "allowlist_source": "siem-allowlists"
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-310",
+        "case_id": "case-4702",
+        "verdict": "benign",
+        "timestamp": "2026-04-03T03:20:00Z",
+        "notes": "Routine scheduled backup observed."
+      }
+    ]
+  }
+}
