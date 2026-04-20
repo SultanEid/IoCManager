@@ -23,9 +23,6 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
-        var sqlUserTableAuthOptions = configuration.GetSection(SqlUserTableAuthOptions.SectionName).Get<SqlUserTableAuthOptions>()
-            ?? new SqlUserTableAuthOptions();
-
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
         {
@@ -146,13 +143,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRuleDistributionTransportDispatcher, RuleDistributionTransportDispatcher>();
         services.AddSingleton<ILegacyScriptScanExecutor, LegacyScriptScanExecutor>();
         services.AddSingleton<IScanExecutionDispatcher, ScanExecutionDispatcher>();
-        if (!sqlUserTableAuthOptions.Enabled)
-        {
-            services.AddHostedService<DiscoveryRunWorker>();
-            services.AddHostedService<RuleDistributionWorker>();
-            services.AddHostedService<ScanPlanExecutionWorker>();
-            services.AddHostedService<AiAdjudicationWorker>();
-        }
+        services.AddHostedService<DiscoveryRunWorker>();
+        services.AddHostedService<RuleDistributionWorker>();
+        services.AddHostedService<ScanPlanExecutionWorker>();
+        services.AddHostedService<AiAdjudicationWorker>();
         services.AddHostedService<LegacyScanPipelineWorker>();
         services.AddApiRateLimiting(configuration);
 
