@@ -1,0 +1,318 @@
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  discoveryRunResponseSchema,
+  healthReadySchema,
+  managedServerInventoryResponseSchema,
+  promoteDiscoveredHostResponseSchema,
+  scanJobResponseSchema,
+  scanPlanResponseSchema,
+} from "@/shared/api/schemas"
+import { AspNetGateway } from "@/shared/gateway/aspnet-gateway"
+
+const mockedRequestJson = vi.hoisted(() => vi.fn())
+const mockedRequestForm = vi.hoisted(() => vi.fn())
+
+vi.mock("@/shared/api/client", () => ({
+  requestJson: mockedRequestJson,
+  requestForm: mockedRequestForm,
+}))
+
+describe("AspNetGateway", () => {
+  beforeEach(() => {
+    mockedRequestJson.mockReset()
+    mockedRequestForm.mockReset()
+  })
+
+  it("routes readiness calls to /health/ready with the typed schema", async () => {
+    const payload = {
+      status: "ready",
+      components: [
+        {
+          name: "database",
+          status: "healthy",
+          required: true,
+          message: "Database reachable.",
+        },
+      ],
+    }
+    mockedRequestJson.mockResolvedValue(payload)
+
+    const gateway = new AspNetGateway()
+    const result = await gateway.getHealthReady()
+
+    expect(result).toEqual(payload)
+    expect(mockedRequestJson).toHaveBeenCalledTimes(1)
+    expect(mockedRequestJson.mock.calls[0][0]).toBe("/health/ready")
+    expect(mockedRequestJson.mock.calls[0][1]).toBe(healthReadySchema)
+  })
+
+  it("queues discovery runs via v2 infrastructure endpoint", async () => {
+    const payload = {
+      id: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      subnetId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      requestedCidr: "10.10.1.0/24",
+      rangeStartIp: "10.10.1.10",
+      rangeEndIp: "10.10.1.20",
+      status: "Queued",
+      queuedAtUtc: "2026-04-09T10:00:00Z",
+      startedAtUtc: null,
+      completedAtUtc: null,
+      totalHosts: 11,
+      reachableHosts: 0,
+      unreachableHosts: 0,
+      summary: "",
+    }
+    mockedRequestJson.mockResolvedValue(payload)
+
+    const gateway = new AspNetGateway()
+    const result = await gateway.queueDiscoveryRun({
+      subnetId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      actorUserId: "lead-1",
+      rangeStartIp: "10.10.1.10",
+      rangeEndIp: "10.10.1.20",
+    })
+
+    expect(result.status).toBe("Queued")
+    expect(mockedRequestJson.mock.calls.at(-1)?.[0]).toBe("/api/v2/infrastructure/discovery/runs")
+    expect(mockedRequestJson.mock.calls.at(-1)?.[1]).toBe(discoveryRunResponseSchema)
+  })
+
+  it("lists discovered hosts and promotes selected host", async () => {
+    mockedRequestJson
+      .mockResolvedValueOnce([
+        {
+          id: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+          subnetId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+          ipAddress: "10.10.1.10",
+          hostname: "srv-app-10",
+          reachability: "Reachable",
+          firstDiscoveredAtUtc: "2026-04-09T10:00:01Z",
+          lastCheckedAtUtc: "2026-04-09T10:00:02Z",
+          lastSeenAtUtc: "2026-04-09T10:00:02Z",
+          lastDiscoveryRunId: "3f8df2a9-1c49-4c41-b096-c57f5a5e62c7",
+          promotedTargetServerId: null,
+          promotedAtUtc: null,
+        },
+      ])
+      .mockResolvedValueOnce({
+        discoveredHostId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+        targetServerId: "17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a",
+        alreadyPromoted: false,
+        promotedAtUtc: "2026-04-09T10:05:00Z",
+      })
+
+    const gateway = new AspNetGateway()
+    const hosts = await gateway.listDiscoveredHosts("85c86630-4876-4f03-bc30-1ec5f77d2d22")
+    expect(hosts).toHaveLength(1)
+
+    const promoteResult = await gateway.promoteDiscoveredHost("f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69", {
+      hostname: "srv-app-10",
+      operatingSystem: "Windows",
+      environment: "lab",
+      actorUserId: "lead-1",
+    })
+    expect(promoteResult.alreadyPromoted).toBe(false)
+
+    expect(mockedRequestJson.mock.calls[0]?.[0]).toBe(
+      "/api/v2/infrastructure/discovered-hosts?subnetId=85c86630-4876-4f03-bc30-1ec5f77d2d22",
+    )
+    expect(mockedRequestJson.mock.calls[1]?.[0]).toBe(
+      "/api/v2/infrastructure/discovered-hosts/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69/promote",
+    )
+    expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(promoteDiscoveredHostResponseSchema)
+  })
+
+  it("composes managed inventory filters into query parameters", async () => {
+    mockedRequestJson.mockResolvedValue({
+      servers: [],
+      totalServers: 0,
+      unhealthyServers: 0,
+      unreachableServers: 0,
+      staleContactServers: 0,
+    })
+
+    const gateway = new AspNetGateway()
+    await gateway.listManagedServers({
+      status: "Offline",
+      scannerCapability: "Yara",
+      subnetId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      lastContact: "stale",
+    })
+
+    expect(mockedRequestJson).toHaveBeenCalledTimes(1)
+    expect(mockedRequestJson.mock.calls[0]?.[0]).toBe(
+      "/api/v2/infrastructure/managed-servers?status=Offline&scannerCapability=Yara&subnetId=85c86630-4876-4f03-bc30-1ec5f77d2d22&lastContact=stale",
+    )
+    expect(mockedRequestJson.mock.calls[0]?.[1]).toBe(managedServerInventoryResponseSchema)
+  })
+
+  it("routes scan-plan create/run/cancel through /api/v2/scanning", async () => {
+    mockedRequestJson
+      .mockResolvedValueOnce({
+        id: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+        name: "Daily Yara",
+        description: "Daily plan",
+        scannerCapability: "Yara",
+        ruleSelectionMode: "RuleSet",
+        ruleScopeType: null,
+        ruleScopeValue: null,
+        cadenceType: "Daily",
+        intervalMinutes: null,
+        runAtHourUtc: 2,
+        runAtMinuteUtc: 30,
+        weeklyDayOfWeek: null,
+        operatorNotes: "notes",
+        status: "Active",
+        nextRunAtUtc: null,
+        lastQueuedAtUtc: null,
+        lastCompletedAtUtc: null,
+        lastResultStatus: null,
+        lastResultSummary: null,
+        targetServerIds: ["85c86630-4876-4f03-bc30-1ec5f77d2d22"],
+        ruleRevisionIds: ["3f8df2a9-1c49-4c41-b096-c57f5a5e62c7"],
+        targetServers: [
+          {
+            targetServerId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+            hostname: "srv-app-01",
+            ipAddress: "10.10.1.10",
+          },
+        ],
+        rules: [
+          {
+            ruleRevisionId: "3f8df2a9-1c49-4c41-b096-c57f5a5e62c7",
+            ruleArtifactId: "26f24d4f-4cc2-496e-b529-ccf30a975680",
+            ruleName: "Daily Yara",
+            ruleFamily: "yara",
+            revisionNumber: 1,
+            versionLabel: "v1",
+          },
+        ],
+        createdAtUtc: "2026-04-09T10:00:00Z",
+        updatedAtUtc: "2026-04-09T10:00:00Z",
+      })
+      .mockResolvedValueOnce({
+        id: "3f8df2a9-1c49-4c41-b096-c57f5a5e62c7",
+        scanPlanId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+        triggerSource: "Manual",
+        status: "Queued",
+        queuedAtUtc: "2026-04-09T10:01:00Z",
+        startedAtUtc: null,
+        completedAtUtc: null,
+        triggeredByUserId: "lead-1",
+        summary: "",
+        cancellationRequested: false,
+        cancellationRequestedAtUtc: null,
+        cancellationReason: null,
+        totalTargets: 1,
+        completedTargets: 0,
+        failedTargets: 0,
+        cancelledTargets: 0,
+        partiallyCompletedTargets: 0,
+        createdAtUtc: "2026-04-09T10:01:00Z",
+        updatedAtUtc: "2026-04-09T10:01:00Z",
+      })
+      .mockResolvedValueOnce({
+        id: "3f8df2a9-1c49-4c41-b096-c57f5a5e62c7",
+        scanPlanId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+        triggerSource: "Manual",
+        status: "Cancelled",
+        queuedAtUtc: "2026-04-09T10:01:00Z",
+        startedAtUtc: null,
+        completedAtUtc: "2026-04-09T10:02:00Z",
+        triggeredByUserId: "lead-1",
+        summary: "",
+        cancellationRequested: true,
+        cancellationRequestedAtUtc: "2026-04-09T10:01:30Z",
+        cancellationReason: "Operator requested",
+        totalTargets: 1,
+        completedTargets: 0,
+        failedTargets: 0,
+        cancelledTargets: 1,
+        partiallyCompletedTargets: 0,
+        createdAtUtc: "2026-04-09T10:01:00Z",
+        updatedAtUtc: "2026-04-09T10:02:00Z",
+      })
+
+    const gateway = new AspNetGateway()
+    await gateway.createScanPlan({
+      name: "Daily Yara",
+      description: "Daily plan",
+      scannerCapability: "Yara",
+      ruleSelectionMode: "RuleSet",
+      cadenceType: "Daily",
+      runAtHourUtc: 2,
+      runAtMinuteUtc: 30,
+      operatorNotes: "notes",
+      status: "Active",
+      actorUserId: "lead-1",
+      targetServerIds: ["85c86630-4876-4f03-bc30-1ec5f77d2d22"],
+      ruleRevisionIds: ["3f8df2a9-1c49-4c41-b096-c57f5a5e62c7"],
+    })
+    await gateway.runScanPlan("f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69", "lead-1")
+    await gateway.cancelScanJob("3f8df2a9-1c49-4c41-b096-c57f5a5e62c7", "lead-1", "Operator requested")
+
+    expect(mockedRequestJson.mock.calls[0]?.[0]).toBe("/api/v2/scanning/plans")
+    expect(mockedRequestJson.mock.calls[0]?.[1]).toBe(scanPlanResponseSchema)
+    expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/scanning/plans/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69/run")
+    expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(scanJobResponseSchema)
+    expect(mockedRequestJson.mock.calls[2]?.[0]).toBe("/api/v2/scanning/jobs/3f8df2a9-1c49-4c41-b096-c57f5a5e62c7/cancel")
+    expect(mockedRequestJson.mock.calls[2]?.[1]).toBe(scanJobResponseSchema)
+  })
+
+  it("maps scan-job filters and job-target endpoint", async () => {
+    mockedRequestJson
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+          scanJobId: "3f8df2a9-1c49-4c41-b096-c57f5a5e62c7",
+          targetServerId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+          targetHostname: "srv-app-01",
+          targetIpAddress: "10.10.1.10",
+          scannerId: "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
+          scannerName: "edge-1",
+          status: "Completed",
+          startedAtUtc: "2026-04-09T10:01:00Z",
+          completedAtUtc: "2026-04-09T10:01:10Z",
+          summary: "Completed",
+          errorMessage: null,
+          createdAtUtc: "2026-04-09T10:01:00Z",
+          updatedAtUtc: "2026-04-09T10:01:10Z",
+        },
+      ])
+
+    const gateway = new AspNetGateway()
+    await gateway.listScanJobs({
+      scanPlanId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      status: "PartiallyCompleted",
+      queuedFromUtc: "2026-04-09T00:00:00Z",
+      queuedToUtc: "2026-04-10T00:00:00Z",
+      take: 50,
+    })
+    await gateway.listScanJobTargets("3f8df2a9-1c49-4c41-b096-c57f5a5e62c7")
+
+    expect(mockedRequestJson.mock.calls[0]?.[0]).toBe(
+      "/api/v2/scanning/jobs?scanPlanId=f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69&status=PartiallyCompleted&queuedFromUtc=2026-04-09T00%3A00%3A00Z&queuedToUtc=2026-04-10T00%3A00%3A00Z&take=50",
+    )
+    expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/scanning/jobs/3f8df2a9-1c49-4c41-b096-c57f5a5e62c7/targets")
+    const targetsSchema = mockedRequestJson.mock.calls[1]?.[1] as { safeParse: (value: unknown) => { success: boolean } }
+    expect(targetsSchema.safeParse([
+      {
+        id: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+        scanJobId: "3f8df2a9-1c49-4c41-b096-c57f5a5e62c7",
+        targetServerId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+        targetHostname: "srv-app-01",
+        targetIpAddress: "10.10.1.10",
+        scannerId: "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
+        scannerName: "edge-1",
+        status: "Completed",
+        startedAtUtc: "2026-04-09T10:01:00Z",
+        completedAtUtc: "2026-04-09T10:01:10Z",
+        summary: "Completed",
+        errorMessage: null,
+        createdAtUtc: "2026-04-09T10:01:00Z",
+        updatedAtUtc: "2026-04-09T10:01:10Z",
+      },
+    ]).success).toBe(true)
+  })
+})

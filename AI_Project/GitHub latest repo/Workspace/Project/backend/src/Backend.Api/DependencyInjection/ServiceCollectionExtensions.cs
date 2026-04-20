@@ -1,0 +1,232 @@
+using Backend.Api.Infrastructure;
+using Backend.Api.Infrastructure.Execution;
+using Backend.Api.Middlewares;
+using Backend.Application.DependencyInjection;
+using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.DependencyInjection;
+using Backend.Infrastructure.Persistence;
+using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Backend.Api.DependencyInjection;
+
+public static class ServiceCollectionExtensions
+{
+    public static IServiceCollection AddApiServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
+    {
+        var sqlUserTableAuthOptions = configuration.GetSection(SqlUserTableAuthOptions.SectionName).Get<SqlUserTableAuthOptions>()
+            ?? new SqlUserTableAuthOptions();
+
+        services.AddExceptionHandler<GlobalExceptionHandler>();
+        services.AddProblemDetails(options =>
+        {
+            options.CustomizeProblemDetails = context =>
+            {
+                context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+            };
+        });
+
+        services.AddControllers();
+        services.AddDataProtection();
+        services.AddFluentValidationAutoValidation();
+        services.AddEndpointsApiExplorer();
+        services.AddOpenApiDocumentation();
+        services.AddHttpClient(AiSidecarHealthCheck.ProbeClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromMilliseconds(800);
+        });
+        services.AddHttpClient(RuleDistributionTransportDispatcher.HttpClientName);
+        services.AddHttpClient(ScanExecutionDispatcher.HttpClientName);
+        services.AddHealthChecks()
+            .AddDbContextCheck<CtiDbContext>(
+                "database",
+                tags: new[] { "required" })
+            .AddCheck<AiSidecarHealthCheck>(
+                "ai_sidecar",
+                failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
+                tags: new[] { "optional" });
+        services.AddAntiforgery(options =>
+        {
+            options.HeaderName = "X-CSRF-TOKEN";
+            options.Cookie.Name = "ioc.manager.csrf";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        });
+        services.AddSingleton<ApiRequestThrottlingMiddleware>();
+        services.AddScoped<CookieAntiforgeryMiddleware>();
+        services
+            .AddOptions<AuthSensitiveAuditOptions>()
+            .Bind(configuration.GetSection(AuthSensitiveAuditOptions.SectionName))
+            .ValidateOnStart();
+        services
+            .AddOptions<DiscoveryExecutionOptions>()
+            .Bind(configuration.GetSection(DiscoveryExecutionOptions.SectionName))
+            .Validate(options => options.TimeoutMilliseconds is >= 100 and <= 5000, "Infrastructure:Discovery:TimeoutMilliseconds must be between 100 and 5000.")
+            .Validate(options => options.MaxParallelism is >= 1 and <= 128, "Infrastructure:Discovery:MaxParallelism must be between 1 and 128.")
+            .Validate(options => options.MaxHostsPerRun is > 0 and <= 256, "Infrastructure:Discovery:MaxHostsPerRun must be between 1 and 256.")
+            .Validate(options => options.DnsLookupTimeoutMilliseconds is >= 250 and <= 5000, "Infrastructure:Discovery:DnsLookupTimeoutMilliseconds must be between 250 and 5000.")
+            .ValidateOnStart();
+        services
+            .AddOptions<RuleDistributionExecutionOptions>()
+            .Bind(configuration.GetSection(RuleDistributionExecutionOptions.SectionName))
+            .Validate(options => options.MaxAttempts is >= 1 and <= 10, "Infrastructure:RuleDistribution:MaxAttempts must be between 1 and 10.")
+            .Validate(options => options.BackoffSeconds is { Length: > 0 } && options.BackoffSeconds.All(x => x > 0), "Infrastructure:RuleDistribution:BackoffSeconds must contain positive values.")
+            .Validate(options => options.SchedulerIntervalSeconds is >= 1 and <= 60, "Infrastructure:RuleDistribution:SchedulerIntervalSeconds must be between 1 and 60.")
+            .Validate(options => options.CommandTimeoutSeconds is >= 5 and <= 300, "Infrastructure:RuleDistribution:CommandTimeoutSeconds must be between 5 and 300.")
+            .Validate(options => options.HttpTimeoutSeconds is >= 5 and <= 300, "Infrastructure:RuleDistribution:HttpTimeoutSeconds must be between 5 and 300.")
+            .Validate(options => options.MaxJitterSeconds is >= 0 and <= 30, "Infrastructure:RuleDistribution:MaxJitterSeconds must be between 0 and 30.")
+            .ValidateOnStart();
+        services
+            .AddOptions<ScanExecutionOptions>()
+            .Bind(configuration.GetSection(ScanExecutionOptions.SectionName))
+            .Validate(options => options.SchedulerIntervalSeconds is >= 1 and <= 300, "Infrastructure:Scanning:SchedulerIntervalSeconds must be between 1 and 300.")
+            .Validate(options => options.HttpTimeoutSeconds is >= 5 and <= 300, "Infrastructure:Scanning:HttpTimeoutSeconds must be between 5 and 300.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.AgentEndpointPath), "Infrastructure:Scanning:AgentEndpointPath must be configured.")
+            .Validate(options => options.MaxRawOutputChars is >= 256 and <= 200_000, "Infrastructure:Scanning:MaxRawOutputChars must be between 256 and 200000.")
+            .Validate(options => options.MaxResultFiles is >= 1 and <= 2048, "Infrastructure:Scanning:MaxResultFiles must be between 1 and 2048.")
+            .Validate(options => options.MaxFindings is >= 1 and <= 20_000, "Infrastructure:Scanning:MaxFindings must be between 1 and 20000.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.WorkerActorUserId), "Infrastructure:Scanning:WorkerActorUserId must be configured.")
+            .ValidateOnStart();
+        services
+            .AddOptions<PowerBiVisualizationOptions>()
+            .Bind(configuration.GetSection(PowerBiVisualizationOptions.SectionName));
+
+        services.AddScoped<IAuthSensitiveAuditService, AuthSensitiveAuditService>();
+        services.AddSingleton<IPowerBiVisualizationCatalogService, PowerBiVisualizationCatalogService>();
+        services.AddScoped<IRuleRevisionValidationPipeline, RuleRevisionValidationPipeline>();
+        services.AddScoped<IResultIngestionService, ResultIngestionService>();
+        services.AddSingleton<ILegacyScannerResultExtractor, LegacyScannerResultExtractor>();
+        services.AddSingleton<TargetServerConnectionSecretProtector>();
+        services.AddSingleton<DiscoveryTargetRangeParser>();
+        services.AddSingleton<IDiscoveryObservationProvider, DiscoveryObservationProvider>();
+        services.AddSingleton<IDiscoveryRunQueue, DiscoveryRunQueue>();
+        services.AddSingleton<IRuleDistributionJobQueue, RuleDistributionJobQueue>();
+        services.AddSingleton<IScanJobQueue, ScanJobQueue>();
+        services.AddSingleton<IIcmpProbe, SystemIcmpProbe>();
+        services.AddSingleton<IRuleDistributionCommandRunner, RuleDistributionCommandRunner>();
+        services.AddSingleton<IRuleDistributionTransportDispatcher, RuleDistributionTransportDispatcher>();
+        services.AddSingleton<ILegacyScriptScanExecutor, LegacyScriptScanExecutor>();
+        services.AddSingleton<IScanExecutionDispatcher, ScanExecutionDispatcher>();
+        if (!sqlUserTableAuthOptions.Enabled)
+        {
+            services.AddHostedService<DiscoveryRunWorker>();
+            services.AddHostedService<RuleDistributionWorker>();
+            services.AddHostedService<ScanPlanExecutionWorker>();
+        }
+        services.AddApiRateLimiting(configuration);
+
+        services.AddApplication();
+        services.AddInfrastructure(configuration);
+        services.AddAuthorization(AuthorizationPolicies.Configure);
+        services.AddApiAuthentication(configuration, environment);
+
+        return services;
+    }
+
+    private static IServiceCollection AddOpenApiDocumentation(this IServiceCollection services)
+    {
+        services.AddSwaggerGen(options =>
+        {
+            options.SwaggerDoc("v1", new OpenApiInfo
+            {
+                Title = "Backend API",
+                Version = "v1",
+                Description = "IoC Manager backend for ingestion, rule lifecycle, server operations, distribution, scans, and alerts.",
+            });
+
+            var jwtScheme = new OpenApiSecurityScheme
+            {
+                Name = "Authorization",
+                In = ParameterLocation.Header,
+                Type = SecuritySchemeType.Http,
+                Scheme = JwtBearerDefaults.AuthenticationScheme,
+                BearerFormat = "JWT",
+                Description = "JWT Bearer token.",
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = JwtBearerDefaults.AuthenticationScheme,
+                },
+            };
+
+            options.AddSecurityDefinition(jwtScheme.Reference.Id, jwtScheme);
+            options.AddSecurityRequirement(new OpenApiSecurityRequirement
+            {
+                { jwtScheme, Array.Empty<string>() },
+            });
+        });
+
+        return services;
+    }
+
+    private static IServiceCollection AddApiAuthentication(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
+    {
+        var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+
+        if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) || jwtOptions.SigningKey.Length < 32)
+        {
+            if (!environment.IsDevelopment())
+            {
+                throw new InvalidOperationException("Auth:Jwt:SigningKey must be configured in non-development environments.");
+            }
+
+            jwtOptions.SigningKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+            services.PostConfigure<JwtOptions>(options => options.SigningKey = jwtOptions.SigningKey);
+        }
+
+        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = !environment.IsDevelopment();
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidateLifetime = true,
+                    ValidIssuer = jwtOptions.Issuer,
+                    ValidAudience = jwtOptions.Audience,
+                    IssuerSigningKey = signingKey,
+                    ClockSkew = TimeSpan.FromMinutes(1),
+                };
+            });
+
+        return services;
+    }
+
+    private static IServiceCollection AddApiRateLimiting(this IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<ApiRateLimitingOptions>()
+            .Bind(configuration.GetSection(ApiRateLimitingOptions.SectionName))
+            .Validate(ValidateRateLimitingOptions, "RateLimiting configuration is invalid.")
+            .ValidateOnStart();
+
+        return services;
+    }
+
+    private static bool ValidateRateLimitingOptions(ApiRateLimitingOptions options)
+    {
+        return ValidatePolicy(options.AuthToken)
+            && ValidatePolicy(options.Write)
+            && ValidatePolicy(options.Read);
+    }
+
+    private static bool ValidatePolicy(ApiRateLimitPolicyOptions policy)
+    {
+        return policy.PermitLimit > 0 && policy.WindowSeconds > 0 && policy.QueueLimit >= 0;
+    }
+}
