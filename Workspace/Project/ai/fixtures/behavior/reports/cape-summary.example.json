@@ -1,0 +1,56 @@
+{
+  "provider": "CAPE",
+  "report_id": "cape-rep-001",
+  "report_style": "cape_summary",
+  "generated_at": "2026-04-15T19:04:00Z",
+  "sample": {
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "file_name": "invoice_viewer_stub.exe",
+    "file_type": "pe32 executable",
+    "size_bytes": 216064
+  },
+  "behavioral_summary": {
+    "high_level": "Sample launched helper processes, enumerated credentials-related APIs, and scheduled repeated outbound task checks.",
+    "observed_capabilities": [
+      "credential_access_primitives",
+      "scripted_tasking"
+    ],
+    "persistence_observed": true,
+    "evasion_observed": true
+  },
+  "network_summary": {
+    "domains": [
+      "control.sync-queue.example"
+    ],
+    "ip_contacts": [
+      "198.51.100.88"
+    ],
+    "http_requests": [
+      {
+        "method": "POST",
+        "uri_path": "/tasking/v2",
+        "user_agent": "Mozilla/5.0"
+      }
+    ]
+  },
+  "process_summary": {
+    "tree": [
+      {
+        "image": "invoice_viewer_stub.exe",
+        "command_line": "invoice_viewer_stub.exe /quiet",
+        "children": [
+          "rundll32.exe C:\\ProgramData\\diag-helper.dll,Run",
+          "powershell.exe -NoProfile -Command Start-Sleep 5"
+        ]
+      }
+    ],
+    "mutexes": [
+      "Global\\INV_SYNC_MUTEX"
+    ],
+    "dropped_files": [
+      "C:\\ProgramData\\SystemHealth\\svc-host.dat"
+    ]
+  },
+  "confidence": 0.86,
+  "analyst_notes": "Synthetic safe sample for fixture testing only; no live payload content."
+}

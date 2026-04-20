@@ -1,9 +1,17 @@
 import type {
   AlertListResponse,
+  AiAdjudicationActionPlanOrPendingResponse,
+  AiAdjudicationExplanationOrPendingResponse,
+  AiAdjudicationResultResponse,
+  AiEvidenceSourcesResponse,
+  AiOverrideOrClosureResponse,
+  AiSimilarDetectionsResponse,
   V2AlertDetailResponse,
   AuditLogListResponse,
+  ArchiveRecordResponse,
   CaseRuleWorkflowResponse,
   CoveragePainAnalysisResponse,
+  DetectionDetailResponse,
   DetectionHistoryResponse,
   FeedSourceResponse,
   IocListResponse,
@@ -23,7 +31,10 @@ import type {
   DiscoveredHostResponse,
   DiscoveryRunResponse,
   PromoteDiscoveredHostResponse,
+  PermissionResponse,
+  RetentionPolicyResponse,
   RoleResponse,
+  RolePermissionResponse,
   RollbackPlanResponse,
   RolloutPlanResponse,
   RuleDetail,
@@ -36,20 +47,26 @@ import type {
   TargetServerResponse,
   RuleProposalResponse,
   RuleSimulationResultResponse,
+  SubmitAiAdjudicationAcceptedResponse,
   TokenResponse,
   UserResponse,
 } from "@/shared/api/schemas"
 import type {
   AdvanceRolloutStageInput,
+  AiAdjudicationCursorQuery,
   AlertListQuery,
   ArchiveRuleInput,
   AuditLogListQuery,
   CaseDetailVM,
+  CreateRetentionPolicyInput,
   CreateDistributionJobInput,
   CreateScanPlanInput,
   CoveragePainAnalysisScopeInput,
   CreateRuleRepositoryInput,
   CreateManagedServerInput,
+  CreateScannerInput,
+  CreateWorkbenchPermissionInput,
+  CreateWorkbenchRoleInput,
   CreateWorkbenchUserInput,
   CreateRuleProposalInput,
   DetectionListQuery,
@@ -64,6 +81,7 @@ import type {
   PromoteDiscoveredHostInput,
   QueueItem,
   QueueDiscoveryRunInput,
+  ExecuteRetentionPolicyInput,
   RecordCanaryObservationInput,
   ReportListQuery,
   RestoreRuleInput,
@@ -73,9 +91,13 @@ import type {
   ReviewRuleProposalInput,
   SettingsAdminVM,
   SimulateRuleProposalInput,
+  SubmitAiAdjudicationInput,
+  SubmitAiAdjudicationOverrideOrClosureInput,
   TriggerRollbackInput,
+  AssignWorkbenchRolePermissionInput,
   RetryDistributionJobInput,
   ImportRuleFileInput,
+  UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
   UpdateManagedServerInput,
@@ -153,6 +175,21 @@ const MOCK_ROLES: RoleResponse[] = [
   { id: "33333333-3333-4333-8333-333333333333", name: "Admin" },
 ]
 
+const MOCK_PERMISSIONS: PermissionResponse[] = [
+  {
+    id: "44444444-4444-4444-8444-444444444441",
+    key: "audit.read",
+    description: "Read audit trail entries.",
+    createdAtUtc: "2026-04-01T00:00:00Z",
+  },
+  {
+    id: "44444444-4444-4444-8444-444444444442",
+    key: "retention.manage",
+    description: "Manage retention policies.",
+    createdAtUtc: "2026-04-01T00:00:00Z",
+  },
+]
+
 export class MockGateway implements Gateway {
   private users: UserResponse[] = listMockPersonas().map((persona, index) => ({
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
@@ -161,6 +198,58 @@ export class MockGateway implements Gateway {
     displayName: persona.displayName,
     role: persona.roles[0] ?? "Analyst",
   }))
+  private roles: RoleResponse[] = copy(MOCK_ROLES)
+  private permissions: PermissionResponse[] = copy(MOCK_PERMISSIONS)
+  private rolePermissions: RolePermissionResponse[] = [
+    {
+      roleId: MOCK_ROLES[2].id,
+      permissionId: MOCK_PERMISSIONS[0].id,
+      grantedByUserId: "system",
+      grantedAtUtc: "2026-04-01T00:00:00Z",
+    },
+    {
+      roleId: MOCK_ROLES[2].id,
+      permissionId: MOCK_PERMISSIONS[1].id,
+      grantedByUserId: "system",
+      grantedAtUtc: "2026-04-01T00:00:00Z",
+    },
+  ]
+  private retentionPolicies: RetentionPolicyResponse[] = [
+    {
+      id: "55555555-5555-4555-8555-555555555551",
+      dataType: "ScanResult",
+      retainDays: 30,
+      archiveAfterDays: 14,
+      isEnabled: true,
+      createdAtUtc: "2026-04-01T00:00:00Z",
+      updatedAtUtc: "2026-04-01T00:00:00Z",
+    },
+  ]
+  private archiveRecords: ArchiveRecordResponse[] = []
+  private scanners: ScannerResponse[] = [
+    {
+      id: "66666666-6666-4666-8666-666666666661",
+      name: "demo-yara-1",
+      engineType: "Yara",
+      version: "4.5.0",
+      healthStatus: "Healthy",
+      lastHeartbeatUtc: "2026-04-20T08:00:00Z",
+      createdAtUtc: "2026-04-01T00:00:00Z",
+      updatedAtUtc: "2026-04-20T08:00:00Z",
+      capabilities: ["Yara"],
+    },
+    {
+      id: "66666666-6666-4666-8666-666666666662",
+      name: "demo-sigma-1",
+      engineType: "Sigma",
+      version: "1.0.0",
+      healthStatus: "Degraded",
+      lastHeartbeatUtc: "2026-04-20T07:30:00Z",
+      createdAtUtc: "2026-04-01T00:00:00Z",
+      updatedAtUtc: "2026-04-20T07:30:00Z",
+      capabilities: ["Sigma"],
+    },
+  ]
   private generatedReports: ReportListResponse["items"] = []
 
   async login(username: string, _password: string): Promise<TokenResponse> {
@@ -464,7 +553,18 @@ export class MockGateway implements Gateway {
 
   async listRoles(_signal?: AbortSignal): Promise<RoleResponse[]> {
     consume(_signal)
-    return copy(MOCK_ROLES)
+    return copy(this.roles)
+  }
+
+  async listPermissions(_signal?: AbortSignal): Promise<PermissionResponse[]> {
+    consume(_signal)
+    return copy(this.permissions)
+  }
+
+  async listRolePermissions(roleId?: string, _signal?: AbortSignal): Promise<RolePermissionResponse[]> {
+    consume(_signal)
+    const items = roleId ? this.rolePermissions.filter((item) => item.roleId === roleId) : this.rolePermissions
+    return copy(items)
   }
 
   async createUser(input: CreateWorkbenchUserInput): Promise<UserResponse> {
@@ -478,6 +578,89 @@ export class MockGateway implements Gateway {
 
     this.users = [created, ...this.users]
     return copy(created)
+  }
+
+  async createRole(input: CreateWorkbenchRoleInput): Promise<RoleResponse> {
+    const created: RoleResponse = {
+      id: nextUserId(),
+      name: input.name.trim(),
+    }
+
+    this.roles = [created, ...this.roles]
+    return copy(created)
+  }
+
+  async createPermission(input: CreateWorkbenchPermissionInput): Promise<PermissionResponse> {
+    const created: PermissionResponse = {
+      id: nextUserId(),
+      key: input.key.trim(),
+      description: input.description.trim(),
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    this.permissions = [created, ...this.permissions]
+    return copy(created)
+  }
+
+  async assignRolePermission(input: AssignWorkbenchRolePermissionInput): Promise<RolePermissionResponse> {
+    const created: RolePermissionResponse = {
+      roleId: input.roleId,
+      permissionId: input.permissionId,
+      grantedByUserId: input.actorUserId,
+      grantedAtUtc: new Date().toISOString(),
+    }
+
+    this.rolePermissions = [
+      ...this.rolePermissions.filter(
+        (item) => !(item.roleId === created.roleId && item.permissionId === created.permissionId),
+      ),
+      created,
+    ]
+    return copy(created)
+  }
+
+  async listRetentionPolicies(_signal?: AbortSignal): Promise<RetentionPolicyResponse[]> {
+    consume(_signal)
+    return copy(this.retentionPolicies)
+  }
+
+  async createRetentionPolicy(input: CreateRetentionPolicyInput): Promise<RetentionPolicyResponse> {
+    const nowUtc = new Date().toISOString()
+    const created: RetentionPolicyResponse = {
+      id: nextUserId(),
+      dataType: input.dataType,
+      retainDays: input.retainDays,
+      archiveAfterDays: input.archiveAfterDays,
+      isEnabled: true,
+      createdAtUtc: nowUtc,
+      updatedAtUtc: nowUtc,
+    }
+
+    this.retentionPolicies = [created, ...this.retentionPolicies]
+    return copy(created)
+  }
+
+  async listArchiveRecords(retentionPolicyId?: string, _signal?: AbortSignal): Promise<ArchiveRecordResponse[]> {
+    consume(_signal)
+    const items = retentionPolicyId
+      ? this.archiveRecords.filter((item) => item.retentionPolicyId === retentionPolicyId)
+      : this.archiveRecords
+    return copy(items)
+  }
+
+  async executeRetentionPolicy(input: ExecuteRetentionPolicyInput): Promise<ArchiveRecordResponse[]> {
+    const created: ArchiveRecordResponse = {
+      id: nextUserId(),
+      retentionPolicyId: input.retentionPolicyId,
+      entityType: "scan_result",
+      entityId: nextUserId(),
+      archiveUri: `${input.archiveUriPrefix.replace(/\/$/, "")}/scan_result/demo.json`,
+      archivedAtUtc: new Date().toISOString(),
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    this.archiveRecords = [created, ...this.archiveRecords]
+    return [copy(created)]
   }
 
   async listSubnets(_signal?: AbortSignal): Promise<SubnetResponse[]> {
@@ -645,7 +828,50 @@ export class MockGateway implements Gateway {
 
   async listScanners(_signal?: AbortSignal): Promise<ScannerResponse[]> {
     consume(_signal)
-    return []
+    return copy(this.scanners)
+  }
+
+  async createScanner(input: CreateScannerInput): Promise<ScannerResponse> {
+    const nowUtc = new Date().toISOString()
+    const capabilities = (input.capabilities?.length ? input.capabilities : [input.engineType]).filter(
+      (item): item is ScannerResponse["capabilities"][number] =>
+        item === "Yara" || item === "Sigma" || item === "Snort" || item === "Suricata",
+    )
+    const created: ScannerResponse = {
+      id: nextUserId(),
+      name: input.name.trim(),
+      engineType: input.engineType.trim(),
+      version: input.version.trim(),
+      healthStatus: "Healthy",
+      lastHeartbeatUtc: null,
+      createdAtUtc: nowUtc,
+      updatedAtUtc: nowUtc,
+      capabilities,
+    }
+
+    this.scanners = [created, ...this.scanners]
+    return copy(created)
+  }
+
+  async updateScannerCapabilities(scannerId: string, input: UpdateScannerCapabilitiesInput): Promise<ScannerResponse> {
+    const scanner = this.scanners.find((item) => item.id === scannerId)
+    if (!scanner) {
+      throw new Error("Scanner not found.")
+    }
+
+    const capabilities = input.capabilities.filter(
+      (item): item is ScannerResponse["capabilities"][number] =>
+        item === "Yara" || item === "Sigma" || item === "Snort" || item === "Suricata",
+    )
+
+    const updated: ScannerResponse = {
+      ...scanner,
+      capabilities,
+      updatedAtUtc: new Date().toISOString(),
+    }
+
+    this.scanners = this.scanners.map((item) => (item.id === scannerId ? updated : item))
+    return copy(updated)
   }
 
   async queueDiscoveryRun(_input: QueueDiscoveryRunInput): Promise<DiscoveryRunResponse> {
@@ -672,6 +898,267 @@ export class MockGateway implements Gateway {
       take: pageSize,
       skip: (Math.max(1, page) - 1) * pageSize,
       items: [],
+    }
+  }
+
+  async getDetectionDetail(detectionId: string, _signal?: AbortSignal): Promise<DetectionDetailResponse> {
+    consume(_signal)
+    const now = new Date().toISOString()
+    return {
+      id: detectionId,
+      fingerprint: `mock-${detectionId.slice(0, 12)}`,
+      scannerFamily: "yara",
+      serverId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      serverHostname: "srv-mock-01",
+      scanJobId: null,
+      jobAttemptId: null,
+      targetExecutionId: null,
+      ruleRevisionId: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      ruleName: "mock_rule",
+      iocId: null,
+      iocType: "domain",
+      iocValue: "mock.example",
+      disposition: "Detection",
+      confidence: 0.73,
+      observedAtUtc: now,
+      firstObservedAtUtc: now,
+      lastObservedAtUtc: now,
+      occurrenceCount: 1,
+      isExecutionArtifact: false,
+      evidenceJson: "{\"mock\":true}",
+      rawPayloadHash: "mock-hash",
+      source: "mock-gateway",
+      linkedAlerts: [],
+      linkedCases: [
+        {
+          id: "17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a",
+          title: "Mock linked case",
+          status: "Open",
+          severity: "High",
+          updatedAtUtc: now,
+        },
+      ],
+    }
+  }
+
+  async submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse> {
+    consume(input)
+    const adjudicationId = nextUserId()
+    const submittedAtUtc = new Date().toISOString()
+    return {
+      adjudicationId,
+      status: "Queued",
+      submittedAtUtc,
+      links: {
+        result: `/api/v2/ai/adjudications/${adjudicationId}`,
+        explanation: `/api/v2/ai/adjudications/${adjudicationId}/explanation`,
+        actionPlan: `/api/v2/ai/adjudications/${adjudicationId}/action-plan`,
+        similarDetections: `/api/v2/ai/adjudications/${adjudicationId}/similar-detections`,
+        evidenceSources: `/api/v2/ai/adjudications/${adjudicationId}/evidence-sources`,
+        overrideClosure: `/api/v2/ai/adjudications/${adjudicationId}/override-closure`,
+      },
+    }
+  }
+
+  async getAiAdjudicationResult(adjudicationId: string, _signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
+    consume(_signal)
+    const now = new Date().toISOString()
+    return {
+      adjudicationId,
+      status: "Completed",
+      submittedAtUtc: now,
+      startedAtUtc: now,
+      completedAtUtc: now,
+      failureCode: null,
+      failureMessage: null,
+      modelVersion: "mock-model",
+      datasetVersion: "mock-dataset",
+      decision: {
+        verdict: "likely_malicious",
+        action: "monitor",
+        confidence: 0.71,
+        falsePositiveRisk: 0.22,
+        reviewPriority: "high",
+        shouldPromoteToIndicator: true,
+        shouldSuppress: false,
+        shouldAllowlist: false,
+        shouldEscalate: true,
+        reasons: ["Mock reasoning for UI scaffolding."],
+        provenance: [],
+        nextBestEvidence: ["collect_host_telemetry"],
+        abstainReason: null,
+        scoredAtUtc: now,
+        safetyDiagnostics: {
+          autoRemediationAllowed: false,
+          weakEvidence: false,
+          contradictoryEvidence: false,
+          contradictionScore: 0,
+          missingCriticalFields: [],
+          partialEvidence: false,
+          enrichmentStatus: "available",
+          falsePositiveRisk: 0.22,
+          severityCapApplied: false,
+          maxRecommendationSeverity: "containment_allowed",
+          degradationReasons: [],
+        },
+        raw: {},
+      },
+      explanationAvailable: true,
+      actionPlanAvailable: true,
+      similarDetectionsAvailable: true,
+      evidenceSourcesAvailable: true,
+    }
+  }
+
+  async getAiAdjudicationExplanation(
+    adjudicationId: string,
+    _signal?: AbortSignal,
+  ): Promise<AiAdjudicationExplanationOrPendingResponse> {
+    consume(_signal)
+    const now = new Date().toISOString()
+    return {
+      adjudicationId,
+      status: "Completed",
+      summary: "Mock deterministic explanation for adjudication review.",
+      decisionState: "monitor",
+      recommendedAction: "monitor",
+      rationale: ["Evidence supports monitoring while collecting corroboration."],
+      citations: [],
+      nextBestEvidence: ["collect_host_telemetry"],
+      policyVersion: "mock-policy",
+      modelVersion: "mock-model",
+      datasetVersion: "mock-dataset",
+      generatedAtUtc: now,
+      raw: {},
+      phrasingDiagnostics: {
+        origin: "deterministic",
+        status: "disabled",
+        enabled: false,
+        provider: null,
+        model: null,
+        raw: { status: "disabled" },
+      },
+    }
+  }
+
+  async getAiAdjudicationActionPlan(
+    adjudicationId: string,
+    _signal?: AbortSignal,
+  ): Promise<AiAdjudicationActionPlanOrPendingResponse> {
+    consume(_signal)
+    const now = new Date().toISOString()
+    return {
+      adjudicationId,
+      status: "Completed",
+      summary: "Manual-only recommendations derived from deterministic policy gates.",
+      recommendedActions: [
+        {
+          action: "search_fleet",
+          rank: 1,
+          score: 0.74,
+          rationale: "Assess spread prior to irreversible containment.",
+          prerequisites: ["Scope by asset group."],
+          cautions: ["Large searches may increase query load."],
+          escalationTarget: "analyst_queue",
+          requiredReviewerRole: "tier1_analyst",
+          requiresHumanApproval: true,
+          executionMode: "manual_only",
+        },
+      ],
+      prerequisites: ["Scope by asset group."],
+      cautions: ["Large searches may increase query load."],
+      neverAutoExecutes: true,
+      policyConstrained: true,
+      evidenceBased: true,
+      generatedAtUtc: now,
+      raw: {},
+      phrasingDiagnostics: {
+        origin: "deterministic",
+        status: "disabled",
+        enabled: false,
+        provider: null,
+        model: null,
+        raw: { status: "disabled" },
+      },
+    }
+  }
+
+  async listAiAdjudicationEvidenceSources(
+    adjudicationId: string,
+    query: AiAdjudicationCursorQuery = {},
+    _signal?: AbortSignal,
+  ): Promise<AiEvidenceSourcesResponse> {
+    consume(_signal, query)
+    return {
+      adjudicationId,
+      limit: query.limit ?? 20,
+      nextCursor: null,
+      items: [
+        {
+          id: "7afdfb88-f5c2-40ef-87ff-872e0e7248c1",
+          channel: "telemetry",
+          source: "mock-edr",
+          evidenceId: "ev-1",
+          reference: "ref-1",
+          category: "process_lineage",
+          polarity: "positive",
+          confidence: 0.78,
+          summary: "Parent-child process chain matched known pattern.",
+          anchor: "process_tree",
+          rank: 1,
+        },
+      ],
+    }
+  }
+
+  async listAiAdjudicationSimilarDetections(
+    adjudicationId: string,
+    query: AiAdjudicationCursorQuery = {},
+    _signal?: AbortSignal,
+  ): Promise<AiSimilarDetectionsResponse> {
+    consume(_signal, query)
+    return {
+      adjudicationId,
+      limit: query.limit ?? 20,
+      nextCursor: null,
+      items: [
+        {
+          id: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+          detectionId: "mock-detection-1",
+          ruleFamily: "yara",
+          ruleId: "mock-rule",
+          relationType: "similar_pattern",
+          observedAtUtc: new Date().toISOString(),
+          confidence: 0.7,
+          similarityScore: 0.82,
+          similarityReasons: ["shared_ioc_pattern"],
+          priorVerdicts: ["likely_malicious"],
+          priorAcceptedActions: ["search_fleet"],
+          priorOutcomes: ["success"],
+          rank: 1,
+        },
+      ],
+    }
+  }
+
+  async submitAiAdjudicationOverrideOrClosure(
+    adjudicationId: string,
+    input: SubmitAiAdjudicationOverrideOrClosureInput,
+  ): Promise<AiOverrideOrClosureResponse> {
+    const submittedAtUtc = new Date().toISOString()
+    return {
+      adjudicationId,
+      overrideId: nextUserId(),
+      actionType: input.actionType,
+      previousStatus: "Completed",
+      newStatus: input.actionType === "Override" ? "Overridden" : "Closed",
+      reason: input.reason,
+      notes: input.notes ?? null,
+      overrideVerdict: input.overrideVerdict ?? null,
+      closureDisposition: input.closureDisposition ?? null,
+      isFinal: input.isFinal ?? input.actionType === "Close",
+      submittedByUserId: input.submittedByUserId,
+      submittedAtUtc,
     }
   }
 

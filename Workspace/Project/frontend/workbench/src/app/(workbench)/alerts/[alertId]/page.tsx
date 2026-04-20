@@ -227,7 +227,12 @@ export default function AlertDetailPage() {
                 <div key={result.resultId} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-medium">Result {result.resultId}</p>
-                    <StatusBadge value={result.status} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge value={result.status} />
+                      <Link href={`/scans/${encodeURIComponent(result.resultId)}`} className="inline-flex">
+                        <Button type="button" size="sm" variant="outline">Open adjudication</Button>
+                      </Link>
+                    </div>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Job {result.jobId ?? "Unknown"} | {result.findingsCount} finding(s)

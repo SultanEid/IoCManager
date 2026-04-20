@@ -75,9 +75,14 @@ public enum RolloutStage
 
 public enum FeedbackVerdict
 {
-    ConfirmedThreat = 1,
-    Benign = 2,
-    NeedsMoreEvidence = 3,
+    Benign = 1,
+    LikelyBenign = 2,
+    Suspicious = 3,
+    LikelyMalicious = 4,
+    Malicious = 5,
+    FalsePositive = 6,
+    InsufficientEvidence = 7,
+    StaleOrRevoked = 8,
 }
 
 public enum JobType

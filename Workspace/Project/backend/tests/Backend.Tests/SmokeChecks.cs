@@ -24,6 +24,8 @@ internal static class SmokeChecks
             new SmokeCase("scan dispatch prefers legacy scripts before connector fallback", ScanDispatch_PrefersLegacyScriptsAsync),
             new SmokeCase("legacy Azure compatibility reader is available for incremental fallback", LegacyAzureCompatibilityReader_IsAvailableAsync),
             new SmokeCase("controllers fall back to legacy Azure reads for mapped surfaces", Controllers_UseLegacyAzureFallbackAsync),
+            new SmokeCase("ai adjudication contracts carry safety diagnostics end to end", AiAdjudicationContracts_CarrySafetyDiagnosticsAsync),
+            new SmokeCase("obsolete ai decision parser has been removed", ObsoleteAiDecisionParser_IsRemovedAsync),
         };
 
         var failures = new List<string>();
@@ -206,6 +208,32 @@ internal static class SmokeChecks
         var iocSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Controllers", "V2", "IocsController.cs"));
         Expect.Contains("new LegacyIocQuery(", iocSource, "IOC controller should build a legacy IOC fallback query.");
         Expect.Contains("ListIocsAsync(", iocSource, "IOC controller should fall back to legacy IOC reads.");
+        return Task.CompletedTask;
+    }
+
+    private static Task AiAdjudicationContracts_CarrySafetyDiagnosticsAsync()
+    {
+        var contractSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Contracts", "V2", "AiAdjudicationContracts.cs"));
+        Expect.Contains("SafetyDiagnosticsDto", contractSource, "AI adjudication contracts should expose the safety diagnostics DTO.");
+        Expect.Contains("SafetyDiagnostics", contractSource, "Adjudication decision DTO should include safety diagnostics.");
+
+        var serviceSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Application", "Services", "AiAdjudicationService.cs"));
+        Expect.Contains("ParseSafetyDiagnostics", serviceSource, "AI adjudication service should parse safety diagnostics from stored raw payloads.");
+        Expect.Contains("groundedDecision", serviceSource, "AI adjudication service should inspect groundedDecision payloads.");
+        return Task.CompletedTask;
+    }
+
+    private static Task ObsoleteAiDecisionParser_IsRemovedAsync()
+    {
+        var parserPath = Path.Combine(
+            Path.GetDirectoryName(ResolveRepoPath("Project", "backend", "src", "Backend.Application", "Services", "AiAdjudicationService.cs"))!,
+            "..",
+            "..",
+            "Backend.Infrastructure",
+            "Integrations",
+            "AiDecisionContractParser.cs");
+
+        Expect.False(File.Exists(Path.GetFullPath(parserPath)), "Obsolete AI decision parser should be removed from the backend.");
         return Task.CompletedTask;
     }
 

@@ -1,0 +1,74 @@
+{
+  "rule_family": "snort",
+  "full_rule_text": "alert tcp $HOME_NET any -> $EXTERNAL_NET 443 (msg:\"Suspicious periodic beacon cadence\"; flow:to_server,established; content:\"/api/poll\"; http_uri; threshold:type both, track by_src, count 12, seconds 60; sid:510002; rev:1; classtype:trojan-activity;)",
+  "rule_metadata": {
+    "source": "ids-content-local",
+    "rule_id": "SNRT-SCEN-2002",
+    "sid": 510002,
+    "rev": 1,
+    "msg": "Suspicious periodic beacon cadence",
+    "classification": "trojan-activity",
+    "priority": 2,
+    "references": [
+      "url,internal-wiki/rules/SNRT-SCEN-2002"
+    ],
+    "metadata": {
+      "deployment": "egress-ids"
+    }
+  },
+  "raw_hit_payload": {
+    "sensor": "snort-west-2",
+    "src_ip": "10.20.77.42",
+    "dst_ip": "198.51.100.44",
+    "dst_port": 443,
+    "uri_path": "/api/poll"
+  },
+  "object_metadata": {
+    "object_id": "flow-snort-susp-002",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:suspicious",
+      "periodic_beacon"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T17:02:00Z",
+    "first_seen": "2026-04-15T16:58:00Z",
+    "last_seen": "2026-04-15T17:02:00Z",
+    "hit_count_24h": 5,
+    "hit_count_7d": 5,
+    "prevalence_ratio": 0.001,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "known-saas-beacons",
+    "allowlist_source": "network-baseline"
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "cuckoo-rep-001",
+        "source": "cuckoo",
+        "reference": "internal://behavior-reports/cuckoo-rep-001",
+        "observed_at": "2026-04-15T17:03:00Z",
+        "summary": "Sandbox run showed timed HTTP polling loop with script host launch."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-sigma-susp-12",
+        "rule_family": "sigma",
+        "rule_id": "SIGMA-SCEN-1002",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T17:02:10Z",
+        "confidence": 0.61
+      }
+    ]
+  }
+}

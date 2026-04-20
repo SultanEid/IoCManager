@@ -46,11 +46,24 @@ public sealed class FeedbackService : IFeedbackService
             }
         }
 
-        var verdict = EnumParser.Parse<FeedbackVerdict>(request.Verdict, nameof(request.Verdict));
+        var verdict = FeedbackTaxonomy.ParseVerdictOrThrow(request.Verdict, nameof(request.Verdict));
+        CasePriority? reviewPriority = request.ReviewPriority is null
+            ? null
+            : FeedbackTaxonomy.ParsePriorityOrThrow(request.ReviewPriority, nameof(request.ReviewPriority));
+        var auxiliaryOutputs = FeedbackAuxiliaryOutputs.Resolve(
+            verdict,
+            request.Confidence,
+            request.FalsePositiveRisk,
+            reviewPriority,
+            request.ShouldPromoteToIndicator,
+            request.ShouldSuppress,
+            request.ShouldAllowlist,
+            request.ShouldEscalate);
         var feedback = FeedbackRecord.Submit(
             request.CaseId,
             request.DecisionId,
             verdict,
+            auxiliaryOutputs,
             request.Notes,
             request.SubmittedByUserId,
             _dateTimeProvider.UtcNow);
@@ -72,7 +85,14 @@ public sealed class FeedbackService : IFeedbackService
             item.Id,
             item.CaseId,
             item.DecisionId,
-            item.Verdict.ToString(),
+            FeedbackTaxonomy.ToWireValue(item.Verdict),
+            item.Confidence,
+            item.FalsePositiveRisk,
+            FeedbackTaxonomy.ToWireValue(item.ReviewPriority),
+            item.ShouldPromoteToIndicator,
+            item.ShouldSuppress,
+            item.ShouldAllowlist,
+            item.ShouldEscalate,
             item.Notes,
             item.SubmittedByUserId,
             item.CreatedAtUtc);

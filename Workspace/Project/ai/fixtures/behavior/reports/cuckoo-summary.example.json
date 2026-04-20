@@ -1,0 +1,56 @@
+{
+  "provider": "Cuckoo",
+  "report_id": "cuckoo-rep-001",
+  "report_style": "cuckoo_summary",
+  "generated_at": "2026-04-15T15:36:00Z",
+  "sample": {
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "file_name": "launcher_script_bundle.zip",
+    "file_type": "zip archive",
+    "size_bytes": 94211
+  },
+  "behavioral_summary": {
+    "high_level": "Archive expanded script files and spawned script-host execution with encoded argument usage.",
+    "observed_capabilities": [
+      "obfuscated_script_execution",
+      "periodic_network_polling"
+    ],
+    "persistence_observed": false,
+    "evasion_observed": true
+  },
+  "network_summary": {
+    "domains": [
+      "api.telemetry-check.example"
+    ],
+    "ip_contacts": [
+      "198.51.100.44"
+    ],
+    "http_requests": [
+      {
+        "method": "GET",
+        "uri_path": "/api/poll",
+        "user_agent": "wscript/5.812"
+      }
+    ]
+  },
+  "process_summary": {
+    "tree": [
+      {
+        "image": "wscript.exe",
+        "command_line": "wscript.exe //E:jscript launcher.js -enc U0FNUExFX0RBVEE=",
+        "children": [
+          "cmd.exe /c timeout /t 5",
+          "curl.exe https://api.telemetry-check.example/api/poll"
+        ]
+      }
+    ],
+    "mutexes": [
+      "Global\\JS_LAUNCHER_LOCK"
+    ],
+    "dropped_files": [
+      "C:\\Users\\Public\\scripts\\sync-helper.ps1"
+    ]
+  },
+  "confidence": 0.72,
+  "analyst_notes": "Synthetic safe sample illustrating suspicious-but-not-conclusive behavior."
+}

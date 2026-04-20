@@ -1,0 +1,116 @@
+{
+  "rule_family": "yara",
+  "full_rule_text": "rule Malicious_Ransom_Note_and_ShadowCopy_Disruption {\n  meta:\n    id = \"YARA-SCEN-0005\"\n    severity = \"critical\"\n    category = \"impact\"\n  strings:\n    $a = \"YOUR_FILES_ARE_ENCRYPTED\" ascii wide\n    $b = \"vssadmin delete shadows\" ascii wide\n  condition:\n    all of them\n}",
+  "rule_metadata": {
+    "source": "soc-detections",
+    "rule_id": "YARA-SCEN-0005",
+    "rule_name": "Malicious_Ransom_Note_and_ShadowCopy_Disruption",
+    "namespace": "windows.impact",
+    "author": "content-team",
+    "description": "High-confidence impact pattern with ransom-note marker plus backup-disruption command.",
+    "tags": [
+      "malicious",
+      "impact"
+    ],
+    "strings": [
+      "YOUR_FILES_ARE_ENCRYPTED",
+      "vssadmin delete shadows"
+    ],
+    "condition": "all of them",
+    "meta": {
+      "id": "YARA-SCEN-0005",
+      "severity": "critical",
+      "category": "impact"
+    }
+  },
+  "raw_hit_payload": {
+    "engine": "yara-scanner-2",
+    "target_path": "C:\\ProgramData\\SystemHealth\\svc-host.dat",
+    "matched_strings": [
+      "YOUR_FILES_ARE_ENCRYPTED",
+      "vssadmin delete shadows"
+    ],
+    "execution_user": "NT AUTHORITY\\SYSTEM"
+  },
+  "object_metadata": {
+    "object_id": "file-yara-mal-005",
+    "object_type": "file",
+    "source_system": "edr",
+    "labels": [
+      "scenario:malicious",
+      "high_confidence"
+    ]
+  },
+  "asset_context": {
+    "asset_id": "asset-payroll-003",
+    "asset_name": "payroll-db-node-03",
+    "asset_type": "server",
+    "criticality": "critical",
+    "internet_exposed": false,
+    "environment": "prod",
+    "tags": [
+      "payroll",
+      "tier0"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T19:03:00Z",
+    "first_seen": "2026-04-15T19:02:10Z",
+    "last_seen": "2026-04-15T19:03:00Z",
+    "hit_count_24h": 1,
+    "hit_count_7d": 1,
+    "prevalence_ratio": 0.0001,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "critical-server-processes",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "linked_enrichment": {
+    "enrichments": [
+      {
+        "kind": "threat_intel",
+        "value": {
+          "family_hint": "synthetic-locker-pattern",
+          "confidence_band": "high"
+        },
+        "source": "intel-provider-a",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "vt-rep-001",
+        "source": "virustotal",
+        "reference": "internal://behavior-reports/vt-rep-001",
+        "observed_at": "2026-04-15T19:04:00Z",
+        "summary": "Multiple engines classify sample as malicious; sandbox behavior shows destructive impact pattern."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-sigma-impact-502",
+        "rule_family": "sigma",
+        "rule_id": "SIGMA-VSSADMIN-502",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T19:03:05Z",
+        "confidence": 0.91
+      },
+      {
+        "detection_id": "det-snort-c2-901",
+        "rule_family": "snort",
+        "rule_id": "SNRT-901112",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T19:03:40Z",
+        "confidence": 0.72
+      }
+    ]
+  }
+}

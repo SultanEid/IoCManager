@@ -1,0 +1,50 @@
+{
+  "verdict": "likely_malicious",
+  "confidence": 0.78,
+  "false_positive_risk": 0.18,
+  "review_priority": "high",
+  "should_promote_to_indicator": true,
+  "should_suppress": false,
+  "should_allowlist": false,
+  "should_escalate": true,
+  "evidence_used": [
+    {
+      "evidence_id": "ev-1001",
+      "source": "sigma",
+      "summary": "Rundll32 JavaScript execution from endpoint telemetry.",
+      "reference": "internal://detections/det-332",
+      "confidence": 0.82
+    }
+  ],
+  "evidence_missing": [
+    {
+      "gap_id": "gap-13",
+      "description": "No host-level memory artifact correlation yet.",
+      "importance": "medium"
+    }
+  ],
+  "contradictory_evidence": [],
+  "promotion_decision": {
+    "state": "recommended",
+    "rationale": "Signal quality is high and corroborated by process telemetry.",
+    "conditions": [
+      "limit rollout to canary assets first"
+    ]
+  },
+  "suppression_decision": {
+    "state": "not_recommended",
+    "rationale": "No allowlist or stable baseline evidence supports suppression."
+  },
+  "escalation_decision": {
+    "state": "recommended",
+    "rationale": "Potential lateral movement precursor on finance assets."
+  },
+  "explanation": "Corroborated suspicious execution behavior supports a likely malicious verdict with manageable FP risk.",
+  "suggested_next_checks": [
+    {
+      "check": "Collect parent-child process ancestry for affected hosts.",
+      "reason": "Validate potential scripted staging chain.",
+      "priority": "high"
+    }
+  ]
+}

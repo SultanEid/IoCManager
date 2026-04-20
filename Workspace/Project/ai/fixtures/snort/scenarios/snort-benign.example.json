@@ -1,0 +1,62 @@
+{
+  "rule_family": "snort",
+  "full_rule_text": "alert tcp $HOME_NET any -> $EXTERNAL_NET 443 (msg:\"Benign software update check\"; flow:to_server,established; content:\"/update/check\"; http_uri; sid:510001; rev:1; classtype:not-suspicious;)",
+  "rule_metadata": {
+    "source": "ids-content-local",
+    "rule_id": "SNRT-SCEN-2001",
+    "sid": 510001,
+    "rev": 1,
+    "msg": "Benign software update check",
+    "classification": "not-suspicious",
+    "priority": 3,
+    "references": [
+      "url,internal-wiki/rules/SNRT-SCEN-2001"
+    ],
+    "metadata": {
+      "deployment": "egress-ids"
+    }
+  },
+  "raw_hit_payload": {
+    "sensor": "snort-west-2",
+    "src_ip": "10.20.14.11",
+    "dst_ip": "203.0.113.18",
+    "dst_port": 443,
+    "http_host": "updates.software.example"
+  },
+  "object_metadata": {
+    "object_id": "flow-snort-benign-001",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:benign",
+      "routine_egress"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T05:12:00Z",
+    "first_seen": "2026-03-01T05:00:00Z",
+    "last_seen": "2026-04-15T05:12:00Z",
+    "hit_count_24h": 58,
+    "hit_count_7d": 405,
+    "prevalence_ratio": 0.27,
+    "recency_bucket": "persistent",
+    "trend": "stable"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": true,
+    "baseline_match": true,
+    "baseline_name": "approved-update-domains",
+    "allowlist_source": "network-allowlist-v2"
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-411",
+        "case_id": "case-4790",
+        "verdict": "benign",
+        "timestamp": "2026-04-11T05:20:00Z",
+        "notes": "Expected update service heartbeat."
+      }
+    ]
+  }
+}

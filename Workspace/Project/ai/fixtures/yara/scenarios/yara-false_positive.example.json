@@ -1,0 +1,90 @@
+{
+  "rule_family": "yara",
+  "full_rule_text": "rule FalsePositive_Packed_Installer_Heuristic {\n  meta:\n    id = \"YARA-SCEN-0006\"\n    severity = \"medium\"\n    category = \"packer\"\n  strings:\n    $a = \"UPX!\" ascii\n    $b = \"setup_bootstrap\" ascii wide\n  condition:\n    all of them\n}",
+  "rule_metadata": {
+    "source": "soc-detections",
+    "rule_id": "YARA-SCEN-0006",
+    "rule_name": "FalsePositive_Packed_Installer_Heuristic",
+    "namespace": "windows.installers",
+    "author": "content-team",
+    "description": "Generic packer heuristic that can trigger on legitimate software installers.",
+    "tags": [
+      "false_positive",
+      "packer"
+    ],
+    "strings": [
+      "UPX!",
+      "setup_bootstrap"
+    ],
+    "condition": "all of them",
+    "meta": {
+      "id": "YARA-SCEN-0006",
+      "severity": "medium",
+      "category": "packer"
+    }
+  },
+  "raw_hit_payload": {
+    "engine": "yara-scanner-2",
+    "target_path": "C:\\Installers\\VendorSuite\\setup.exe",
+    "matched_strings": [
+      "UPX!",
+      "setup_bootstrap"
+    ],
+    "certificate_subject": "CN=VendorSuite Ltd"
+  },
+  "object_metadata": {
+    "object_id": "file-yara-fp-006",
+    "object_type": "file",
+    "source_system": "edr",
+    "labels": [
+      "scenario:false_positive",
+      "signed_installer"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T11:02:00Z",
+    "first_seen": "2026-04-01T09:10:00Z",
+    "last_seen": "2026-04-15T11:02:00Z",
+    "hit_count_24h": 23,
+    "hit_count_7d": 140,
+    "prevalence_ratio": 0.18,
+    "recency_bucket": "persistent",
+    "trend": "stable"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": true,
+    "baseline_match": true,
+    "baseline_name": "approved-software-installers",
+    "allowlist_source": "software-catalog"
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-145",
+        "case_id": "case-4361",
+        "verdict": "false_positive",
+        "timestamp": "2026-04-05T10:00:00Z",
+        "notes": "Signed enterprise installer; no suspicious runtime behavior."
+      },
+      {
+        "analyst_id": "u-145",
+        "case_id": "case-4460",
+        "verdict": "false_positive",
+        "timestamp": "2026-04-12T16:35:00Z",
+        "notes": "Repeated installer rollout event."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-sigma-msi-12",
+        "rule_family": "sigma",
+        "rule_id": "SIGMA-INSTALLER-012",
+        "relation_type": "contradictory_signal",
+        "observed_at": "2026-04-15T11:02:11Z",
+        "confidence": 0.22
+      }
+    ]
+  }
+}

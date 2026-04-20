@@ -1,0 +1,87 @@
+{
+  "rule_family": "yara",
+  "full_rule_text": "rule Benign_Corp_Updater {\n  meta:\n    id = \"YARA-SCEN-0001\"\n    severity = \"low\"\n    category = \"software_inventory\"\n  strings:\n    $a = \"CorpUpdaterService\" ascii wide\n    $b = \"--check-for-updates\" ascii\n  condition:\n    all of them\n}",
+  "rule_metadata": {
+    "source": "soc-detections",
+    "rule_id": "YARA-SCEN-0001",
+    "rule_name": "Benign_Corp_Updater",
+    "namespace": "windows.software",
+    "author": "content-team",
+    "description": "Matches a signed corporate updater workflow that is normally benign.",
+    "tags": [
+      "benign",
+      "software_update"
+    ],
+    "strings": [
+      "CorpUpdaterService",
+      "--check-for-updates"
+    ],
+    "condition": "all of them",
+    "meta": {
+      "id": "YARA-SCEN-0001",
+      "severity": "low",
+      "category": "software_inventory"
+    }
+  },
+  "raw_hit_payload": {
+    "engine": "yara-scanner-2",
+    "target_path": "C:\\ProgramData\\CorpUpdater\\updater.exe",
+    "matched_strings": [
+      "CorpUpdaterService",
+      "--check-for-updates"
+    ],
+    "signer": "CN=Contoso Software LLC"
+  },
+  "object_metadata": {
+    "object_id": "file-yara-benign-001",
+    "object_type": "file",
+    "source_system": "edr",
+    "labels": [
+      "scenario:benign",
+      "signed_binary"
+    ]
+  },
+  "asset_context": {
+    "asset_id": "asset-fin-102",
+    "asset_name": "fin-workstation-102",
+    "asset_type": "endpoint",
+    "criticality": "medium",
+    "internet_exposed": false,
+    "environment": "prod",
+    "tags": [
+      "finance",
+      "managed-endpoint"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T08:10:00Z",
+    "first_seen": "2026-03-01T09:00:00Z",
+    "last_seen": "2026-04-15T08:10:00Z",
+    "hit_count_24h": 41,
+    "hit_count_7d": 289,
+    "prevalence_ratio": 0.31,
+    "recency_bucket": "recurring",
+    "trend": "stable"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": true,
+    "baseline_match": true,
+    "baseline_name": "corp-updater-baseline",
+    "allowlist_source": "endpoint-allowlist-v3",
+    "baseline_notes": [
+      "Signed by approved publisher.",
+      "Observed daily during scheduled maintenance."
+    ]
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-111",
+        "case_id": "case-4421",
+        "verdict": "benign",
+        "timestamp": "2026-04-08T07:40:00Z",
+        "notes": "Consistent with patch-cycle updater execution."
+      }
+    ]
+  }
+}

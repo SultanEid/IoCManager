@@ -1,0 +1,30 @@
+{
+  "source_name": "yaraify",
+  "source_type": "external_feed",
+  "location": {
+    "local_path": "ai/datasets/raw/yaraify/",
+    "remote_reference": {
+      "uri": "https://<provider-endpoint-or-export>/yaraify",
+      "format_hint": "json_or_jsonl",
+      "retrieval_hint": "connector_deferred_phase0"
+    }
+  },
+  "access_notes": [
+    "Review provider usage policy and quotas before activation.",
+    "Planned raw staging path: ai/datasets/raw/yaraify/."
+  ],
+  "ingestion_mode": "deferred_remote_import",
+  "parser_name": "yaraify_feed_parser_v1",
+  "normalization_target": "observable_enrichment_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": false
+}

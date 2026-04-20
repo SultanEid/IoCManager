@@ -1,0 +1,976 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/detection-package.schema.json",
+  "title": "Detection Package",
+  "description": "Canonical AI input package for detections across rule families.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rule_family",
+    "full_rule_text",
+    "rule_metadata",
+    "raw_hit_payload",
+    "object_metadata"
+  ],
+  "properties": {
+    "rule_family": {
+      "type": "string",
+      "enum": [
+        "yara",
+        "sigma",
+        "snort",
+        "generic",
+        "other"
+      ]
+    },
+    "full_rule_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rule_metadata": {
+      "$ref": "#/$defs/rule_metadata"
+    },
+    "raw_hit_payload": {
+      "$ref": "#/$defs/raw_hit_payload"
+    },
+    "object_metadata": {
+      "$ref": "#/$defs/object_metadata"
+    },
+    "asset_context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/asset_context"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "time_prevalence_context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/time_prevalence_context"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "allowlist_baseline_context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/allowlist_baseline_context"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "linked_enrichment": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/linked_enrichment"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "behavior_report_references": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/behavior_report_references"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "prior_analyst_outcomes": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/prior_analyst_outcomes"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "related_detections": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/related_detections"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "historical_learning_context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/historical_learning_context"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "rule_metadata": {
+      "type": "object",
+      "description": "Base metadata block. Family-specific schemas should constrain further.",
+      "additionalProperties": true,
+      "required": [
+        "source",
+        "rule_id"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "raw_hit_payload": {
+      "type": "object",
+      "description": "Raw detection payload from the originating product.",
+      "additionalProperties": true
+    },
+    "object_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "object_id",
+        "object_type"
+      ],
+      "properties": {
+        "object_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_system": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ingestion_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence_hint": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "custom_attributes": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "asset_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asset_name": {
+          "type": "string"
+        },
+        "asset_type": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "business_unit": {
+          "type": "string"
+        },
+        "criticality": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "internet_exposed": {
+          "type": "boolean"
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "prod",
+            "staging",
+            "dev",
+            "test",
+            "unknown"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "time_prevalence_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hit_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "first_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hit_count_24h": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hit_count_7d": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prevalence_ratio": {
+          "type": "number",
+          "minimum": 0
+        },
+        "recency_bucket": {
+          "type": "string",
+          "enum": [
+            "new",
+            "recurring",
+            "persistent",
+            "stale"
+          ]
+        },
+        "trend": {
+          "type": "string",
+          "enum": [
+            "increasing",
+            "stable",
+            "decreasing",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "allowlist_baseline_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowlisted": {
+          "type": "boolean"
+        },
+        "baseline_match": {
+          "type": "boolean"
+        },
+        "baseline_name": {
+          "type": "string"
+        },
+        "allowlist_source": {
+          "type": "string"
+        },
+        "last_baseline_update": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "baseline_notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "linked_enrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enrichments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/enrichment_entry"
+          }
+        }
+      }
+    },
+    "enrichment_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "whois",
+            "dns",
+            "threat_intel",
+            "sandbox",
+            "asset_inventory",
+            "geoip",
+            "reputation",
+            "other"
+          ]
+        },
+        "value": {},
+        "source": {
+          "type": "string"
+        },
+        "reference": {
+          "type": "string"
+        },
+        "fetched_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "similarity_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "similarity_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "prior_verdicts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "prior_accepted_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "prior_outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "behavior_report_references": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/behavior_report_reference"
+          }
+        }
+      }
+    },
+    "behavior_report_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_id",
+        "source",
+        "reference"
+      ],
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "report_style": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extracted_behavior_features": {
+          "$ref": "#/$defs/extracted_behavior_features"
+        },
+        "behavior_evidence_snippets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "feature_extraction_diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/behavior_feature_extraction_diagnostic"
+          }
+        }
+      }
+    },
+    "extracted_behavior_features": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "process_tree_shape": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "root_processes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "process_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_depth": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "branching_nodes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "suspicious_api_system_call_families": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "persistence_indicators": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "registry_modifications": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "filesystem_writes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "dropped_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "injected_processes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "network_destinations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/behavior_network_destination"
+          }
+        },
+        "anti_analysis_markers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "signer_publisher_contradictions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/behavior_signer_publisher_contradiction"
+          }
+        },
+        "suspicious_script_interpreter_usage": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "behavior_network_destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "domain",
+            "ip",
+            "url",
+            "http_path"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "behavior_signer_publisher_contradiction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issue",
+        "details"
+      ],
+      "properties": {
+        "issue": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "behavior_feature_extraction_diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter",
+        "code",
+        "severity",
+        "message",
+        "field_path"
+      ],
+      "properties": {
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "field_path": {
+          "type": "string"
+        }
+      }
+    },
+    "prior_analyst_outcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/prior_analyst_outcome"
+          }
+        }
+      }
+    },
+    "prior_analyst_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "analyst_id",
+        "verdict",
+        "timestamp"
+      ],
+      "properties": {
+        "analyst_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "decision_id": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "confirmed_malicious",
+            "likely_malicious",
+            "likely_benign",
+            "insufficient_evidence",
+            "true_positive",
+            "false_positive",
+            "benign",
+            "escalated",
+            "needs_review"
+          ]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "related_detections": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "detections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/related_detection"
+          }
+        }
+      }
+    },
+    "related_detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "detection_id",
+        "rule_family",
+        "rule_id",
+        "observed_at"
+      ],
+      "properties": {
+        "detection_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_family": {
+          "type": "string",
+          "enum": [
+            "yara",
+            "sigma",
+            "snort",
+            "generic",
+            "other"
+          ]
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation_type": {
+          "type": "string",
+          "enum": [
+            "same_object",
+            "same_rule",
+            "same_campaign",
+            "same_asset",
+            "supporting_signal",
+            "contradictory_signal",
+            "other"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "historical_learning_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "features": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "feature_provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/historical_feature_provenance_item"
+          }
+        },
+        "quality": {
+          "$ref": "#/$defs/historical_learning_quality"
+        },
+        "similar_detections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/related_detection"
+          }
+        }
+      }
+    },
+    "historical_feature_provenance_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature",
+        "source_event_id",
+        "event_type",
+        "occurred_at_utc",
+        "contribution"
+      ],
+      "properties": {
+        "feature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "occurred_at_utc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "contribution": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "historical_learning_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eligible_count",
+        "dropped_count",
+        "drop_reasons",
+        "lookback_days"
+      ],
+      "properties": {
+        "eligible_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drop_reasons": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "lookback_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "rule_family": "sigma",
+      "full_rule_text": "title: Suspicious PowerShell\nid: c2b6f3af-4cc1-4e07-ac0f-11f4f4f7f1a2\nstatus: stable\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: \\powershell.exe\n  condition: selection",
+      "rule_metadata": {
+        "source": "soc-content",
+        "rule_id": "SIGMA-PS-001",
+        "name": "Suspicious PowerShell",
+        "tags": [
+          "attack.execution",
+          "attack.t1059.001"
+        ]
+      },
+      "raw_hit_payload": {
+        "event_id": "evt-77",
+        "command_line": "powershell.exe -enc SQBFAFgA",
+        "host": "workstation-44"
+      },
+      "object_metadata": {
+        "object_id": "obj-991",
+        "object_type": "process_event",
+        "source_system": "siem",
+        "labels": [
+          "windows",
+          "powershell"
+        ]
+      },
+      "asset_context": {
+        "asset_id": "asset-22",
+        "asset_name": "wkstn-finance-22",
+        "asset_type": "endpoint",
+        "criticality": "high",
+        "internet_exposed": false,
+        "environment": "prod",
+        "tags": [
+          "finance"
+        ]
+      },
+      "time_prevalence_context": {
+        "hit_time": "2026-04-15T20:00:00Z",
+        "first_seen": "2026-04-15T19:58:00Z",
+        "last_seen": "2026-04-15T20:00:00Z",
+        "hit_count_24h": 4,
+        "hit_count_7d": 9,
+        "prevalence_ratio": 0.003,
+        "recency_bucket": "new",
+        "trend": "increasing"
+      },
+      "allowlist_baseline_context": {
+        "allowlisted": false,
+        "baseline_match": false,
+        "baseline_name": "default-endpoint-powershell",
+        "allowlist_source": "soc-baseline-registry"
+      },
+      "linked_enrichment": {
+        "enrichments": [
+          {
+            "kind": "reputation",
+            "value": {
+              "score": 89
+            },
+            "source": "intel-provider-a",
+            "confidence": 0.86
+          }
+        ]
+      },
+      "behavior_report_references": {
+        "reports": [
+          {
+            "report_id": "rep-115",
+            "source": "sandbox-cluster",
+            "reference": "https://internal.example/reports/rep-115",
+            "summary": "Observed encoded command spawning network connections."
+          }
+        ]
+      },
+      "prior_analyst_outcomes": {
+        "outcomes": [
+          {
+            "analyst_id": "u-205",
+            "case_id": "case-5001",
+            "verdict": "likely_malicious",
+            "timestamp": "2026-04-10T10:00:00Z",
+            "notes": "Similar encoded PowerShell pattern."
+          }
+        ]
+      },
+      "related_detections": {
+        "detections": [
+          {
+            "detection_id": "det-903",
+            "rule_family": "snort",
+            "rule_id": "SNRT-4455",
+            "relation_type": "supporting_signal",
+            "observed_at": "2026-04-15T20:01:00Z",
+            "confidence": 0.74
+          }
+        ]
+      }
+    }
+  ]
+}

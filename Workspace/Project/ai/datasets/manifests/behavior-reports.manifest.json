@@ -1,0 +1,25 @@
+{
+  "source_name": "behavior-reports",
+  "source_type": "internal_behavior_reports",
+  "location": {
+    "local_path": "ai/datasets/raw/behavior-reports/"
+  },
+  "access_notes": [
+    "Ingest only analyst-approved internal report exports and fixture-safe captures.",
+    "Expected upstream providers include CAPE, Cuckoo, and VirusTotal report summaries."
+  ],
+  "ingestion_mode": "internal_export_import",
+  "parser_name": "behavior_report_bundle_parser_v1",
+  "normalization_target": "behavior_report_reference_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": false
+}

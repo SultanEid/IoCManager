@@ -214,6 +214,46 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
     }
 
     [Fact]
+    public async Task IdentityRolePermissions_CanBeAssigned_AndListed()
+    {
+        using var adminClient = _factory.CreateAuthenticatedClient("admin-1", "Admin");
+
+        var createRoleResponse = await adminClient.PostAsJsonAsync(
+            "/api/v2/identity/roles",
+            new CreateRoleRequest("Operator"));
+        createRoleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var createdRole = await createRoleResponse.Content.ReadFromJsonAsync<RoleResponse>(JsonOptions);
+        createdRole.Should().NotBeNull();
+
+        var createPermissionResponse = await adminClient.PostAsJsonAsync(
+            "/api/v2/identity/permissions",
+            new CreatePermissionRequest("retention.manage.extra", "Additional retention management permission", "admin-1"));
+        createPermissionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdPermission = await createPermissionResponse.Content.ReadFromJsonAsync<PermissionResponse>(JsonOptions);
+        createdPermission.Should().NotBeNull();
+
+        var assignResponse = await adminClient.PostAsJsonAsync(
+            "/api/v2/identity/role-permissions",
+            new AssignRolePermissionRequest(createdRole!.Id, createdPermission!.Id, "admin-1"));
+        assignResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var assignment = await assignResponse.Content.ReadFromJsonAsync<RolePermissionResponse>(JsonOptions);
+        assignment.Should().NotBeNull();
+        assignment!.RoleId.Should().Be(createdRole.Id);
+        assignment.PermissionId.Should().Be(createdPermission.Id);
+
+        var duplicateResponse = await adminClient.PostAsJsonAsync(
+            "/api/v2/identity/role-permissions",
+            new AssignRolePermissionRequest(createdRole.Id, createdPermission.Id, "admin-1"));
+        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var listedAssignments = await adminClient.GetFromJsonAsync<IReadOnlyList<RolePermissionResponse>>(
+            $"/api/v2/identity/role-permissions?roleId={createdRole.Id}",
+            JsonOptions);
+        listedAssignments.Should().NotBeNull();
+        listedAssignments!.Should().ContainSingle(x => x.RoleId == createdRole.Id && x.PermissionId == createdPermission.Id);
+    }
+
+    [Fact]
     public async Task ScanJobCancel_QueuedJob_CancelsTargets()
     {
         using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
@@ -368,6 +408,41 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
             JsonOptions);
         byRule.Should().NotBeNull();
         byRule!.Items.Should().Contain(x => x.RuleRevisionId == revision.Id);
+
+        var alertResponse = await leadClient.PostAsJsonAsync("/api/v2/alerts", new CreateAlertRequest(
+            Title: "Detection-linked alert",
+            Summary: "Alert linked to persisted scan result",
+            Severity: "High",
+            OwnerUserId: "lead-1",
+            ApprovalTierRequired: "Lead",
+            DetectedAtUtc: observedAtUtc,
+            ActorUserId: "lead-1"));
+        alertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var alert = await alertResponse.Content.ReadFromJsonAsync<AlertResponse>(JsonOptions);
+        alert.Should().NotBeNull();
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
+            dbContext.AlertScanResults.Add(AlertScanResult.Create(alert!.Id, detection.Id, DateTimeOffset.UtcNow));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var detail = await leadClient.GetFromJsonAsync<DetectionDetailResponse>(
+            $"/api/v2/scanning/results/{detection.Id}",
+            JsonOptions);
+        detail.Should().NotBeNull();
+        detail!.Id.Should().Be(detection.Id);
+        detail.RuleRevisionId.Should().Be(revision.Id);
+        detail.IocId.Should().Be(iocId);
+        detail.IocType.Should().Be("Domain");
+        detail.IocValue.Should().NotBeNullOrWhiteSpace();
+        detail.Source.Should().Be("api");
+        detail.LinkedAlerts.Should().ContainSingle(x => x.Id == alert!.Id);
+        detail.LinkedCases.Should().ContainSingle(x => x.Id == alert!.Id);
+
+        var missingDetailResponse = await leadClient.GetAsync($"/api/v2/scanning/results/{Guid.NewGuid():D}");
+        missingDetailResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

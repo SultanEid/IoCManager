@@ -1,0 +1,32 @@
+{
+  "rule_family": "sigma",
+  "full_rule_text": "title: Potential Rundll32 LOLBIN Abuse\nid: 0af2f8a0-7c72-4d29-aaeb-87c80f0cdf7f\nstatus: stable\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: rundll32.exe\n    CommandLine|contains: javascript:\n  condition: selection",
+  "rule_metadata": {
+    "source": "sigma-hq",
+    "rule_id": "SIGMA-RUNDLL32-001",
+    "title": "Potential Rundll32 LOLBIN Abuse",
+    "id": "0af2f8a0-7c72-4d29-aaeb-87c80f0cdf7f",
+    "status": "stable",
+    "description": "Detects suspicious JavaScript execution via rundll32.",
+    "author": "soc-content",
+    "tags": [
+      "attack.defense_evasion",
+      "attack.t1218.011"
+    ],
+    "level": "high",
+    "logsource": {
+      "category": "process_creation",
+      "product": "windows"
+    }
+  },
+  "raw_hit_payload": {
+    "event_id": "evt-2026-332",
+    "image": "windows/system32/rundll32.exe",
+    "command_line": "rundll32.exe javascript:stage"
+  },
+  "object_metadata": {
+    "object_id": "proc-4442",
+    "object_type": "process_event",
+    "source_system": "siem"
+  }
+}

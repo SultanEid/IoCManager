@@ -88,7 +88,7 @@ CREATE TABLE [dbo].[role_permissions] (
     [PermissionId] UNIQUEIDENTIFIER NOT NULL,
     [GrantedByUserId] NVARCHAR(128) NOT NULL,
     [GrantedAtUtc] DATETIMEOFFSET NOT NULL,
-    CONSTRAINT [FK_role_permissions_roles] FOREIGN KEY ([RoleId]) REFERENCES [dbo].[AspNetRoles]([Id]) ON DELETE CASCADE,
+CONSTRAINT [FK_role_permissions_roles] FOREIGN KEY ([RoleId]) REFERENCES [dbo].[roles]([Id]) ON DELETE CASCADE,
     CONSTRAINT [FK_role_permissions_permissions] FOREIGN KEY ([PermissionId]) REFERENCES [dbo].[permissions]([Id]) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX [IX_role_permissions_role_permission] ON [dbo].[role_permissions]([RoleId], [PermissionId]);
@@ -421,12 +421,12 @@ CREATE TABLE [dbo].[archive_records_v2] (
 CREATE INDEX [IX_archive_records_v2_entity] ON [dbo].[archive_records_v2]([EntityType], [EntityId], [ArchivedAtUtc]);
 
 -- Seed baseline roles if missing.
-IF NOT EXISTS (SELECT 1 FROM [dbo].[AspNetRoles] WHERE [Name] = N'Analyst')
-    INSERT INTO [dbo].[AspNetRoles]([Id], [Name], [NormalizedName], [ConcurrencyStamp]) VALUES ('3f8df2a9-1c49-4c41-b096-c57f5a5e62c7', N'Analyst', N'ANALYST', NEWID());
-IF NOT EXISTS (SELECT 1 FROM [dbo].[AspNetRoles] WHERE [Name] = N'Lead')
-    INSERT INTO [dbo].[AspNetRoles]([Id], [Name], [NormalizedName], [ConcurrencyStamp]) VALUES ('ea4808e9-b86d-4cbe-9158-f37f2d78dbad', N'Lead', N'LEAD', NEWID());
-IF NOT EXISTS (SELECT 1 FROM [dbo].[AspNetRoles] WHERE [Name] = N'Admin')
-    INSERT INTO [dbo].[AspNetRoles]([Id], [Name], [NormalizedName], [ConcurrencyStamp]) VALUES ('b3ca2ff3-d5d7-4e0d-bcc3-2e1b53ba689f', N'Admin', N'ADMIN', NEWID());
+IF NOT EXISTS (SELECT 1 FROM [dbo].[roles] WHERE [Name] = N'Analyst')
+INSERT INTO [dbo].[roles]([Id], [Name], [NormalizedName], [ConcurrencyStamp]) VALUES ('3f8df2a9-1c49-4c41-b096-c57f5a5e62c7', N'Analyst', N'ANALYST', NEWID());
+IF NOT EXISTS (SELECT 1 FROM [dbo].[roles] WHERE [Name] = N'Lead')
+INSERT INTO [dbo].[roles]([Id], [Name], [NormalizedName], [ConcurrencyStamp]) VALUES ('ea4808e9-b86d-4cbe-9158-f37f2d78dbad', N'Lead', N'LEAD', NEWID());
+IF NOT EXISTS (SELECT 1 FROM [dbo].[roles] WHERE [Name] = N'Admin')
+INSERT INTO [dbo].[roles]([Id], [Name], [NormalizedName], [ConcurrencyStamp]) VALUES ('b3ca2ff3-d5d7-4e0d-bcc3-2e1b53ba689f', N'Admin', N'ADMIN', NEWID());
 
 DECLARE @seedNow DATETIMEOFFSET = SYSUTCDATETIME();
 INSERT INTO [dbo].[permissions]([Id], [Key], [Description], [CreatedAtUtc], [UpdatedAtUtc], [CreatedByUserId], [UpdatedByUserId]) VALUES
@@ -451,9 +451,9 @@ INSERT INTO [dbo].[permissions]([Id], [Key], [Description], [CreatedAtUtc], [Upd
 ('6114b9ff-9623-462e-b7c7-d0f85749ea3d', N'audit.read', N'Permission ''audit.read''', @seedNow, @seedNow, N'system', N'system'),
 ('293f2dbd-d847-4ae3-8f31-2fe578f4f4cf', N'retention.manage', N'Permission ''retention.manage''', @seedNow, @seedNow, N'system', N'system');
 
-DECLARE @analystRoleId UNIQUEIDENTIFIER = (SELECT TOP 1 [Id] FROM [dbo].[AspNetRoles] WHERE [Name] = N'Analyst');
-DECLARE @leadRoleId UNIQUEIDENTIFIER = (SELECT TOP 1 [Id] FROM [dbo].[AspNetRoles] WHERE [Name] = N'Lead');
-DECLARE @adminRoleId UNIQUEIDENTIFIER = (SELECT TOP 1 [Id] FROM [dbo].[AspNetRoles] WHERE [Name] = N'Admin');
+DECLARE @analystRoleId UNIQUEIDENTIFIER = (SELECT TOP 1 [Id] FROM [dbo].[roles] WHERE [Name] = N'Analyst');
+DECLARE @leadRoleId UNIQUEIDENTIFIER = (SELECT TOP 1 [Id] FROM [dbo].[roles] WHERE [Name] = N'Lead');
+DECLARE @adminRoleId UNIQUEIDENTIFIER = (SELECT TOP 1 [Id] FROM [dbo].[roles] WHERE [Name] = N'Admin');
 
 INSERT INTO [dbo].[role_permissions]([Id], [RoleId], [PermissionId], [GrantedByUserId], [GrantedAtUtc])
 SELECT NEWID(), @analystRoleId, p.[Id], N'system', @seedNow

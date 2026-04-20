@@ -10,6 +10,10 @@ from .contracts import (
     ExplainCaseRequest,
     ExplainCaseResponse,
 )
+from .llm_assist_phrasing import (
+    ExplanationPhrasingEvidence,
+    apply_explanation_phrasing,
+)
 
 
 def explain_case(request: ExplainCaseRequest, dataset_version: str) -> ExplainCaseResponse:
@@ -36,6 +40,24 @@ def explain_case(request: ExplainCaseRequest, dataset_version: str) -> ExplainCa
         f"{request.decision.recommendation_summary} "
         f"(state={request.decision.decision_state}, policy={request.decision.policy_version}, model={request.decision.model_version})."
     )
+    phrasing_result = apply_explanation_phrasing(
+        evidence=ExplanationPhrasingEvidence(
+            decision_state=request.decision.decision_state,
+            recommended_action=request.decision.recommendation_code,
+            evidence_total=len(evidence),
+            evidence_conflict_count=conflict_count,
+            source_trust=source_trust,
+            criticality=criticality,
+            lexical_only_guard_triggered=_lexical_only_guard_triggered_from_rationale(rationale),
+            deterministic_summary=summary.strip(),
+            deterministic_rationale=rationale,
+            policy_version=request.decision.policy_version,
+            model_version=request.decision.model_version,
+            dataset_version=dataset_version,
+        )
+    )
+    summary = phrasing_result.summary
+    rationale = phrasing_result.rationale
 
     return ExplainCaseResponse(
         case_id=request.case.id,
@@ -52,6 +74,7 @@ def explain_case(request: ExplainCaseRequest, dataset_version: str) -> ExplainCa
         feature_snapshot_hash=request.snapshot.snapshot_hash,
         replay_bundle_hash=replay_hash,
         generated_at_utc=datetime.now(timezone.utc),
+        llm_assist=phrasing_result.diagnostics,
     )
 
 
@@ -93,3 +116,14 @@ def _mean(values: list[float], default: float) -> float:
         return default
     return float(sum(values) / len(values))
 
+
+def _lexical_only_guard_triggered_from_rationale(rationale: list[str]) -> bool:
+    lower = " ".join(item.lower() for item in rationale)
+    return any(
+        marker in lower
+        for marker in (
+            "string-level indicators",
+            "missing_non_string_corroboration",
+            "insufficient_correlated_evidence",
+        )
+    )

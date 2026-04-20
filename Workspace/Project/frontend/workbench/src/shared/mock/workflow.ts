@@ -29,6 +29,35 @@ function nextId(state: MockStoreState, scope: string) {
   return deterministicUuid(`${scope}:${state.meta.sequence}`)
 }
 
+function verdictForEvent(type: AuditEventType): FeedbackResponse["verdict"] {
+  switch (type) {
+    case "rollback_triggered":
+      return "stale_or_revoked"
+    case "canary_observation_recorded":
+      return "likely_benign"
+    case "rollout_advanced":
+      return "likely_malicious"
+    case "rule_proposal_reviewed":
+      return "suspicious"
+    default:
+      return "insufficient_evidence"
+  }
+}
+
+function feedbackDefaults(verdict: FeedbackResponse["verdict"]) {
+  return {
+    confidence: 0.5,
+    falsePositiveRisk: 0.5,
+    reviewPriority:
+      verdict === "malicious" ? "critical" : verdict === "likely_malicious" || verdict === "suspicious" ? "high" : "medium",
+    shouldPromoteToIndicator: verdict === "malicious" || verdict === "likely_malicious" || verdict === "suspicious",
+    shouldSuppress: verdict === "false_positive" || verdict === "stale_or_revoked",
+    shouldAllowlist: verdict === "benign" || verdict === "likely_benign" || verdict === "false_positive",
+    shouldEscalate:
+      verdict === "malicious" || verdict === "likely_malicious" || verdict === "suspicious" || verdict === "insufficient_evidence",
+  } as const
+}
+
 function appendEvent(
   state: MockStoreState,
   caseId: string,
@@ -49,12 +78,14 @@ function appendEvent(
     details,
   })
 
+  const verdict = verdictForEvent(type)
   const feedbackId = nextId(state, `feedback:${type}`)
   const feedback: FeedbackResponse = {
+    ...feedbackDefaults(verdict),
     id: feedbackId,
     caseId,
     decisionId: null,
-    verdict: type,
+    verdict,
     notes: summary,
     submittedByUserId: actorUserId,
     submittedAtUtc: occurredAtUtc,

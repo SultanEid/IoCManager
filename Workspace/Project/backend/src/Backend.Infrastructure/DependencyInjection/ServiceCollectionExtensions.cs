@@ -73,6 +73,10 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(AiSidecarOptions.SectionName))
             .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _), "AiSidecar:BaseUrl must be a valid absolute URI.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ReportExtractionPath), "AiSidecar:ReportExtractionPath must be configured.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ScoreCasePath), "AiSidecar:ScoreCasePath must be configured.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ExplainCasePath), "AiSidecar:ExplainCasePath must be configured.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.RecommendActionPath), "AiSidecar:RecommendActionPath must be configured.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.HistoricalLearningPath), "AiSidecar:HistoricalLearningPath must be configured.")
             .Validate(options => options.TimeoutSeconds > 0, "AiSidecar:TimeoutSeconds must be greater than zero.")
             .ValidateOnStart();
 
@@ -116,11 +120,11 @@ public static class ServiceCollectionExtensions
         services
             .AddIdentityCore<ApplicationUser>(options =>
             {
-                options.Password.RequireDigit = true;
-                options.Password.RequireLowercase = true;
-                options.Password.RequireUppercase = false;
-                options.Password.RequireNonAlphanumeric = false;
-                options.Password.RequiredLength = 12;
+                options.Password.RequireDigit = identityOptions.RequireDigit;
+                options.Password.RequireLowercase = identityOptions.RequireLowercase;
+                options.Password.RequireUppercase = identityOptions.RequireUppercase;
+                options.Password.RequireNonAlphanumeric = identityOptions.RequireNonAlphanumeric;
+                options.Password.RequiredLength = identityOptions.RequiredLength;
                 options.User.RequireUniqueEmail = true;
                 options.Lockout.AllowedForNewUsers = identityOptions.LockoutAllowedForNewUsers;
                 options.Lockout.MaxFailedAccessAttempts = identityOptions.MaxFailedAccessAttempts;
@@ -156,10 +160,17 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IReportIngestionRepository, ReportIngestionRepository>();
         services.AddScoped<IRuleWorkflowRepository, RuleWorkflowRepository>();
         services.AddScoped<ICtiRecommendationPersistenceRepository, CtiRecommendationPersistenceRepository>();
+        services.AddScoped<IAiAdjudicationRepository, AiAdjudicationRepository>();
         services.AddScoped<ICtiDecisionReplayQueryService, CtiDecisionReplayQueryService>();
         services.AddScoped<ICoveragePainAnalysisQueryService, CoveragePainAnalysisQueryService>();
 
         services.AddHttpClient<IAiReportExtractionClient, AiReportExtractionClient>((sp, client) =>
+        {
+            var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
+            client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
+        });
+        services.AddHttpClient<IAiAdjudicationClient, AiAdjudicationClient>((sp, client) =>
         {
             var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);

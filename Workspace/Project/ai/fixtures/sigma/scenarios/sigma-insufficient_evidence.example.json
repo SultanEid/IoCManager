@@ -1,0 +1,76 @@
+{
+  "rule_family": "sigma",
+  "full_rule_text": "title: Insufficient Evidence Rare System Binary Invocation\nid: 315f85b8-ec4d-4ed2-a1dc-bf7d07ca50c6\nstatus: test\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: forfiles.exe\n    CommandLine|contains: /C \"cmd /c\"\n  condition: selection",
+  "rule_metadata": {
+    "source": "sigma-hq-local",
+    "rule_id": "SIGMA-SCEN-1005",
+    "title": "Insufficient Evidence Rare System Binary Invocation",
+    "id": "315f85b8-ec4d-4ed2-a1dc-bf7d07ca50c6",
+    "status": "test",
+    "description": "Single weak signal indicating unusual but not clearly malicious behavior.",
+    "author": "soc-content",
+    "tags": [
+      "insufficient_evidence",
+      "living_off_the_land"
+    ],
+    "level": "low",
+    "logsource": {
+      "category": "process_creation",
+      "product": "windows"
+    }
+  },
+  "raw_hit_payload": {
+    "event_id": "evt-sigma-inev-005",
+    "host": "wkstn-ops-11",
+    "image": "C:\\Windows\\System32\\forfiles.exe",
+    "command_line": "forfiles.exe /P C:\\Temp /M *.log /C \"cmd /c echo rotate\""
+  },
+  "object_metadata": {
+    "object_id": "proc-sigma-inev-005",
+    "object_type": "process_event",
+    "source_system": "siem",
+    "labels": [
+      "scenario:insufficient_evidence",
+      "single_observation"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T23:11:00Z",
+    "first_seen": "2026-04-15T23:11:00Z",
+    "last_seen": "2026-04-15T23:11:00Z",
+    "hit_count_24h": 1,
+    "hit_count_7d": 1,
+    "prevalence_ratio": 0.0001,
+    "recency_bucket": "new",
+    "trend": "unknown"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "misc-system-binaries",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "linked_enrichment": {
+    "enrichments": [
+      {
+        "kind": "reputation",
+        "value": {
+          "host_risk_score": 37
+        },
+        "source": "asset-inventory",
+        "confidence": 0.28
+      }
+    ]
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-355",
+        "case_id": "case-4720",
+        "verdict": "needs_review",
+        "timestamp": "2026-04-15T23:20:00Z",
+        "notes": "No corroborating network or file-behavior data."
+      }
+    ]
+  }
+}

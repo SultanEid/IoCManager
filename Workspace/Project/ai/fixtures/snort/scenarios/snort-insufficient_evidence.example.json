@@ -1,0 +1,76 @@
+{
+  "rule_family": "snort",
+  "full_rule_text": "alert udp $HOME_NET any -> $EXTERNAL_NET 53 (msg:\"Insufficient evidence uncommon DNS TXT query\"; content:\"diagnostic-token\"; sid:510005; rev:1; classtype:misc-activity;)",
+  "rule_metadata": {
+    "source": "ids-content-local",
+    "rule_id": "SNRT-SCEN-2005",
+    "sid": 510005,
+    "rev": 1,
+    "msg": "Insufficient evidence uncommon DNS TXT query",
+    "classification": "misc-activity",
+    "priority": 3,
+    "references": [
+      "url,internal-wiki/rules/SNRT-SCEN-2005"
+    ],
+    "metadata": {
+      "deployment": "dns-ids"
+    }
+  },
+  "raw_hit_payload": {
+    "sensor": "snort-dns-1",
+    "src_ip": "10.40.2.9",
+    "dst_ip": "192.0.2.53",
+    "dst_port": 53,
+    "query_name": "_diag.example.internal",
+    "query_type": "TXT"
+  },
+  "object_metadata": {
+    "object_id": "flow-snort-inev-005",
+    "object_type": "network_flow",
+    "source_system": "ids",
+    "labels": [
+      "scenario:insufficient_evidence",
+      "single_dns_anomaly"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T23:40:00Z",
+    "first_seen": "2026-04-15T23:40:00Z",
+    "last_seen": "2026-04-15T23:40:00Z",
+    "hit_count_24h": 1,
+    "hit_count_7d": 1,
+    "prevalence_ratio": 0.0001,
+    "recency_bucket": "new",
+    "trend": "unknown"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "dns-txt-observations",
+    "allowlist_source": "network-baseline"
+  },
+  "linked_enrichment": {
+    "enrichments": [
+      {
+        "kind": "dns",
+        "value": {
+          "rrtype": "TXT",
+          "historical_count_30d": 0
+        },
+        "source": "dns-sensor",
+        "confidence": 0.35
+      }
+    ]
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-433",
+        "case_id": "case-4803",
+        "verdict": "needs_review",
+        "timestamp": "2026-04-15T23:50:00Z",
+        "notes": "Isolated DNS artifact without host corroboration."
+      }
+    ]
+  }
+}

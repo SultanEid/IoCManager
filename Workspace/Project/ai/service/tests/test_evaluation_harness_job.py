@@ -52,20 +52,21 @@ def test_harness_load_rows_parses_jsonl_payload(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    rows = module.load_rows(rows_path)
+    rows = module.load_jsonl_payloads(rows_path)
 
     assert len(rows) == 2
-    assert rows[0].case_id == "case-1"
-    assert rows[0].model_version == "v1-test"
-    assert rows[0].dataset_version == "test-v1"
-    assert rows[0].high_impact is True
-    assert rows[1].rolled_back is True
+    assert rows[0]["caseId"] == "case-1"
+    assert rows[0]["modelVersion"] == "v1-test"
+    assert rows[0]["datasetVersion"] == "test-v1"
+    assert rows[0]["highImpact"] is True
+    assert rows[1]["rolledBack"] is True
 
 
 def test_harness_report_includes_simple_uniform_baseline(tmp_path: Path) -> None:
     module = _load_harness_module()
     rows_path = tmp_path / "rows.jsonl"
     output_path = tmp_path / "report.json"
+    bundle_root = tmp_path / "bundles"
     rows_path.write_text(
         "\n".join(
             [
@@ -105,6 +106,8 @@ def test_harness_report_includes_simple_uniform_baseline(tmp_path: Path) -> None
         str(rows_path),
         "--output-file",
         str(output_path),
+        "--bundle-root",
+        str(bundle_root),
     ]
     try:
         module.main()
@@ -112,5 +115,86 @@ def test_harness_report_includes_simple_uniform_baseline(tmp_path: Path) -> None
         sys.argv = previous_argv
 
     report = json.loads(output_path.read_text(encoding="utf-8"))
-    assert "uniform" in report["baselines"]
-    assert "unavailable_metrics" in report["candidate"]
+    assert "uniform" in report["adjudication"]["baselines"]
+    assert "unavailable_metrics" in report["adjudication"]["candidate"]
+    assert "bundleFiles" in report
+    assert Path(report["bundleFiles"]["summaryMarkdown"]).exists()
+    assert Path(report["bundleFiles"]["calibrationJson"]).exists()
+
+
+def test_harness_can_evaluate_action_plan_rows(tmp_path: Path) -> None:
+    module = _load_harness_module()
+    rows_path = tmp_path / "canonical.jsonl"
+    output_path = tmp_path / "action-plan-report.json"
+    bundle_root = tmp_path / "bundles"
+    rows_path.write_text(
+        json.dumps(
+            {
+                "row_id": "row-1",
+                "rule_family": "sigma",
+                "event_time_utc": "2026-04-20T00:00:00Z",
+                "eligible_tasks": ["action_plan_recommendation"],
+                "package_payload": {
+                    "rule_family": "sigma",
+                    "ioc_type": "domain",
+                    "ioc_value": "example.test",
+                    "object_metadata": {
+                        "object_id": "obj-1",
+                        "object_type": "network_flow",
+                        "source_system": "siem",
+                    },
+                    "asset_context": {
+                        "criticality": "critical",
+                        "environment": "prod",
+                    },
+                },
+                "target_payload": {
+                    "adjudication": {
+                        "verdict": "likely_malicious",
+                        "confidence": 0.82,
+                        "false_positive_risk": 0.18,
+                        "evidence_used": [
+                            {
+                                "evidence_id": "ev-1",
+                                "source": "sigma",
+                                "summary": "Supporting evidence",
+                                "confidence": 0.8,
+                            }
+                        ],
+                        "evidence_missing": [],
+                        "contradictory_evidence": [],
+                    },
+                    "action_plan": {
+                        "recommended_actions": [
+                            {"action": "isolate_host", "rank": 1},
+                            {"action": "search_fleet", "rank": 2}
+                        ]
+                    },
+                    "recommendation_disposition": "accepted"
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    previous_argv = sys.argv
+    sys.argv = [
+        "run_evaluation_harness.py",
+        "--input-file",
+        str(rows_path),
+        "--output-file",
+        str(output_path),
+        "--task",
+        "action_plan",
+        "--bundle-root",
+        str(bundle_root),
+    ]
+    try:
+        module.main()
+    finally:
+        sys.argv = previous_argv
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert report["actionPlan"]["sampleSize"] == 1
+    assert "overall" in report["actionPlan"]

@@ -9,6 +9,7 @@ from _bootstrap import bootstrap_service_path
 
 bootstrap_service_path()
 
+from cti_service.evaluation_artifacts import hash_payload, write_report_bundle
 from cti_service.calibration import LogisticCalibrator
 from cti_service.evaluator import evaluate_snapshot
 from cti_service.registry import ModelRegistryStore
@@ -17,6 +18,7 @@ from cti_service.snapshots import SnapshotLoader
 
 
 def parse_args() -> argparse.Namespace:
+    ai_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="Evaluate an IoC decision-support model version on a versioned snapshot.")
     parser.add_argument("--snapshot-root", type=Path, required=True)
     parser.add_argument("--dataset-version", required=True)
@@ -26,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window-start-utc", type=str, default=None)
     parser.add_argument("--window-end-utc", type=str, default=None)
     parser.add_argument("--output-file", type=Path, required=True)
+    parser.add_argument("--bundle-root", type=Path, default=ai_root / "datasets" / "processed" / "evaluations")
     return parser.parse_args()
 
 
@@ -83,6 +86,53 @@ def main() -> None:
         },
     }
     args.output_file.parent.mkdir(parents=True, exist_ok=True)
+    args.output_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    summary = "\n".join(
+        [
+            "# Adjudication Evaluation Report",
+            "",
+            f"- model version: `{entry.model_version}`",
+            f"- dataset version: `{args.dataset_version}`",
+            f"- sample size: `{sample_size}`",
+            f"- precision: `{overall.precision}`",
+            f"- recall: `{overall.recall}`",
+            f"- F1: `{overall.f1}`",
+            f"- abstain rate: `{overall.abstain_rate}`",
+            f"- false-positive rate: `{overall.false_positive_rate}`",
+            f"- false-negative rate: `{overall.false_negative_rate}`",
+            f"- ECE: `{overall.calibration_error}`",
+            f"- Brier score: `{overall.brier_score}`",
+        ]
+    )
+    manifest = {
+        "reportType": "adjudication_evaluation",
+        "datasetVersion": args.dataset_version,
+        "modelVersion": entry.model_version,
+        "snapshotManifestHash": snapshot.manifest_hash,
+        "registryEntryHash": hash_payload(entry.model_dump(mode="json", by_alias=True)),
+        "thresholds": scorer.thresholds.model_dump() if hasattr(scorer.thresholds, "model_dump") else {
+            "recommend": scorer.thresholds.recommend,
+            "escalate": scorer.thresholds.escalate,
+            "abstain": scorer.thresholds.abstain,
+        },
+        "sliceFields": ["ioc_type", "source_system", "time_bucket", "recency_bucket", "trust_bucket", "rule_family", "evidence_availability_bucket"],
+        "inputPaths": {
+            "snapshotRoot": str(args.snapshot_root.resolve()),
+            "registryPath": str(args.registry_path.resolve()),
+        },
+        "windowStartUtc": window_start.isoformat() if window_start else None,
+        "windowEndUtc": window_end.isoformat() if window_end else None,
+    }
+    bundle_name = f"adjudication-{entry.model_version}-{args.dataset_version}"
+    bundle_files = write_report_bundle(
+        bundle_dir=args.bundle_root / bundle_name,
+        report_payload=report,
+        summary_markdown=summary,
+        run_manifest=manifest,
+        calibration_bins=[item.model_dump(mode="json", by_alias=True) for item in overall.calibration_bins],
+    )
+    report["bundleFiles"] = bundle_files
     args.output_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
 

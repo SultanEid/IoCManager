@@ -1,0 +1,92 @@
+{
+  "rule_family": "sigma",
+  "full_rule_text": "title: Malicious Shadow Copy Deletion Followed by Ransom Note Creation\nid: 267f68c2-f7c8-425b-a391-b0f206c8f7ad\nstatus: stable\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection_vss:\n    Image|endswith: vssadmin.exe\n    CommandLine|contains: delete shadows\n  selection_note:\n    CommandLine|contains: YOUR_FILES_ARE_ENCRYPTED\n  condition: selection_vss and selection_note",
+  "rule_metadata": {
+    "source": "sigma-hq-local",
+    "rule_id": "SIGMA-SCEN-1003",
+    "title": "Malicious Shadow Copy Deletion Followed by Ransom Note Creation",
+    "id": "267f68c2-f7c8-425b-a391-b0f206c8f7ad",
+    "status": "stable",
+    "description": "High-confidence impact behavior chain matching synthetic ransomware activity.",
+    "author": "soc-content",
+    "tags": [
+      "malicious",
+      "impact"
+    ],
+    "level": "critical",
+    "logsource": {
+      "category": "process_creation",
+      "product": "windows"
+    }
+  },
+  "raw_hit_payload": {
+    "event_id": "evt-sigma-mal-003",
+    "host": "payroll-db-node-03",
+    "image": "C:\\Windows\\System32\\vssadmin.exe",
+    "command_line": "vssadmin.exe delete shadows /all /quiet && echo YOUR_FILES_ARE_ENCRYPTED > C:\\readme.txt"
+  },
+  "object_metadata": {
+    "object_id": "proc-sigma-mal-003",
+    "object_type": "process_event",
+    "source_system": "siem",
+    "labels": [
+      "scenario:malicious",
+      "critical_impact_signal"
+    ]
+  },
+  "asset_context": {
+    "asset_id": "asset-payroll-003",
+    "asset_name": "payroll-db-node-03",
+    "asset_type": "server",
+    "criticality": "critical",
+    "internet_exposed": false,
+    "environment": "prod"
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T19:03:10Z",
+    "first_seen": "2026-04-15T19:03:10Z",
+    "last_seen": "2026-04-15T19:03:10Z",
+    "hit_count_24h": 1,
+    "hit_count_7d": 1,
+    "prevalence_ratio": 0.0001,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "critical-server-commands",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "vt-rep-001",
+        "source": "virustotal",
+        "reference": "internal://behavior-reports/vt-rep-001",
+        "observed_at": "2026-04-15T19:04:00Z",
+        "summary": "Behavior graph indicates destructive command chain and broad engine agreement."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-yara-impact-88",
+        "rule_family": "yara",
+        "rule_id": "YARA-SCEN-0005",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T19:03:11Z",
+        "confidence": 0.93
+      },
+      {
+        "detection_id": "det-snort-c2-901",
+        "rule_family": "snort",
+        "rule_id": "SNRT-901112",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T19:03:43Z",
+        "confidence": 0.7
+      }
+    ]
+  }
+}

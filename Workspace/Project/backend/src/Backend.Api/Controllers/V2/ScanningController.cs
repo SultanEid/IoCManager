@@ -619,6 +619,23 @@ public sealed class ScanningController : ControllerBase
             cancellationToken);
     }
 
+    [HttpGet("results/{scanResultId:guid}")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType<DetectionDetailResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DetectionDetailResponse>> GetDetectionDetail(
+        Guid scanResultId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await BuildDetectionDetailResponseAsync(scanResultId, cancellationToken);
+        if (response is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(response);
+    }
+
     [HttpPost("jobs/{scanJobId:guid}/cancel")]
     [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
@@ -663,6 +680,102 @@ public sealed class ScanningController : ControllerBase
             counts.TryGetValue(scanJobId, out var value)
                 ? value
                 : new ScanJobStatusCounts(0, 0, 0, 0, 0)));
+    }
+
+    private async Task<DetectionDetailResponse?> BuildDetectionDetailResponseAsync(
+        Guid scanResultId,
+        CancellationToken cancellationToken)
+    {
+        var row = await _dbContext.ScanResults
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == scanResultId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var serverHostname = await _dbContext.TargetServers
+            .AsNoTracking()
+            .Where(x => x.Id == row.TargetServerId)
+            .Select(x => x.Hostname)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var ruleName = row.RuleRevisionId.HasValue
+            ? await (
+                from revision in _dbContext.RuleRevisionsV2.AsNoTracking()
+                join artifact in _dbContext.RuleArtifacts.AsNoTracking() on revision.RuleArtifactId equals artifact.Id
+                where revision.Id == row.RuleRevisionId.Value
+                select artifact.Name)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        string? iocType = null;
+        string? iocValue = null;
+        if (row.IocId.HasValue)
+        {
+            var ioc = await _dbContext.Iocs
+                .AsNoTracking()
+                .Where(x => x.Id == row.IocId.Value)
+                .Select(x => new
+                {
+                    x.Type,
+                    x.Value,
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (ioc is not null)
+            {
+                iocType = ioc.Type.ToString();
+                iocValue = ioc.Value;
+            }
+        }
+
+        var source = await (
+            from provenance in _dbContext.ScanResultProvenances.AsNoTracking()
+            join run in _dbContext.ScanResultIngestionRuns.AsNoTracking() on provenance.IngestionRunId equals run.Id
+            where provenance.ScanResultId == scanResultId
+            orderby provenance.ObservedAtUtc descending
+            select run.Source)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var linkedAlerts = await (
+            from link in _dbContext.AlertScanResults.AsNoTracking()
+            join alert in _dbContext.AlertsV2.AsNoTracking() on link.AlertId equals alert.Id
+            where link.ScanResultId == scanResultId
+            orderby alert.UpdatedAtUtc descending
+            select new DetectionLinkedAlertCaseResponse(
+                alert.Id,
+                alert.Title,
+                alert.Status.ToString(),
+                alert.Severity.ToString(),
+                alert.UpdatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return new DetectionDetailResponse(
+            Id: row.Id,
+            Fingerprint: row.Fingerprint,
+            ScannerFamily: row.ScannerFamily,
+            ServerId: row.TargetServerId,
+            ServerHostname: serverHostname,
+            ScanJobId: row.ScanJobId,
+            JobAttemptId: row.JobAttemptId,
+            TargetExecutionId: row.TargetExecutionId,
+            RuleRevisionId: row.RuleRevisionId,
+            RuleName: ruleName,
+            IocId: row.IocId,
+            IocType: iocType,
+            IocValue: iocValue,
+            Disposition: row.Disposition.ToString(),
+            Confidence: row.Confidence,
+            ObservedAtUtc: row.ObservedAtUtc,
+            FirstObservedAtUtc: row.FirstObservedAtUtc,
+            LastObservedAtUtc: row.LastObservedAtUtc,
+            OccurrenceCount: row.OccurrenceCount,
+            IsExecutionArtifact: row.IsExecutionArtifact,
+            EvidenceJson: row.EvidenceJson,
+            RawPayloadHash: row.RawPayloadHash,
+            Source: source,
+            LinkedAlerts: linkedAlerts,
+            LinkedCases: linkedAlerts);
     }
 
     private async Task<DetectionHistoryResponse> BuildDetectionHistoryResponseAsync(

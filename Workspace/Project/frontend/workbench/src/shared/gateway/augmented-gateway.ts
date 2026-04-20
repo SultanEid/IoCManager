@@ -17,18 +17,26 @@ import {
 } from "@/shared/gateway/adapters"
 import type {
   AdvanceRolloutStageInput,
+  AiAdjudicationCursorQuery,
   AlertListQuery,
   ArchiveRuleInput,
   AuditLogListQuery,
   CaseDetailVM,
+  CreateRetentionPolicyInput,
   CreateDistributionJobInput,
   CreateScanPlanInput,
   CoveragePainAnalysisScopeInput,
   CreateRuleRepositoryInput,
   CreateManagedServerInput,
+  CreateScannerInput,
+  CreateWorkbenchPermissionInput,
+  CreateWorkbenchRoleInput,
   CreateWorkbenchUserInput,
   CreateRuleProposalInput,
   DetectionListQuery,
+  ExecuteRetentionPolicyInput,
+  SubmitAiAdjudicationInput,
+  SubmitAiAdjudicationOverrideOrClosureInput,
   Gateway,
   GenerateReportInput,
   GraphRelationshipsVM,
@@ -51,7 +59,9 @@ import type {
   SimulateRuleProposalInput,
   TriggerRollbackInput,
   RetryDistributionJobInput,
+  AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
+  UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
   UpdateManagedServerInput,
@@ -181,8 +191,44 @@ export class AugmentedGateway implements Gateway {
     return this.source.listRoles(signal)
   }
 
+  listPermissions(signal?: AbortSignal) {
+    return this.source.listPermissions(signal)
+  }
+
+  listRolePermissions(roleId?: string, signal?: AbortSignal) {
+    return this.source.listRolePermissions(roleId, signal)
+  }
+
   createUser(input: CreateWorkbenchUserInput) {
     return this.source.createUser(input)
+  }
+
+  createRole(input: CreateWorkbenchRoleInput) {
+    return this.source.createRole(input)
+  }
+
+  createPermission(input: CreateWorkbenchPermissionInput) {
+    return this.source.createPermission(input)
+  }
+
+  assignRolePermission(input: AssignWorkbenchRolePermissionInput) {
+    return this.source.assignRolePermission(input)
+  }
+
+  listRetentionPolicies(signal?: AbortSignal) {
+    return this.source.listRetentionPolicies(signal)
+  }
+
+  createRetentionPolicy(input: CreateRetentionPolicyInput) {
+    return this.source.createRetentionPolicy(input)
+  }
+
+  listArchiveRecords(retentionPolicyId?: string, signal?: AbortSignal) {
+    return this.source.listArchiveRecords(retentionPolicyId, signal)
+  }
+
+  executeRetentionPolicy(input: ExecuteRetentionPolicyInput) {
+    return this.source.executeRetentionPolicy(input)
   }
 
   listSubnets(signal?: AbortSignal) {
@@ -305,6 +351,14 @@ export class AugmentedGateway implements Gateway {
     return this.source.listScanners(signal)
   }
 
+  createScanner(input: CreateScannerInput) {
+    return this.source.createScanner(input)
+  }
+
+  updateScannerCapabilities(scannerId: string, input: UpdateScannerCapabilitiesInput) {
+    return this.source.updateScannerCapabilities(scannerId, input)
+  }
+
   queueDiscoveryRun(input: QueueDiscoveryRunInput) {
     return this.source.queueDiscoveryRun(input)
   }
@@ -319,6 +373,38 @@ export class AugmentedGateway implements Gateway {
 
   listDetections(query?: DetectionListQuery, signal?: AbortSignal) {
     return this.source.listDetections(query, signal)
+  }
+
+  getDetectionDetail(detectionId: string, signal?: AbortSignal) {
+    return this.source.getDetectionDetail(detectionId, signal)
+  }
+
+  submitAiAdjudication(input: SubmitAiAdjudicationInput) {
+    return this.source.submitAiAdjudication(input)
+  }
+
+  getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal) {
+    return this.source.getAiAdjudicationResult(adjudicationId, signal)
+  }
+
+  getAiAdjudicationExplanation(adjudicationId: string, signal?: AbortSignal) {
+    return this.source.getAiAdjudicationExplanation(adjudicationId, signal)
+  }
+
+  getAiAdjudicationActionPlan(adjudicationId: string, signal?: AbortSignal) {
+    return this.source.getAiAdjudicationActionPlan(adjudicationId, signal)
+  }
+
+  listAiAdjudicationEvidenceSources(adjudicationId: string, query?: AiAdjudicationCursorQuery, signal?: AbortSignal) {
+    return this.source.listAiAdjudicationEvidenceSources(adjudicationId, query, signal)
+  }
+
+  listAiAdjudicationSimilarDetections(adjudicationId: string, query?: AiAdjudicationCursorQuery, signal?: AbortSignal) {
+    return this.source.listAiAdjudicationSimilarDetections(adjudicationId, query, signal)
+  }
+
+  submitAiAdjudicationOverrideOrClosure(adjudicationId: string, input: SubmitAiAdjudicationOverrideOrClosureInput) {
+    return this.source.submitAiAdjudicationOverrideOrClosure(adjudicationId, input)
   }
 
   promoteDiscoveredHost(discoveredHostId: string, input: PromoteDiscoveredHostInput) {

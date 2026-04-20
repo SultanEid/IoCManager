@@ -5,9 +5,17 @@ import {
   alertResponseSchema,
   alertListResponseSchema,
   v2AlertDetailResponseSchema,
+  aiAdjudicationActionPlanOrPendingResponseSchema,
+  aiAdjudicationExplanationOrPendingResponseSchema,
+  aiAdjudicationResultResponseSchema,
+  aiEvidenceSourcesResponseSchema,
+  aiOverrideOrClosureResponseSchema,
+  aiSimilarDetectionsResponseSchema,
   alertRuleWorkflowResponseSchema,
   auditLogListResponseSchema,
+  archiveRecordResponseSchema,
   coveragePainAnalysisResponseSchema,
+  detectionDetailResponseSchema,
   detectionHistoryResponseSchema,
   discoveredHostResponseSchema,
   discoveryRunResponseSchema,
@@ -37,7 +45,10 @@ import {
   healthInfoSchema,
   healthReadySchema,
   jobRunResponseSchema,
+  permissionResponseSchema,
+  retentionPolicyResponseSchema,
   roleResponseSchema,
+  rolePermissionResponseSchema,
   rollbackPlanResponseSchema,
   rolloutPlanResponseSchema,
   ruleProposalResponseSchema,
@@ -48,6 +59,7 @@ import {
   ruleResponseSchema,
   ruleSimulationResultResponseSchema,
   subnetResponseSchema,
+  submitAiAdjudicationAcceptedResponseSchema,
   targetGroupMemberResponseSchema,
   targetGroupResponseSchema,
   targetServerResponseSchema,
@@ -55,12 +67,20 @@ import {
   userResponseSchema,
   type AlertListResponse,
   type AlertResponse,
+  type AiAdjudicationActionPlanOrPendingResponse,
+  type AiAdjudicationExplanationOrPendingResponse,
+  type AiAdjudicationResultResponse,
+  type AiEvidenceSourcesResponse,
+  type AiOverrideOrClosureResponse,
+  type AiSimilarDetectionsResponse,
   type V2AlertDetailResponse,
   type AlertRuleWorkflowResponse,
   type AuditLogListResponse,
+  type ArchiveRecordResponse,
   type CaseResponse,
   type CaseRuleWorkflowResponse,
   type CoveragePainAnalysisResponse,
+  type DetectionDetailResponse,
   type DetectionHistoryResponse,
   type ManagedServerConnectionSecretMetadataResponse,
   type ManagedServerInventoryResponse,
@@ -87,8 +107,11 @@ import {
   type HealthInfo,
   type HealthReady,
   type JobRunResponse,
+  type PermissionResponse,
   type PromoteDiscoveredHostResponse,
+  type RetentionPolicyResponse,
   type RoleResponse,
+  type RolePermissionResponse,
   type RollbackPlanResponse,
   type RolloutPlanResponse,
   type RuleProposalResponse,
@@ -103,21 +126,30 @@ import {
   type TargetGroupResponse,
   type TargetServerResponse,
   type TokenResponse,
+  type SubmitAiAdjudicationAcceptedResponse,
   type UserResponse,
 } from "@/shared/api/schemas"
 import type {
   AdvanceRolloutStageInput,
+  AiAdjudicationCursorQuery,
   AlertListQuery,
   ArchiveRuleInput,
   AuditLogListQuery,
   CreateDistributionJobInput,
   CreateScanPlanInput,
   CoveragePainAnalysisScopeInput,
+  CreateRetentionPolicyInput,
   CreateRuleRepositoryInput,
   CreateManagedServerInput,
+  CreateScannerInput,
+  CreateWorkbenchPermissionInput,
+  CreateWorkbenchRoleInput,
   CreateWorkbenchUserInput,
   CreateRuleProposalInput,
   DetectionListQuery,
+  ExecuteRetentionPolicyInput,
+  SubmitAiAdjudicationInput,
+  SubmitAiAdjudicationOverrideOrClosureInput,
   IocListQuery,
   ManagedServerInventoryFilters,
   PromoteDiscoveredHostInput,
@@ -135,7 +167,9 @@ import type {
   SimulateRuleProposalInput,
   TriggerRollbackInput,
   RetryDistributionJobInput,
+  AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
+  UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
   UpdateManagedServerInput,
@@ -151,6 +185,10 @@ const feedbackSchema = z.array(feedbackResponseSchema)
 const jobsSchema = z.array(jobRunResponseSchema)
 const usersSchema = z.array(userResponseSchema)
 const rolesSchema = z.array(roleResponseSchema)
+const permissionsSchema = z.array(permissionResponseSchema)
+const rolePermissionsSchema = z.array(rolePermissionResponseSchema)
+const retentionPoliciesSchema = z.array(retentionPolicyResponseSchema)
+const archiveRecordsSchema = z.array(archiveRecordResponseSchema)
 const subnetsSchema = z.array(subnetResponseSchema)
 const targetServersSchema = z.array(targetServerResponseSchema)
 const targetGroupsSchema = z.array(targetGroupResponseSchema)
@@ -267,10 +305,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/alerts${suffix}`, alertListResponseSchema, { signal }),
-      () => emptyPagedItems(query.page, query.pageSize),
-    )
+    return requestJson(`/api/v2/alerts${suffix}`, alertListResponseSchema, { signal })
   }
 
   async listAlerts(signal?: AbortSignal): Promise<AlertResponse[]> {
@@ -339,10 +374,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/reports${suffix}`, reportListResponseSchema, { signal }),
-      () => emptyPagedItems(query.page, query.pageSize),
-    )
+    return requestJson(`/api/v2/reports${suffix}`, reportListResponseSchema, { signal })
   }
 
   async generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse> {
@@ -397,10 +429,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/audit-logs${suffix}`, auditLogListResponseSchema, { signal }),
-      () => emptyPagedItems(query.page, query.pageSize),
-    )
+    return requestJson(`/api/v2/audit-logs${suffix}`, auditLogListResponseSchema, { signal })
   }
 
   async listEvidence(caseId: string, signal?: AbortSignal): Promise<EvidenceResponse[]> {
@@ -623,6 +652,23 @@ export class AspNetGateway {
     return withLegacyEmptyFallback(() => requestJson("/api/v2/identity/roles", rolesSchema, { signal }), () => [])
   }
 
+  async listPermissions(signal?: AbortSignal): Promise<PermissionResponse[]> {
+    return withLegacyEmptyFallback(() => requestJson("/api/v2/identity/permissions", permissionsSchema, { signal }), () => [])
+  }
+
+  async listRolePermissions(roleId?: string, signal?: AbortSignal): Promise<RolePermissionResponse[]> {
+    const params = new URLSearchParams()
+    if (roleId) {
+      params.set("roleId", roleId)
+    }
+
+    const suffix = params.size > 0 ? `?${params.toString()}` : ""
+    return withLegacyEmptyFallback(
+      () => requestJson(`/api/v2/identity/role-permissions${suffix}`, rolePermissionsSchema, { signal }),
+      () => [],
+    )
+  }
+
   async createUser(input: CreateWorkbenchUserInput): Promise<UserResponse> {
     return requestJson("/api/v2/identity/users", userResponseSchema, {
       method: "POST",
@@ -632,6 +678,80 @@ export class AspNetGateway {
         displayName: input.displayName,
         password: input.password,
         roles: input.roles,
+      },
+    })
+  }
+
+  async createRole(input: CreateWorkbenchRoleInput): Promise<RoleResponse> {
+    return requestJson("/api/v2/identity/roles", roleResponseSchema, {
+      method: "POST",
+      body: {
+        name: input.name,
+      },
+    })
+  }
+
+  async createPermission(input: CreateWorkbenchPermissionInput): Promise<PermissionResponse> {
+    return requestJson("/api/v2/identity/permissions", permissionResponseSchema, {
+      method: "POST",
+      body: {
+        key: input.key,
+        description: input.description,
+        actorUserId: input.actorUserId,
+      },
+    })
+  }
+
+  async assignRolePermission(input: AssignWorkbenchRolePermissionInput): Promise<RolePermissionResponse> {
+    return requestJson("/api/v2/identity/role-permissions", rolePermissionResponseSchema, {
+      method: "POST",
+      body: {
+        roleId: input.roleId,
+        permissionId: input.permissionId,
+        actorUserId: input.actorUserId,
+      },
+    })
+  }
+
+  async listRetentionPolicies(signal?: AbortSignal): Promise<RetentionPolicyResponse[]> {
+    return withLegacyEmptyFallback(
+      () => requestJson("/api/v2/retention/policies", retentionPoliciesSchema, { signal }),
+      () => [],
+    )
+  }
+
+  async createRetentionPolicy(input: CreateRetentionPolicyInput): Promise<RetentionPolicyResponse> {
+    return requestJson("/api/v2/retention/policies", retentionPolicyResponseSchema, {
+      method: "POST",
+      body: {
+        dataType: input.dataType,
+        retainDays: input.retainDays,
+        archiveAfterDays: input.archiveAfterDays,
+        actorUserId: input.actorUserId,
+      },
+    })
+  }
+
+  async listArchiveRecords(retentionPolicyId?: string, signal?: AbortSignal): Promise<ArchiveRecordResponse[]> {
+    const params = new URLSearchParams()
+    if (retentionPolicyId) {
+      params.set("retentionPolicyId", retentionPolicyId)
+    }
+
+    const suffix = params.size > 0 ? `?${params.toString()}` : ""
+    return withLegacyEmptyFallback(
+      () => requestJson(`/api/v2/retention/archives${suffix}`, archiveRecordsSchema, { signal }),
+      () => [],
+    )
+  }
+
+  async executeRetentionPolicy(input: ExecuteRetentionPolicyInput): Promise<ArchiveRecordResponse[]> {
+    return requestJson("/api/v2/retention/execute", archiveRecordsSchema, {
+      method: "POST",
+      body: {
+        retentionPolicyId: input.retentionPolicyId,
+        archiveUriPrefix: input.archiveUriPrefix,
+        actorUserId: input.actorUserId,
       },
     })
   }
@@ -924,18 +1044,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/infrastructure/managed-servers${suffix}`, managedServerInventoryResponseSchema, { signal }),
-      () => ({
-        servers: [],
-        totalServers: 0,
-        unhealthyServers: 0,
-        unreachableServers: 0,
-        staleContactServers: 0,
-        page: resolvePage(filters.page),
-        pageSize: resolvePageSize(filters.pageSize),
-      }),
-    )
+    return requestJson(`/api/v2/infrastructure/managed-servers${suffix}`, managedServerInventoryResponseSchema, { signal })
   }
 
   async getManagedServer(targetServerId: string, signal?: AbortSignal): Promise<ManagedServerResponse> {
@@ -1029,6 +1138,29 @@ export class AspNetGateway {
 
   async listScanners(signal?: AbortSignal): Promise<ScannerResponse[]> {
     return withLegacyEmptyFallback(() => requestJson("/api/v2/infrastructure/scanners", scannersSchema, { signal }), () => [])
+  }
+
+  async createScanner(input: CreateScannerInput): Promise<ScannerResponse> {
+    return requestJson("/api/v2/infrastructure/scanners", scannerResponseSchema, {
+      method: "POST",
+      body: {
+        name: input.name,
+        engineType: input.engineType,
+        version: input.version,
+        actorUserId: input.actorUserId,
+        capabilities: input.capabilities ?? null,
+      },
+    })
+  }
+
+  async updateScannerCapabilities(scannerId: string, input: UpdateScannerCapabilitiesInput): Promise<ScannerResponse> {
+    return requestJson(`/api/v2/infrastructure/scanners/${scannerId}/capabilities`, scannerResponseSchema, {
+      method: "PUT",
+      body: {
+        capabilities: input.capabilities,
+        actorUserId: input.actorUserId,
+      },
+    })
   }
 
   async queueDiscoveryRun(input: QueueDiscoveryRunInput): Promise<DiscoveryRunResponse> {
@@ -1134,19 +1266,110 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/scanning/results${suffix}`, detectionHistoryResponseSchema, { signal }),
-      () => {
-        const page = resolvePage(query.page)
-        const pageSize = resolvePageSize(query.pageSize)
-        return {
-          total: 0,
-          take: pageSize,
-          skip: (page - 1) * pageSize,
-          items: [],
-        }
+    return requestJson(`/api/v2/scanning/results${suffix}`, detectionHistoryResponseSchema, { signal })
+  }
+
+  async getDetectionDetail(detectionId: string, signal?: AbortSignal): Promise<DetectionDetailResponse> {
+    return requestJson(`/api/v2/scanning/results/${detectionId}`, detectionDetailResponseSchema, { signal })
+  }
+
+  async submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse> {
+    return requestJson("/api/v2/ai/adjudications", submitAiAdjudicationAcceptedResponseSchema, {
+      method: "POST",
+      body: {
+        caseId: input.caseId,
+        detectionId: input.detectionId,
+        iocType: input.iocType,
+        iocValue: input.iocValue,
+        observedAtUtc: input.observedAtUtc,
+        detectionPackage: input.detectionPackage,
+        submittedByUserId: input.submittedByUserId,
       },
+    })
+  }
+
+  async getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
+    return requestJson(`/api/v2/ai/adjudications/${adjudicationId}`, aiAdjudicationResultResponseSchema, { signal })
+  }
+
+  async getAiAdjudicationExplanation(
+    adjudicationId: string,
+    signal?: AbortSignal,
+  ): Promise<AiAdjudicationExplanationOrPendingResponse> {
+    return requestJson(
+      `/api/v2/ai/adjudications/${adjudicationId}/explanation`,
+      aiAdjudicationExplanationOrPendingResponseSchema,
+      { signal },
     )
+  }
+
+  async getAiAdjudicationActionPlan(
+    adjudicationId: string,
+    signal?: AbortSignal,
+  ): Promise<AiAdjudicationActionPlanOrPendingResponse> {
+    return requestJson(
+      `/api/v2/ai/adjudications/${adjudicationId}/action-plan`,
+      aiAdjudicationActionPlanOrPendingResponseSchema,
+      { signal },
+    )
+  }
+
+  async listAiAdjudicationEvidenceSources(
+    adjudicationId: string,
+    query: AiAdjudicationCursorQuery = {},
+    signal?: AbortSignal,
+  ): Promise<AiEvidenceSourcesResponse> {
+    const params = new URLSearchParams()
+    if (typeof query.limit === "number") {
+      params.set("limit", String(query.limit))
+    }
+    if (query.cursor) {
+      params.set("cursor", query.cursor)
+    }
+    const suffix = params.size > 0 ? `?${params.toString()}` : ""
+    return requestJson(
+      `/api/v2/ai/adjudications/${adjudicationId}/evidence-sources${suffix}`,
+      aiEvidenceSourcesResponseSchema,
+      { signal },
+    )
+  }
+
+  async listAiAdjudicationSimilarDetections(
+    adjudicationId: string,
+    query: AiAdjudicationCursorQuery = {},
+    signal?: AbortSignal,
+  ): Promise<AiSimilarDetectionsResponse> {
+    const params = new URLSearchParams()
+    if (typeof query.limit === "number") {
+      params.set("limit", String(query.limit))
+    }
+    if (query.cursor) {
+      params.set("cursor", query.cursor)
+    }
+    const suffix = params.size > 0 ? `?${params.toString()}` : ""
+    return requestJson(
+      `/api/v2/ai/adjudications/${adjudicationId}/similar-detections${suffix}`,
+      aiSimilarDetectionsResponseSchema,
+      { signal },
+    )
+  }
+
+  async submitAiAdjudicationOverrideOrClosure(
+    adjudicationId: string,
+    input: SubmitAiAdjudicationOverrideOrClosureInput,
+  ): Promise<AiOverrideOrClosureResponse> {
+    return requestJson(`/api/v2/ai/adjudications/${adjudicationId}/override-closure`, aiOverrideOrClosureResponseSchema, {
+      method: "POST",
+      body: {
+        actionType: input.actionType,
+        reason: input.reason,
+        notes: input.notes ?? null,
+        overrideVerdict: input.overrideVerdict ?? null,
+        closureDisposition: input.closureDisposition ?? null,
+        isFinal: input.isFinal ?? null,
+        submittedByUserId: input.submittedByUserId,
+      },
+    })
   }
 
   async getHealthInfo(signal?: AbortSignal): Promise<HealthInfo> {

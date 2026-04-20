@@ -1,0 +1,99 @@
+{
+  "rule_family": "sigma",
+  "full_rule_text": "title: Suspicious PowerShell\nid: c2b6f3af-4cc1-4e07-ac0f-11f4f4f7f1a2\nstatus: stable\nlogsource:\n  category: process_creation\n  product: windows\ndetection:\n  selection:\n    Image|endswith: powershell.exe\n  condition: selection",
+  "rule_metadata": {
+    "source": "soc-content",
+    "rule_id": "SIGMA-PS-001",
+    "name": "Suspicious PowerShell",
+    "tags": [
+      "attack.execution",
+      "attack.t1059.001"
+    ]
+  },
+  "raw_hit_payload": {
+    "event_id": "evt-77",
+    "command_line": "powershell.exe -enc SQBFAFgA",
+    "host": "workstation-44"
+  },
+  "object_metadata": {
+    "object_id": "obj-991",
+    "object_type": "process_event",
+    "source_system": "siem",
+    "labels": [
+      "windows",
+      "powershell"
+    ]
+  },
+  "asset_context": {
+    "asset_id": "asset-22",
+    "asset_name": "wkstn-finance-22",
+    "asset_type": "endpoint",
+    "criticality": "high",
+    "internet_exposed": false,
+    "environment": "prod",
+    "tags": [
+      "finance"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T20:00:00Z",
+    "first_seen": "2026-04-15T19:58:00Z",
+    "last_seen": "2026-04-15T20:00:00Z",
+    "hit_count_24h": 4,
+    "hit_count_7d": 9,
+    "prevalence_ratio": 0.003,
+    "recency_bucket": "new",
+    "trend": "increasing"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "default-endpoint-powershell",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "linked_enrichment": {
+    "enrichments": [
+      {
+        "kind": "reputation",
+        "value": {
+          "score": 89
+        },
+        "source": "intel-provider-a",
+        "confidence": 0.86
+      }
+    ]
+  },
+  "behavior_report_references": {
+    "reports": [
+      {
+        "report_id": "rep-115",
+        "source": "sandbox-cluster",
+        "reference": "https://internal.example/reports/rep-115",
+        "summary": "Observed encoded command spawning network connections."
+      }
+    ]
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-205",
+        "case_id": "case-5001",
+        "verdict": "likely_malicious",
+        "timestamp": "2026-04-10T10:00:00Z",
+        "notes": "Similar encoded PowerShell pattern."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-903",
+        "rule_family": "snort",
+        "rule_id": "SNRT-4455",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T20:01:00Z",
+        "confidence": 0.74
+      }
+    ]
+  }
+}

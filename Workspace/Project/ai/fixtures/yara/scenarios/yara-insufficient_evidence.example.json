@@ -1,0 +1,83 @@
+{
+  "rule_family": "yara",
+  "full_rule_text": "rule InsufficientEvidence_Generic_Network_Helper {\n  meta:\n    id = \"YARA-SCEN-0007\"\n    severity = \"low\"\n    category = \"generic_utility\"\n  strings:\n    $a = \"NetSessionOpen\" ascii wide\n    $b = \"PingCheck\" ascii wide\n  condition:\n    any of them\n}",
+  "rule_metadata": {
+    "source": "soc-detections",
+    "rule_id": "YARA-SCEN-0007",
+    "rule_name": "InsufficientEvidence_Generic_Network_Helper",
+    "namespace": "windows.utility",
+    "author": "content-team",
+    "description": "Low-specificity helper function pattern that requires corroboration.",
+    "tags": [
+      "insufficient_evidence",
+      "generic"
+    ],
+    "strings": [
+      "NetSessionOpen",
+      "PingCheck"
+    ],
+    "condition": "any of them",
+    "meta": {
+      "id": "YARA-SCEN-0007",
+      "severity": "low",
+      "category": "generic_utility"
+    }
+  },
+  "raw_hit_payload": {
+    "engine": "yara-scanner-2",
+    "target_path": "C:\\Users\\Public\\Downloads\\diag-helper.bin",
+    "matched_strings": [
+      "NetSessionOpen"
+    ],
+    "collection_mode": "on_write_scan"
+  },
+  "object_metadata": {
+    "object_id": "file-yara-inev-007",
+    "object_type": "file",
+    "source_system": "edr",
+    "labels": [
+      "scenario:insufficient_evidence",
+      "single_signal"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T22:40:00Z",
+    "first_seen": "2026-04-15T22:40:00Z",
+    "last_seen": "2026-04-15T22:40:00Z",
+    "hit_count_24h": 1,
+    "hit_count_7d": 1,
+    "prevalence_ratio": 0.0001,
+    "recency_bucket": "new",
+    "trend": "unknown"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": false,
+    "baseline_name": "unknown-downloads",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "linked_enrichment": {
+    "enrichments": [
+      {
+        "kind": "reputation",
+        "value": {
+          "score": 42,
+          "sample_count": 2
+        },
+        "source": "intel-provider-b",
+        "confidence": 0.31
+      }
+    ]
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-241",
+        "case_id": "case-4588",
+        "verdict": "needs_review",
+        "timestamp": "2026-04-15T22:50:00Z",
+        "notes": "Not enough telemetry to classify."
+      }
+    ]
+  }
+}

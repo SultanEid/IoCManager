@@ -1,12 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+  aiAdjudicationActionPlanOrPendingResponseSchema,
+  aiAdjudicationExplanationOrPendingResponseSchema,
+  aiAdjudicationResultResponseSchema,
+  aiEvidenceSourcesResponseSchema,
+  aiOverrideOrClosureResponseSchema,
+  aiSimilarDetectionsResponseSchema,
+  archiveRecordResponseSchema,
+  detectionDetailResponseSchema,
   discoveryRunResponseSchema,
   healthReadySchema,
   managedServerInventoryResponseSchema,
+  permissionResponseSchema,
   promoteDiscoveredHostResponseSchema,
+  retentionPolicyResponseSchema,
+  rolePermissionResponseSchema,
+  roleResponseSchema,
   scanJobResponseSchema,
   scanPlanResponseSchema,
+  scannerResponseSchema,
+  submitAiAdjudicationAcceptedResponseSchema,
 } from "@/shared/api/schemas"
+import { ApiError } from "@/shared/api/error"
 import { AspNetGateway } from "@/shared/gateway/aspnet-gateway"
 
 const mockedRequestJson = vi.hoisted(() => vi.fn())
@@ -314,5 +329,182 @@ describe("AspNetGateway", () => {
         updatedAtUtc: "2026-04-09T10:01:10Z",
       },
     ]).success).toBe(true)
+  })
+
+  it("routes detection detail and adjudication endpoints through typed schemas", async () => {
+    mockedRequestJson.mockResolvedValue({})
+
+    const gateway = new AspNetGateway()
+    await gateway.getDetectionDetail("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.submitAiAdjudication({
+      caseId: "case-1",
+      detectionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+      iocType: "domain",
+      iocValue: "x.example",
+      observedAtUtc: "2026-04-20T00:00:00Z",
+      detectionPackage: {},
+      submittedByUserId: "lead-1",
+    })
+    await gateway.getAiAdjudicationResult("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.getAiAdjudicationExplanation("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.getAiAdjudicationActionPlan("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.listAiAdjudicationEvidenceSources("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", { limit: 10, cursor: "abc" })
+    await gateway.listAiAdjudicationSimilarDetections("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", { limit: 10, cursor: "abc" })
+    await gateway.submitAiAdjudicationOverrideOrClosure("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", {
+      actionType: "Close",
+      reason: "Accepted",
+      closureDisposition: "accepted_recommendation",
+      isFinal: true,
+      submittedByUserId: "lead-1",
+    })
+
+    expect(mockedRequestJson.mock.calls[0]?.[0]).toBe("/api/v2/scanning/results/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    expect(mockedRequestJson.mock.calls[0]?.[1]).toBe(detectionDetailResponseSchema)
+    expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/ai/adjudications")
+    expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(submitAiAdjudicationAcceptedResponseSchema)
+    expect(mockedRequestJson.mock.calls[2]?.[1]).toBe(aiAdjudicationResultResponseSchema)
+    expect(mockedRequestJson.mock.calls[3]?.[1]).toBe(aiAdjudicationExplanationOrPendingResponseSchema)
+    expect(mockedRequestJson.mock.calls[4]?.[1]).toBe(aiAdjudicationActionPlanOrPendingResponseSchema)
+    expect(mockedRequestJson.mock.calls[5]?.[0]).toBe(
+      "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/evidence-sources?limit=10&cursor=abc",
+    )
+    expect(mockedRequestJson.mock.calls[5]?.[1]).toBe(aiEvidenceSourcesResponseSchema)
+    expect(mockedRequestJson.mock.calls[6]?.[0]).toBe(
+      "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/similar-detections?limit=10&cursor=abc",
+    )
+    expect(mockedRequestJson.mock.calls[6]?.[1]).toBe(aiSimilarDetectionsResponseSchema)
+    expect(mockedRequestJson.mock.calls[7]?.[0]).toBe(
+      "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/override-closure",
+    )
+    expect(mockedRequestJson.mock.calls[7]?.[1]).toBe(aiOverrideOrClosureResponseSchema)
+  })
+
+  it("routes retention and identity admin contracts through typed schemas", async () => {
+    mockedRequestJson
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({
+        id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+        dataType: "ScanResult",
+        retainDays: 30,
+        archiveAfterDays: 14,
+        isEnabled: true,
+        createdAtUtc: "2026-04-20T00:00:00Z",
+        updatedAtUtc: "2026-04-20T00:00:00Z",
+      })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({
+        id: "17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a",
+        name: "Operator",
+      })
+      .mockResolvedValueOnce({
+        id: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+        key: "retention.manage",
+        description: "Manage retention policies.",
+        createdAtUtc: "2026-04-20T00:00:00Z",
+      })
+      .mockResolvedValueOnce({
+        roleId: "17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a",
+        permissionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+        grantedByUserId: "admin-1",
+        grantedAtUtc: "2026-04-20T00:00:00Z",
+      })
+
+    const gateway = new AspNetGateway()
+    await gateway.listRetentionPolicies()
+    await gateway.createRetentionPolicy({
+      dataType: "ScanResult",
+      retainDays: 30,
+      archiveAfterDays: 14,
+      actorUserId: "admin-1",
+    })
+    await gateway.listArchiveRecords("85c86630-4876-4f03-bc30-1ec5f77d2d22")
+    await gateway.listPermissions()
+    await gateway.listRolePermissions("17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a")
+    await gateway.createRole({ name: "Operator" })
+    await gateway.createPermission({
+      key: "retention.manage",
+      description: "Manage retention policies.",
+      actorUserId: "admin-1",
+    })
+    await gateway.assignRolePermission({
+      roleId: "17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a",
+      permissionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+      actorUserId: "admin-1",
+    })
+
+    expect(mockedRequestJson.mock.calls[0]?.[0]).toBe("/api/v2/retention/policies")
+    expect(mockedRequestJson.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ safeParse: expect.any(Function) }))
+    expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(retentionPolicyResponseSchema)
+    expect(mockedRequestJson.mock.calls[2]?.[0]).toBe("/api/v2/retention/archives?retentionPolicyId=85c86630-4876-4f03-bc30-1ec5f77d2d22")
+    expect(mockedRequestJson.mock.calls[2]?.[1]).toEqual(expect.objectContaining({ safeParse: expect.any(Function) }))
+    expect(mockedRequestJson.mock.calls[3]?.[1]).toEqual(expect.objectContaining({ safeParse: expect.any(Function) }))
+    expect(mockedRequestJson.mock.calls[4]?.[1]).toEqual(expect.objectContaining({ safeParse: expect.any(Function) }))
+    expect(mockedRequestJson.mock.calls[5]?.[1]).toBe(roleResponseSchema)
+    expect(mockedRequestJson.mock.calls[6]?.[1]).toBe(permissionResponseSchema)
+    expect(mockedRequestJson.mock.calls[7]?.[1]).toBe(rolePermissionResponseSchema)
+  })
+
+  it("routes scanner create and capability updates through typed schemas", async () => {
+    mockedRequestJson
+      .mockResolvedValueOnce({
+        id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+        name: "edge-yara-1",
+        engineType: "Yara",
+        version: "4.5.0",
+        healthStatus: "Healthy",
+        lastHeartbeatUtc: null,
+        createdAtUtc: "2026-04-20T00:00:00Z",
+        updatedAtUtc: "2026-04-20T00:00:00Z",
+        capabilities: ["Yara"],
+      })
+      .mockResolvedValueOnce({
+        id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+        name: "edge-yara-1",
+        engineType: "Yara",
+        version: "4.5.0",
+        healthStatus: "Healthy",
+        lastHeartbeatUtc: null,
+        createdAtUtc: "2026-04-20T00:00:00Z",
+        updatedAtUtc: "2026-04-20T01:00:00Z",
+        capabilities: ["Yara", "Sigma"],
+      })
+
+    const gateway = new AspNetGateway()
+    await gateway.createScanner({
+      name: "edge-yara-1",
+      engineType: "Yara",
+      version: "4.5.0",
+      actorUserId: "lead-1",
+      capabilities: ["Yara"],
+    })
+    await gateway.updateScannerCapabilities("85c86630-4876-4f03-bc30-1ec5f77d2d22", {
+      capabilities: ["Yara", "Sigma"],
+      actorUserId: "lead-1",
+    })
+
+    expect(mockedRequestJson.mock.calls[0]?.[0]).toBe("/api/v2/infrastructure/scanners")
+    expect(mockedRequestJson.mock.calls[0]?.[1]).toBe(scannerResponseSchema)
+    expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/infrastructure/scanners/85c86630-4876-4f03-bc30-1ec5f77d2d22/capabilities")
+    expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(scannerResponseSchema)
+  })
+
+  it("does not hide compatibility failures on core v2 operator reads", async () => {
+    const compatibilityError = new ApiError(
+      "Compatibility failure",
+      500,
+      null,
+      { detail: "Invalid object name 'dbo.ManagedServers'" },
+    )
+    mockedRequestJson.mockRejectedValue(compatibilityError)
+
+    const gateway = new AspNetGateway()
+
+    await expect(gateway.listAlertRegistry()).rejects.toBe(compatibilityError)
+    await expect(gateway.listReports()).rejects.toBe(compatibilityError)
+    await expect(gateway.listAuditLogs()).rejects.toBe(compatibilityError)
+    await expect(gateway.listManagedServers()).rejects.toBe(compatibilityError)
+    await expect(gateway.listDetections()).rejects.toBe(compatibilityError)
   })
 })

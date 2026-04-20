@@ -1,0 +1,126 @@
+{
+  "summary": "Generated 3 policy-constrained manual-only actions for verdict likely_malicious.",
+  "recommended_actions": [
+    {
+      "action": "isolate_host",
+      "rank": 1,
+      "score": 0.91,
+      "rationale": "isolate_host prioritized for malicious-like verdict with low false-positive risk.",
+      "prerequisites": [
+        "Validate host identity and active owner before containment."
+      ],
+      "cautions": [
+        "Host isolation can interrupt production workloads."
+      ],
+      "escalation_target": "incident_response",
+      "required_reviewer_role": "incident_responder",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "search_fleet",
+      "rank": 2,
+      "score": 0.83,
+      "rationale": "search_fleet prioritized to validate spread across related detections.",
+      "prerequisites": [
+        "Scope search to relevant tenants, regions, and lookback window."
+      ],
+      "cautions": [
+        "Large-scope searches can increase SIEM/EDR query load."
+      ],
+      "escalation_target": "incident_response",
+      "required_reviewer_role": "incident_responder",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    },
+    {
+      "action": "open_review",
+      "rank": 3,
+      "score": 0.66,
+      "rationale": "open_review prioritized due to uncertainty/conflict that requires analyst validation.",
+      "prerequisites": [
+        "Attach adjudication evidence summary and policy check trace."
+      ],
+      "cautions": [
+        "Manual review queues can add response latency."
+      ],
+      "escalation_target": "incident_response",
+      "required_reviewer_role": "incident_responder",
+      "requires_human_approval": true,
+      "execution_mode": "manual_only"
+    }
+  ],
+  "prerequisites": [
+    "Validate host identity and active owner before containment.",
+    "Scope search to relevant tenants, regions, and lookback window."
+  ],
+  "cautions": [
+    "Host isolation can interrupt production workloads.",
+    "Manual review queues can add response latency."
+  ],
+  "never_auto_executes": true,
+  "policy_constrained": true,
+  "evidence_based": true,
+  "machine_readable": {
+    "input_snapshot": {
+      "family": "sigma",
+      "verdict": "likely_malicious",
+      "confidence": 0.82,
+      "false_positive_risk": 0.19,
+      "object_type": "process",
+      "asset_criticality": "critical",
+      "related_detections": 4
+    },
+    "policy_checks": [
+      {
+        "check": "manual_execution_only",
+        "passed": true,
+        "details": "All recommended actions require explicit human approval and manual execution."
+      },
+      {
+        "check": "disruptive_action_gate",
+        "passed": true,
+        "details": "Disruptive actions are gated on malicious-like verdict, confidence, false-positive risk, and evidence quality."
+      }
+    ],
+    "action_scores": [
+      {
+        "action": "isolate_host",
+        "eligible": true,
+        "score": 0.91,
+        "rationale": "isolate_host prioritized for malicious-like verdict with low false-positive risk.",
+        "blocked_reasons": []
+      },
+      {
+        "action": "block_domain",
+        "eligible": false,
+        "score": 0,
+        "rationale": "block_domain blocked by policy gates: block_domain requires domain IOC type",
+        "blocked_reasons": [
+          "block_domain requires domain IOC type"
+        ]
+      }
+    ],
+    "selection": {
+      "max_actions": 3,
+      "fallback_to_no_immediate_action": false,
+      "policy_matrix_version": "v1",
+      "matched_policy_row_id": "malicious_high_low_critical",
+      "matched_policy_row_priority": 120,
+      "policy_allowed_actions": [
+        "isolate_host",
+        "search_fleet",
+        "open_review",
+        "notify_admin",
+        "no_immediate_action"
+      ],
+      "derived_confidence_bucket": "high",
+      "derived_false_positive_risk_bucket": "low",
+      "selected_actions": [
+        "isolate_host",
+        "search_fleet",
+        "open_review"
+      ]
+    }
+  }
+}

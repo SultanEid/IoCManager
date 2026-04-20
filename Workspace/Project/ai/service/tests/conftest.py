@@ -149,6 +149,7 @@ def settings(tmp_path: Path, snapshot_root: Path) -> ServiceSettings:
         service_name="test-service",
         environment="test",
         artifacts_root=artifacts_root,
+        action_policy_matrix_path=artifacts_root / "action_policy_matrix.v1.json",
         snapshot_root=snapshot_root,
         registry_path=registry_path,
         dataset_registry_path=dataset_registry_path,

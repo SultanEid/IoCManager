@@ -1,14 +1,23 @@
 ﻿import { describe, expect, it } from "vitest"
 import {
   alertResponseSchema,
+  aiAdjudicationResultResponseSchema,
+  aiAdjudicationActionPlanOrPendingResponseSchema,
+  aiAdjudicationExplanationOrPendingResponseSchema,
   alertRuleWorkflowResponseSchema,
+  archiveRecordResponseSchema,
+  detectionDetailResponseSchema,
   discoveredHostResponseSchema,
   discoveryRunResponseSchema,
   decisionResponseSchema,
   deploymentResponseSchema,
+  feedbackResponseSchema,
   managedServerInventoryResponseSchema,
   healthReadySchema,
+  permissionResponseSchema,
   promoteDiscoveredHostResponseSchema,
+  retentionPolicyResponseSchema,
+  rolePermissionResponseSchema,
   ruleImportAttemptSchema,
   ruleRevisionItemSchema,
   ruleFamilySchema,
@@ -93,6 +102,50 @@ describe("API schemas", () => {
     expect(parsed.analystAcceptanceRate).toBe(0.5)
   })
 
+  it("parses feedback response with taxonomy auxiliary fields", () => {
+    const parsed = feedbackResponseSchema.parse({
+      id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      caseId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      decisionId: null,
+      verdict: "likely_malicious",
+      confidence: 0.76,
+      falsePositiveRisk: 0.14,
+      reviewPriority: "high",
+      shouldPromoteToIndicator: true,
+      shouldSuppress: false,
+      shouldAllowlist: false,
+      shouldEscalate: true,
+      notes: "Escalate to lead analyst",
+      submittedByUserId: "analyst-1",
+      submittedAtUtc: "2026-04-20T00:00:00Z",
+    })
+
+    expect(parsed.verdict).toBe("likely_malicious")
+    expect(parsed.reviewPriority).toBe("high")
+    expect(parsed.shouldPromoteToIndicator).toBe(true)
+  })
+
+  it("rejects legacy feedback verdict values in response payloads", () => {
+    const parsed = feedbackResponseSchema.safeParse({
+      id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      caseId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      decisionId: null,
+      verdict: "NeedsMoreEvidence",
+      confidence: 0.5,
+      falsePositiveRisk: 0.5,
+      reviewPriority: "medium",
+      shouldPromoteToIndicator: false,
+      shouldSuppress: false,
+      shouldAllowlist: false,
+      shouldEscalate: false,
+      notes: "Legacy verdict should be rejected at the frontend boundary",
+      submittedByUserId: "analyst-1",
+      submittedAtUtc: "2026-04-20T00:00:00Z",
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+
   it("parses health ready stable response", () => {
     const parsed = healthReadySchema.parse({
       status: "ready",
@@ -115,6 +168,50 @@ describe("API schemas", () => {
     expect(parsed.status).toBe("ready")
     expect(parsed.components[1].required).toBe(false)
     expect(parsed.components[1].status).toBe("degraded")
+  })
+
+  it("parses retention and archive record payloads", () => {
+    const policy = retentionPolicyResponseSchema.parse({
+      id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      dataType: "ScanResult",
+      retainDays: 30,
+      archiveAfterDays: 14,
+      isEnabled: true,
+      createdAtUtc: "2026-04-20T00:00:00Z",
+      updatedAtUtc: "2026-04-20T00:00:00Z",
+    })
+
+    const archive = archiveRecordResponseSchema.parse({
+      id: "17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a",
+      retentionPolicyId: policy.id,
+      entityType: "scan_result",
+      entityId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+      archiveUri: "file://archives/scan_result/demo.json",
+      archivedAtUtc: "2026-04-20T01:00:00Z",
+      createdAtUtc: "2026-04-20T01:00:00Z",
+    })
+
+    expect(policy.dataType).toBe("ScanResult")
+    expect(archive.retentionPolicyId).toBe(policy.id)
+  })
+
+  it("parses permission and role-permission payloads", () => {
+    const permission = permissionResponseSchema.parse({
+      id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      key: "retention.manage",
+      description: "Manage retention policies.",
+      createdAtUtc: "2026-04-20T00:00:00Z",
+    })
+
+    const rolePermission = rolePermissionResponseSchema.parse({
+      roleId: "17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a",
+      permissionId: permission.id,
+      grantedByUserId: "admin-1",
+      grantedAtUtc: "2026-04-20T00:00:00Z",
+    })
+
+    expect(permission.key).toBe("retention.manage")
+    expect(rolePermission.permissionId).toBe(permission.id)
   })
 
   it("parses discovery run response", () => {
@@ -240,6 +337,148 @@ describe("API schemas", () => {
   it("accepts suricata as canonical and rejects unknown tokens", () => {
     expect(ruleFamilySchema.safeParse("suricata").success).toBe(true)
     expect(ruleFamilySchema.safeParse("elastic").success).toBe(false)
+  })
+
+  it("parses detection detail payload with linked alert/case summaries", () => {
+    const parsed = detectionDetailResponseSchema.parse({
+      id: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+      fingerprint: "fp-1",
+      scannerFamily: "yara",
+      serverId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      serverHostname: "srv-01",
+      scanJobId: null,
+      jobAttemptId: null,
+      targetExecutionId: null,
+      ruleRevisionId: null,
+      ruleName: "Rule A",
+      iocId: null,
+      iocType: "domain",
+      iocValue: "x.example",
+      disposition: "Detection",
+      confidence: 0.7,
+      observedAtUtc: "2026-04-20T00:00:00Z",
+      firstObservedAtUtc: "2026-04-20T00:00:00Z",
+      lastObservedAtUtc: "2026-04-20T00:00:00Z",
+      occurrenceCount: 1,
+      isExecutionArtifact: false,
+      evidenceJson: "{}",
+      rawPayloadHash: "hash",
+      source: "telemetry",
+      linkedAlerts: [],
+      linkedCases: [
+        {
+          id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+          title: "Case 1",
+          status: "Open",
+          severity: "High",
+          updatedAtUtc: "2026-04-20T00:00:00Z",
+        },
+      ],
+    })
+
+    expect(parsed.linkedCases).toHaveLength(1)
+    expect(parsed.serverHostname).toBe("srv-01")
+  })
+
+  it("parses adjudication explanation and action-plan pending/ready payloads", () => {
+    const pendingExplanation = aiAdjudicationExplanationOrPendingResponseSchema.parse({
+      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+      status: "Running",
+      message: "Explanation is not ready yet.",
+    })
+    expect("message" in pendingExplanation).toBe(true)
+
+    const readyExplanation = aiAdjudicationExplanationOrPendingResponseSchema.parse({
+      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+      status: "Completed",
+      summary: "Deterministic summary.",
+      decisionState: "monitor",
+      recommendedAction: "collect_more_context",
+      rationale: ["Grounded by telemetry."],
+      citations: [],
+      nextBestEvidence: [],
+      policyVersion: "policy-v1",
+      modelVersion: "model-v1",
+      datasetVersion: "dataset-v1",
+      generatedAtUtc: "2026-04-20T00:00:00Z",
+      raw: {},
+      phrasingDiagnostics: null,
+    })
+    expect("summary" in readyExplanation).toBe(true)
+
+    const pendingActionPlan = aiAdjudicationActionPlanOrPendingResponseSchema.parse({
+      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+      status: "Running",
+      message: "Action plan is not ready yet.",
+    })
+    expect("message" in pendingActionPlan).toBe(true)
+
+    const readyActionPlan = aiAdjudicationActionPlanOrPendingResponseSchema.parse({
+      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+      status: "Completed",
+      summary: "Escalate to lead analyst.",
+      recommendedActions: [],
+      prerequisites: [],
+      cautions: ["Never auto-remediate"],
+      neverAutoExecutes: true,
+      policyConstrained: true,
+      evidenceBased: true,
+      generatedAtUtc: "2026-04-20T00:00:00Z",
+      raw: {},
+      phrasingDiagnostics: null,
+    })
+    expect("summary" in readyActionPlan).toBe(true)
+  })
+
+  it("parses adjudication results with safety diagnostics", () => {
+    const parsed = aiAdjudicationResultResponseSchema.parse({
+      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+      status: "Completed",
+      submittedAtUtc: "2026-04-20T00:00:00Z",
+      startedAtUtc: "2026-04-20T00:00:01Z",
+      completedAtUtc: "2026-04-20T00:00:10Z",
+      failureCode: null,
+      failureMessage: null,
+      modelVersion: "model-v1",
+      datasetVersion: "dataset-v1",
+      decision: {
+        verdict: "insufficient_evidence",
+        action: "hold",
+        confidence: 0.41,
+        falsePositiveRisk: 0.62,
+        reviewPriority: "high",
+        shouldPromoteToIndicator: false,
+        shouldSuppress: false,
+        shouldAllowlist: false,
+        shouldEscalate: false,
+        reasons: ["Need more corroboration."],
+        provenance: [],
+        nextBestEvidence: ["Collect enrichment context."],
+        abstainReason: "missing_non_string_corroboration",
+        scoredAtUtc: "2026-04-20T00:00:05Z",
+        safetyDiagnostics: {
+          autoRemediationAllowed: false,
+          weakEvidence: true,
+          contradictoryEvidence: true,
+          contradictionScore: 0.51,
+          missingCriticalFields: ["object_metadata.object_id"],
+          partialEvidence: true,
+          enrichmentStatus: "degraded",
+          falsePositiveRisk: 0.62,
+          severityCapApplied: true,
+          maxRecommendationSeverity: "review_only",
+          degradationReasons: ["linked_enrichment_unavailable"],
+        },
+        raw: {},
+      },
+      explanationAvailable: true,
+      actionPlanAvailable: true,
+      similarDetectionsAvailable: false,
+      evidenceSourcesAvailable: true,
+    })
+
+    expect(parsed.decision?.safetyDiagnostics?.weakEvidence).toBe(true)
+    expect(parsed.decision?.safetyDiagnostics?.enrichmentStatus).toBe("degraded")
   })
 
   it("parses staged validation payloads on revisions and imports", () => {

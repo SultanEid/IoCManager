@@ -1,0 +1,25 @@
+{
+  "source_name": "internal-clean-baselines",
+  "source_type": "internal_clean_baselines",
+  "location": {
+    "local_path": "ai/datasets/raw/internal-clean-baselines/"
+  },
+  "access_notes": [
+    "Source captures must be known-clean and documented by collection window.",
+    "Retain baseline derivation notes so imports remain auditable."
+  ],
+  "ingestion_mode": "internal_export_import",
+  "parser_name": "clean_baseline_profile_parser_v1",
+  "normalization_target": "baseline_signal_profile_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": false
+}

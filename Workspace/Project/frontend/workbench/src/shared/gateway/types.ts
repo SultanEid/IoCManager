@@ -1,12 +1,20 @@
 import type {
   AlertResponse,
+  AiAdjudicationActionPlanOrPendingResponse,
+  AiAdjudicationExplanationOrPendingResponse,
+  AiAdjudicationResultResponse,
+  AiEvidenceSourcesResponse,
+  AiOverrideOrClosureResponse,
+  AiSimilarDetectionsResponse,
   AlertListResponse,
   V2AlertDetailResponse,
   AlertRuleWorkflowResponse,
   AuditLogListResponse,
+  ArchiveRecordResponse,
   CaseRuleWorkflowResponse,
   CaseResponse,
   CoveragePainAnalysisResponse,
+  DetectionDetailResponse,
   DetectionHistoryResponse,
   FeedSourceResponse,
   IocListResponse,
@@ -37,8 +45,11 @@ import type {
   HealthInfo,
   HealthReady,
   JobRunResponse,
+  PermissionResponse,
   PromoteDiscoveredHostResponse,
+  RetentionPolicyResponse,
   RoleResponse,
+  RolePermissionResponse,
   RollbackPlanResponse,
   RolloutPlanResponse,
   RuleDetail,
@@ -50,6 +61,7 @@ import type {
   TargetGroupMemberResponse,
   TargetGroupResponse,
   TargetServerResponse,
+  SubmitAiAdjudicationAcceptedResponse,
   RuleProposalResponse,
   RuleResponse,
   RuleSimulationResultResponse,
@@ -338,6 +350,48 @@ export type CreateWorkbenchUserInput = {
   displayName: string
   password: string
   roles: string[]
+}
+
+export type CreateWorkbenchRoleInput = {
+  name: string
+}
+
+export type CreateWorkbenchPermissionInput = {
+  key: string
+  description: string
+  actorUserId: string
+}
+
+export type AssignWorkbenchRolePermissionInput = {
+  roleId: string
+  permissionId: string
+  actorUserId: string
+}
+
+export type CreateRetentionPolicyInput = {
+  dataType: string
+  retainDays: number
+  archiveAfterDays: number
+  actorUserId: string
+}
+
+export type ExecuteRetentionPolicyInput = {
+  retentionPolicyId: string
+  archiveUriPrefix: string
+  actorUserId: string
+}
+
+export type CreateScannerInput = {
+  name: string
+  engineType: string
+  version: string
+  actorUserId: string
+  capabilities?: string[]
+}
+
+export type UpdateScannerCapabilitiesInput = {
+  capabilities: string[]
+  actorUserId: string
 }
 
 export type QueueDiscoveryRunInput = {
@@ -642,6 +696,31 @@ export type DetectionListQuery = {
   sort?: string
 }
 
+export type SubmitAiAdjudicationInput = {
+  caseId: string
+  detectionId: string
+  iocType: string
+  iocValue: string
+  observedAtUtc: string
+  detectionPackage: Record<string, unknown>
+  submittedByUserId: string
+}
+
+export type AiAdjudicationCursorQuery = {
+  limit?: number
+  cursor?: string
+}
+
+export type SubmitAiAdjudicationOverrideOrClosureInput = {
+  actionType: "Override" | "Close"
+  reason: string
+  notes?: string
+  overrideVerdict?: string
+  closureDisposition?: string
+  isFinal?: boolean
+  submittedByUserId: string
+}
+
 export type RetryDistributionJobInput = {
   actorUserId: string
   notes?: string
@@ -659,6 +738,31 @@ export interface Gateway {
   listFeedSources(signal?: AbortSignal): Promise<FeedSourceResponse[]>
   listIocs(query?: IocListQuery, signal?: AbortSignal): Promise<IocListResponse>
   listDetections(query?: DetectionListQuery, signal?: AbortSignal): Promise<DetectionHistoryResponse>
+  getDetectionDetail(detectionId: string, signal?: AbortSignal): Promise<DetectionDetailResponse>
+  submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse>
+  getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse>
+  getAiAdjudicationExplanation(
+    adjudicationId: string,
+    signal?: AbortSignal,
+  ): Promise<AiAdjudicationExplanationOrPendingResponse>
+  getAiAdjudicationActionPlan(
+    adjudicationId: string,
+    signal?: AbortSignal,
+  ): Promise<AiAdjudicationActionPlanOrPendingResponse>
+  listAiAdjudicationEvidenceSources(
+    adjudicationId: string,
+    query?: AiAdjudicationCursorQuery,
+    signal?: AbortSignal,
+  ): Promise<AiEvidenceSourcesResponse>
+  listAiAdjudicationSimilarDetections(
+    adjudicationId: string,
+    query?: AiAdjudicationCursorQuery,
+    signal?: AbortSignal,
+  ): Promise<AiSimilarDetectionsResponse>
+  submitAiAdjudicationOverrideOrClosure(
+    adjudicationId: string,
+    input: SubmitAiAdjudicationOverrideOrClosureInput,
+  ): Promise<AiOverrideOrClosureResponse>
   listAlerts(signal?: AbortSignal): Promise<AlertResponse[]>
   getAlert(alertId: string, signal?: AbortSignal): Promise<AlertResponse>
   listCases(signal?: AbortSignal): Promise<CaseResponse[]>
@@ -672,7 +776,16 @@ export interface Gateway {
   listJobRuns(signal?: AbortSignal): Promise<JobRunResponse[]>
   listUsers(signal?: AbortSignal): Promise<UserResponse[]>
   listRoles(signal?: AbortSignal): Promise<RoleResponse[]>
+  listPermissions(signal?: AbortSignal): Promise<PermissionResponse[]>
+  listRolePermissions(roleId?: string, signal?: AbortSignal): Promise<RolePermissionResponse[]>
   createUser(input: CreateWorkbenchUserInput): Promise<UserResponse>
+  createRole(input: CreateWorkbenchRoleInput): Promise<RoleResponse>
+  createPermission(input: CreateWorkbenchPermissionInput): Promise<PermissionResponse>
+  assignRolePermission(input: AssignWorkbenchRolePermissionInput): Promise<RolePermissionResponse>
+  listRetentionPolicies(signal?: AbortSignal): Promise<RetentionPolicyResponse[]>
+  createRetentionPolicy(input: CreateRetentionPolicyInput): Promise<RetentionPolicyResponse>
+  listArchiveRecords(retentionPolicyId?: string, signal?: AbortSignal): Promise<ArchiveRecordResponse[]>
+  executeRetentionPolicy(input: ExecuteRetentionPolicyInput): Promise<ArchiveRecordResponse[]>
   listSubnets(signal?: AbortSignal): Promise<SubnetResponse[]>
   listTargetServers(subnetId?: string, signal?: AbortSignal): Promise<TargetServerResponse[]>
   listTargetGroups(signal?: AbortSignal): Promise<TargetGroupResponse[]>
@@ -707,6 +820,8 @@ export interface Gateway {
   ): Promise<void>
   removeManagedServerScannerAssignment(targetServerId: string, scannerId: string): Promise<void>
   listScanners(signal?: AbortSignal): Promise<ScannerResponse[]>
+  createScanner(input: CreateScannerInput): Promise<ScannerResponse>
+  updateScannerCapabilities(scannerId: string, input: UpdateScannerCapabilitiesInput): Promise<ScannerResponse>
   queueDiscoveryRun(input: QueueDiscoveryRunInput): Promise<DiscoveryRunResponse>
   listDiscoveryRuns(subnetId?: string, signal?: AbortSignal): Promise<DiscoveryRunResponse[]>
   listDiscoveredHosts(subnetId?: string, signal?: AbortSignal): Promise<DiscoveredHostResponse[]>

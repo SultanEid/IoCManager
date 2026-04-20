@@ -11,7 +11,7 @@ import pandas as pd
 
 from .contracts import ScoreCaseRequest
 
-POSITIVE_VERDICTS = {"true_positive", "escalated"}
+POSITIVE_VERDICTS = {"malicious", "likely_malicious", "suspicious", "true_positive", "escalated"}
 
 
 @dataclass(frozen=True)
@@ -256,6 +256,11 @@ def build_training_examples(
             if "severity_score" in recent_detections.columns and not recent_detections.empty
             else 0.0
         )
+        rule_family = (
+            str(recent_detections.iloc[-1]["scanner_family"]).strip().lower()
+            if not recent_detections.empty and "scanner_family" in recent_detections.columns
+            else "unknown"
+        )
 
         future_outcomes = (
             grouped_outcomes.get_group(key) if key in grouped_outcomes.groups else pd.DataFrame(columns=outcomes.columns)
@@ -270,6 +275,7 @@ def build_training_examples(
         rule_context = dict(getattr(row, "rule_context", {}) or {})
         rule_context.setdefault("scannerAgreement", scanner_agreement)
         rule_context.setdefault("severityScore", severity_score)
+        rule_context.setdefault("ruleFamily", rule_family)
         if source_system in trust_map and "sourceTrust" not in rule_context:
             rule_context["sourceTrust"] = trust_map[source_system]
 

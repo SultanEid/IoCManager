@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/dataset-source-manifest.schema.json",
+  "title": "Dataset Source Manifest",
+  "description": "Metadata-only source manifest template for future dataset ingestion and enrichment onboarding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_name",
+    "source_type",
+    "location",
+    "access_notes",
+    "ingestion_mode",
+    "parser_name",
+    "normalization_target",
+    "provenance_fields",
+    "enabled"
+  ],
+  "properties": {
+    "source_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "external_feed",
+        "internal_behavior_reports",
+        "internal_analyst_closures",
+        "internal_allowlists",
+        "internal_clean_baselines"
+      ]
+    },
+    "location": {
+      "type": "object",
+      "description": "Local staging path and/or remote source metadata. At least one reference is required.",
+      "additionalProperties": false,
+      "properties": {
+        "local_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remote_reference": {
+          "$ref": "#/$defs/remote_reference"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "local_path"
+          ]
+        },
+        {
+          "required": [
+            "remote_reference"
+          ]
+        }
+      ]
+    },
+    "access_notes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "ingestion_mode": {
+      "type": "string",
+      "enum": [
+        "deferred_remote_import",
+        "manual_internal_import",
+        "internal_export_import"
+      ]
+    },
+    "parser_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "normalization_target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provenance_fields": {
+      "type": "array",
+      "description": "Canonical provenance keys that downstream imports must preserve.",
+      "const": [
+        "source",
+        "key",
+        "value",
+        "evidence_id",
+        "citation_ref",
+        "retrieved_at_utc",
+        "retrieved_by",
+        "record_locator"
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "remote_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format_hint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retrieval_hint": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

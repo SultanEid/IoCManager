@@ -1,0 +1,47 @@
+﻿{
+  "alert": {
+    "event_id": "evt-sigma-alert-fixture-001",
+    "timestamp": "2026-04-16T07:50:00Z",
+    "source": "siem",
+    "rule": {
+      "source": "sigma-hq-local",
+      "rule_id": "SIGMA-ALERT-9001",
+      "title": "Suspicious Encoded Command",
+      "id": "6d730810-e270-4d4c-9a4f-0ab7f2b5f001",
+      "status": "stable",
+      "logsource": {
+        "category": "process_creation",
+        "product": "windows"
+      },
+      "text": "title: Suspicious Encoded Command"
+    },
+    "process": {
+      "process_guid": "proc-alert-001",
+      "pid": 4242,
+      "image": "powershell.exe",
+      "command_line": "powershell.exe -enc SQBFAFgA"
+    },
+    "user": {
+      "user_id": "user-alert-01",
+      "user_name": "svc-backup"
+    },
+    "host": {
+      "host_id": "host-alert-01",
+      "hostname": "wkstn-alert-01"
+    },
+    "lineage": {
+      "process": [
+        {
+          "process_guid": "proc-alert-001",
+          "parent_process_guid": "proc-parent-001",
+          "parent_image": "cmd.exe"
+        }
+      ]
+    }
+  },
+  "adjudication_result": {
+    "verdict": "likely_malicious",
+    "confidence": 0.78,
+    "false_positive_risk": 0.22
+  }
+}

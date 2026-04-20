@@ -1,0 +1,25 @@
+{
+  "source_name": "internal-allowlists",
+  "source_type": "internal_allowlists",
+  "location": {
+    "local_path": "ai/datasets/raw/internal-allowlists/"
+  },
+  "access_notes": [
+    "Load approved enterprise allowlists only; keep source ownership metadata intact.",
+    "Preserve baseline context linkage for downstream decision explainability."
+  ],
+  "ingestion_mode": "manual_internal_import",
+  "parser_name": "internal_allowlist_parser_v1",
+  "normalization_target": "allowlist_baseline_context_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": false
+}

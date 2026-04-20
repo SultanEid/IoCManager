@@ -1,0 +1,90 @@
+{
+  "rule_family": "yara",
+  "full_rule_text": "rule LikelyBenign_RemoteAdmin_Tool {\n  meta:\n    id = \"YARA-SCEN-0002\"\n    severity = \"medium\"\n    category = \"remote_admin\"\n  strings:\n    $a = \"RemoteAssistSession\" ascii wide\n    $b = \"--support-ticket\" ascii\n  condition:\n    all of them\n}",
+  "rule_metadata": {
+    "source": "soc-detections",
+    "rule_id": "YARA-SCEN-0002",
+    "rule_name": "LikelyBenign_RemoteAdmin_Tool",
+    "namespace": "windows.admin",
+    "author": "content-team",
+    "description": "Catches remote assistance tooling often used by IT support.",
+    "tags": [
+      "likely_benign",
+      "remote_admin"
+    ],
+    "strings": [
+      "RemoteAssistSession",
+      "--support-ticket"
+    ],
+    "condition": "all of them",
+    "meta": {
+      "id": "YARA-SCEN-0002",
+      "severity": "medium",
+      "category": "remote_admin"
+    }
+  },
+  "raw_hit_payload": {
+    "engine": "yara-scanner-2",
+    "target_path": "C:\\Temp\\RemoteSupport\\assist-launcher.exe",
+    "matched_strings": [
+      "RemoteAssistSession",
+      "--support-ticket"
+    ],
+    "parent_process": "C:\\Windows\\System32\\services.exe"
+  },
+  "object_metadata": {
+    "object_id": "file-yara-lbenign-002",
+    "object_type": "file",
+    "source_system": "edr",
+    "labels": [
+      "scenario:likely_benign",
+      "dual_use_tool"
+    ]
+  },
+  "time_prevalence_context": {
+    "hit_time": "2026-04-15T10:23:00Z",
+    "first_seen": "2026-04-10T13:00:00Z",
+    "last_seen": "2026-04-15T10:23:00Z",
+    "hit_count_24h": 6,
+    "hit_count_7d": 37,
+    "prevalence_ratio": 0.014,
+    "recency_bucket": "recurring",
+    "trend": "stable"
+  },
+  "allowlist_baseline_context": {
+    "allowlisted": false,
+    "baseline_match": true,
+    "baseline_name": "it-remote-support-tools",
+    "allowlist_source": "soc-baseline-registry"
+  },
+  "prior_analyst_outcomes": {
+    "outcomes": [
+      {
+        "analyst_id": "u-210",
+        "case_id": "case-4502",
+        "verdict": "benign",
+        "timestamp": "2026-04-12T09:15:00Z",
+        "notes": "Confirmed approved helpdesk remote session."
+      },
+      {
+        "analyst_id": "u-214",
+        "case_id": "case-4511",
+        "verdict": "needs_review",
+        "timestamp": "2026-04-14T08:45:00Z",
+        "notes": "Execution outside ticketing window; required manual follow-up."
+      }
+    ]
+  },
+  "related_detections": {
+    "detections": [
+      {
+        "detection_id": "det-yara-lbenign-21",
+        "rule_family": "sigma",
+        "rule_id": "SIGMA-ADMIN-002",
+        "relation_type": "supporting_signal",
+        "observed_at": "2026-04-15T10:23:30Z",
+        "confidence": 0.41
+      }
+    ]
+  }
+}
