@@ -1,0 +1,43 @@
+﻿
+@{
+    ViewBag.Title = "Boxplot";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+
+@section styles{
+
+    <!--  -->
+    <link rel="stylesheet" href="~/assets/libs/apexcharts/apexcharts.css">
+}
+
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">Basic Box Chart</h4>
+                <div id="basic_box" class="apex-charts" dir="ltr"></div>
+            </div>
+        </div><!--end card-->
+    </div><!-- end col -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">Boxplot with Scatter Chart</h4>
+                <div id="box_plot" class="apex-charts" dir="ltr"></div>
+            </div>
+        </div><!--end card-->
+    </div><!-- end col -->
+</div><!-- end row -->
+@section scripts{
+
+
+    <!-- apexcharts -->
+    <script src="~/assets/libs/apexcharts/apexcharts.min.js"></script>
+
+    <!-- boxplotcharts init -->
+    <script src="~/assets/js/pages/apexcharts-boxplot.init.js"></script>
+
+    <script src="~/assets/js/app.js"></script>
+}

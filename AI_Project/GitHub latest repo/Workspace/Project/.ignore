@@ -1,0 +1,31 @@
+# Generated / dependency artifacts
+**/node_modules/
+**/.next/
+**/dist/
+**/out/
+**/bin/
+**/obj/
+**/.nuget/
+**/.dotnet-home/
+**/.tmp/
+**/test-results/
+**/playwright-report/
+**/.nyc_output/
+**/coverage-final.json
+**/lcov.info
+
+# Runtime data
+.postgres/
+**/*.log
+**/*.binlog
+**/*.db
+**/*.sqlite*
+
+# Local env
+**/.env
+**/.env.*
+
+# Editor
+.vscode/
+.idea/
+.vs/

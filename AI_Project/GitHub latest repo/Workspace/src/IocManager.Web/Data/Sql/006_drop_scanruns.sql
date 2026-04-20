@@ -1,0 +1,6 @@
+SET NOCOUNT ON;
+
+IF OBJECT_ID(N'dbo.ScanRuns', N'U') IS NOT NULL
+BEGIN
+    DROP TABLE dbo.ScanRuns;
+END;

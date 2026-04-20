@@ -1,0 +1,47 @@
+import type { UiErrorClassification } from "@/shared/api/error-classification"
+import { DependencyDownState, PermissionRestrictedState, UnavailableState } from "@/shared/ui/state-panels"
+
+export function ClassifiedFailureState({
+  failure,
+  fallbackTitle,
+}: {
+  failure: UiErrorClassification
+  fallbackTitle: string
+}) {
+  if (failure.kind === "permission-restricted") {
+    return (
+      <PermissionRestrictedState
+        title="Permission restricted"
+        description="Your role cannot access this backend surface."
+      />
+    )
+  }
+
+  if (failure.kind === "dependency-down") {
+    return (
+      <DependencyDownState
+        title="Dependency down"
+        description={
+          failure.isContractMismatch
+            ? "This surface is not mapped to the current backend shape yet. An empty or reduced view is expected until that module is integrated."
+            : "A required backend dependency is currently unavailable."
+        }
+      />
+    )
+  }
+
+  if (failure.kind === "unavailable-configuration") {
+    return <UnavailableState title="Configuration unavailable" description={failure.message} />
+  }
+
+  if (failure.kind === "unavailable-missing-feature") {
+    return (
+      <UnavailableState
+        title={fallbackTitle}
+        description="Backend feature support is not available for this surface yet."
+      />
+    )
+  }
+
+  return <UnavailableState title={fallbackTitle} description={failure.message} />
+}

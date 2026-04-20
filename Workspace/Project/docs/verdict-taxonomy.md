@@ -11,6 +11,8 @@ Related documents:
 
 ## Allowed Verdicts
 
+The runtime verdict set is fixed to these eight values: `malicious`, `likely_malicious`, `suspicious`, `benign`, `likely_benign`, `false_positive`, `insufficient_evidence`, and `stale_or_revoked`.
+
 ### `malicious`
 Use when strong corroborated evidence supports malicious interpretation and the residual contradiction and missing-evidence levels remain within policy.
 
