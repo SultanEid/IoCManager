@@ -373,6 +373,8 @@ FodyWeavers.xsd
 /SWEEPNETWORKV2_Results/
 /YARA_Results/
 /Workspace.local-backup-*/
+/AI_Project/
+/.playwright-cli/
 /docs/
 /scripts/
 /snort-validation/
