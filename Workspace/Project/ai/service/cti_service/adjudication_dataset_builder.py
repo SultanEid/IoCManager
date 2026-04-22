@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .dataset_registry import DatasetRegistryEntry, DatasetRegistryStore
 from .evidence_fusion import (
     EvidenceFusionResult,
     fuse_evidence,
@@ -15,7 +16,7 @@ from .evidence_fusion import (
     to_dataset_missing_item,
 )
 from .snort_adjudication import SnortAdjudicationResult, adjudicate_snort
-from .source_adapters import adapt_source_record
+from .source_adapters import ADAPTER_REGISTRY, adapt_source_record
 from .yara_adjudication import YaraAdjudicationResult, adjudicate_yara
 
 TASK_YARA = "yara_package_adjudication"
@@ -28,6 +29,7 @@ FAMILY_TO_TASK = {
     "yara": TASK_YARA,
     "sigma": TASK_SIGMA,
     "snort": TASK_SNORT,
+    "suricata": TASK_SNORT,
 }
 
 CANONICAL_PROVENANCE_FIELDS = (
@@ -62,20 +64,25 @@ CANONICAL_ROW_FIELDS = (
 )
 
 SCENARIO_TO_VERDICT = {
-    "malicious": "confirmed_malicious",
+    "malicious": "malicious",
     "likely_malicious": "likely_malicious",
-    "suspicious": "likely_malicious",
-    "benign": "likely_benign",
+    "suspicious": "suspicious",
+    "benign": "benign",
     "likely_benign": "likely_benign",
-    "false_positive": "likely_benign",
+    "false_positive": "false_positive",
     "insufficient_evidence": "insufficient_evidence",
+    "stale_or_revoked": "stale_or_revoked",
 }
 
 VERDICT_TO_ACTION = {
-    "confirmed_malicious": ("canary", "high", True),
-    "likely_malicious": ("canary", "high", True),
-    "likely_benign": ("monitor", "low", False),
-    "insufficient_evidence": ("hold", "low", False),
+    "malicious": ("search_fleet", "high", True),
+    "likely_malicious": ("search_fleet", "high", True),
+    "suspicious": ("open_review", "medium", True),
+    "benign": ("no_immediate_action", "low", False),
+    "likely_benign": ("no_immediate_action", "low", False),
+    "false_positive": ("suppress_rule_candidate", "low", False),
+    "stale_or_revoked": ("tighten_rule", "low", False),
+    "insufficient_evidence": ("open_review", "low", False),
 }
 
 SPLIT_NAMES = ("train", "validation", "test")
@@ -233,6 +240,23 @@ def build_adjudication_dataset(config: DatasetBuildConfig) -> dict[str, Any]:
     split_manifest_path = dataset_root / "split_manifest.json"
     split_manifest_path.write_text(json.dumps(split_manifest, indent=2), encoding="utf-8")
 
+    quality_report = _build_dataset_quality_report(
+        normalized_rows=normalized_rows,
+        manifests=manifests,
+        skipped_items=skipped_items,
+    )
+    quality_report_path = dataset_root / "quality_report.json"
+    quality_report_path.write_text(json.dumps(quality_report, indent=2), encoding="utf-8")
+
+    snapshot_files = _write_snapshot_exports(dataset_root=dataset_root, normalized_rows=normalized_rows)
+    snapshot_manifest = {
+        "datasetVersion": config.dataset_version,
+        "createdAtUtc": _utc_now_iso(),
+        "files": snapshot_files,
+    }
+    snapshot_manifest_path = dataset_root / "manifest.json"
+    snapshot_manifest_path.write_text(json.dumps(snapshot_manifest, indent=2), encoding="utf-8")
+
     row_format_path = dataset_root / "training_row_format.md"
     row_format_path.write_text(_render_training_row_report(normalized_rows), encoding="utf-8")
 
@@ -241,8 +265,161 @@ def build_adjudication_dataset(config: DatasetBuildConfig) -> dict[str, Any]:
         "canonicalRows": len(normalized_rows),
         "canonicalPath": str(canonical_path.resolve()),
         "splitManifestPath": str(split_manifest_path.resolve()),
+        "qualityReportPath": str(quality_report_path.resolve()),
+        "snapshotManifestPath": str(snapshot_manifest_path.resolve()),
+        "snapshotFiles": snapshot_files,
         "trainingRowFormatPath": str(row_format_path.resolve()),
         "tasks": task_reports,
+        "skippedItems": skipped_items,
+        "activeUseEligible": quality_report["activeUseEligibility"]["passed"],
+        "activeUseRejectionReasons": quality_report["activeUseEligibility"]["reasons"],
+    }
+
+
+def register_dataset_build(
+    *,
+    dataset_registry_path: Path,
+    dataset_version: str,
+    snapshot_manifest_path: Path,
+    source_files: dict[str, str],
+    notes: str | None = None,
+) -> dict[str, Any]:
+    manifest_payload = json.loads(snapshot_manifest_path.read_text(encoding="utf-8"))
+    created_at = _parse_datetime_utc(manifest_payload.get("createdAtUtc")) or datetime.now(timezone.utc)
+    manifest_hash = hashlib.sha256(json.dumps(manifest_payload, sort_keys=True).encode("utf-8")).hexdigest()
+    store = DatasetRegistryStore(dataset_registry_path)
+    entry = DatasetRegistryEntry(
+        dataset_version=dataset_version,
+        created_at_utc=created_at,
+        manifest_path=str(snapshot_manifest_path.resolve()),
+        manifest_hash=manifest_hash,
+        source_files=source_files,
+        notes=notes or "Persisted by build_adjudication_dataset.",
+    )
+    document = store.upsert(entry)
+    return {
+        "registryPath": str(dataset_registry_path.resolve()),
+        "entryCount": len(document.entries),
+        "datasetVersion": dataset_version,
+        "manifestHash": manifest_hash,
+    }
+
+
+def build_dataset_inventory(
+    *,
+    manifests_dir: Path,
+    raw_root: Path,
+    processed_root: Path,
+    dataset_registry_path: Path,
+) -> dict[str, Any]:
+    skipped_items: list[dict[str, Any]] = []
+    manifests = _load_manifests(manifests_dir, skipped_items=skipped_items)
+    parser_registry = sorted(ADAPTER_REGISTRY.keys())
+
+    staged_sources: list[dict[str, Any]] = []
+    for item in sorted(raw_root.iterdir(), key=lambda path: path.name) if raw_root.exists() else []:
+        if not item.is_dir():
+            continue
+        files = _discover_import_files(item)
+        staged_sources.append(
+            {
+                "sourceName": item.name,
+                "path": str(item.resolve()),
+                "supportedFiles": [str(path.resolve()) for path in files],
+                "hasSupportedFiles": bool(files),
+            }
+        )
+
+    manifest_rows: list[dict[str, Any]] = []
+    classifications = {
+        "ready_to_stage": [],
+        "supported_but_unstaged": [],
+        "staged_but_disabled": [],
+        "unsupported_parser": [],
+    }
+    for manifest in manifests:
+        manifest_path: Path = manifest["__manifest_path"]
+        local_path_raw = _coerce_dict(manifest.get("location")).get("local_path")
+        parser_name = str(manifest.get("parser_name") or "").strip()
+        enabled = bool(manifest.get("enabled", False))
+        parser_supported = parser_name in ADAPTER_REGISTRY
+        resolved_local = None
+        supported_files: list[Path] = []
+        if isinstance(local_path_raw, str) and local_path_raw.strip():
+            local_path = Path(local_path_raw)
+            if local_path.is_absolute():
+                resolved_local = local_path
+            else:
+                candidate_paths = [
+                    raw_root.parents[2] / local_path,
+                    raw_root / local_path,
+                    raw_root / local_path.name,
+                ]
+                resolved_local = next((candidate for candidate in candidate_paths if candidate.exists()), candidate_paths[0])
+            if resolved_local.exists():
+                supported_files = _discover_import_files(resolved_local)
+
+        if not parser_supported:
+            classification = "unsupported_parser"
+        elif supported_files and not enabled:
+            classification = "staged_but_disabled"
+        elif supported_files and enabled:
+            classification = "ready_to_stage"
+        else:
+            classification = "supported_but_unstaged"
+
+        manifest_row = {
+            "sourceName": manifest.get("source_name"),
+            "manifestPath": str(manifest_path.resolve()),
+            "enabled": enabled,
+            "ingestionMode": manifest.get("ingestion_mode"),
+            "parserName": parser_name,
+            "parserSupported": parser_supported,
+            "classification": classification,
+            "localPath": str(resolved_local.resolve()) if isinstance(resolved_local, Path) and resolved_local.exists() else (str(resolved_local) if resolved_local else None),
+            "supportedFiles": [str(path.resolve()) for path in supported_files],
+        }
+        manifest_rows.append(manifest_row)
+        classifications[classification].append(manifest_row["sourceName"])
+
+    processed_datasets: list[dict[str, Any]] = []
+    if processed_root.exists():
+        for item in sorted(processed_root.iterdir(), key=lambda path: path.name):
+            if not item.is_dir():
+                continue
+            has_canonical = (item / "canonical_rows.jsonl").exists()
+            has_snapshot_manifest = (item / "manifest.json").exists()
+            has_split_manifest = (item / "split_manifest.json").exists()
+            has_quality_report = (item / "quality_report.json").exists()
+            if not any((has_canonical, has_snapshot_manifest, has_split_manifest, has_quality_report)):
+                continue
+            processed_datasets.append(
+                {
+                    "datasetVersion": item.name,
+                    "path": str(item.resolve()),
+                    "hasCanonicalRows": has_canonical,
+                    "hasSnapshotManifest": has_snapshot_manifest,
+                    "hasSplitManifest": has_split_manifest,
+                    "hasQualityReport": has_quality_report,
+                }
+            )
+
+    registry_store = DatasetRegistryStore(dataset_registry_path)
+    registry_doc = registry_store.load()
+    return {
+        "generatedAtUtc": _utc_now_iso(),
+        "rawRoot": str(raw_root.resolve()),
+        "processedRoot": str(processed_root.resolve()),
+        "datasetRegistryPath": str(dataset_registry_path.resolve()),
+        "parserCoverage": {
+            "registeredParsers": parser_registry,
+            "unsupportedManifestParsers": [row["parserName"] for row in manifest_rows if not row["parserSupported"]],
+        },
+        "stagedSources": staged_sources,
+        "manifests": manifest_rows,
+        "classifications": classifications,
+        "processedDatasets": processed_datasets,
+        "datasetRegistryEntries": [entry.model_dump(mode="json") for entry in registry_doc.entries],
         "skippedItems": skipped_items,
     }
 
@@ -323,7 +500,7 @@ def _load_fixture_rows(config: DatasetBuildConfig, skipped_items: list[dict[str,
 
         for scenario_path in sorted(scenario_dir.glob(f"{family}-*.example.json")):
             try:
-                payload = json.loads(scenario_path.read_text(encoding="utf-8"))
+                payload = json.loads(scenario_path.read_text(encoding="utf-8-sig"))
             except json.JSONDecodeError as exc:
                 skipped_items.append(
                     {
@@ -406,7 +583,7 @@ def _append_optional_fixture_rows(
 
     for fixture_path in sorted(fixture_dir.glob("*.example.json")):
         try:
-            payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+            payload = json.loads(fixture_path.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError as exc:
             skipped_items.append(
                 {
@@ -1007,7 +1184,7 @@ def _apply_deterministic_snort_adjudication(
     contradictory_evidence: list[dict[str, Any]],
     fusion_result: EvidenceFusionResult,
 ) -> None:
-    if rule_family != "snort":
+    if rule_family not in {"snort", "suricata"}:
         return
 
     generated = adjudicate_snort(
@@ -1139,11 +1316,11 @@ def _extract_provenance(
         for item in provided:
             if not isinstance(item, dict):
                 continue
-            provenance.append(_normalize_provenance_item(item))
+            provenance.append(_normalize_provenance_item(item, source_file=source_file))
     for item in adapter_provenance_items or []:
         if not isinstance(item, dict):
             continue
-        provenance.append(_normalize_provenance_item(item))
+        provenance.append(_normalize_provenance_item(item, source_file=source_file))
 
     source_item = {
         "source": str(source_file.get("source_name", "unknown")),
@@ -1483,10 +1660,18 @@ def _normalize_list_of_dicts(value: Any) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, dict)]
 
 
-def _normalize_provenance_item(item: dict[str, Any]) -> dict[str, Any]:
+def _coerce_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _normalize_provenance_item(item: dict[str, Any], source_file: dict[str, Any] | None = None) -> dict[str, Any]:
     output: dict[str, Any] = {}
     for key in CANONICAL_PROVENANCE_FIELDS:
         value = item.get(key)
+        if value in (None, "") and key == "record_locator" and isinstance(source_file, dict):
+            value = source_file.get("record_locator")
         if value is None:
             output[key] = None
             continue
@@ -1563,6 +1748,334 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True))
             handle.write("\n")
+
+
+def _write_snapshot_exports(*, dataset_root: Path, normalized_rows: list[dict[str, Any]]) -> dict[str, str]:
+    observables_rows: list[dict[str, Any]] = []
+    detections_rows: list[dict[str, Any]] = []
+    outcomes_rows: list[dict[str, Any]] = []
+    trust_scores: dict[str, float] = {}
+
+    for row in normalized_rows:
+        observable = _derive_snapshot_observable(row)
+        if observable is None:
+            continue
+        ioc_type, ioc_value = observable
+        event_time = row.get("event_time_utc")
+        if not isinstance(event_time, str) or not event_time.strip():
+            continue
+        source_system = _derive_source_system(row)
+        trust_scores[source_system] = max(trust_scores.get(source_system, 0.0), _default_source_trust_score(row))
+        observables_rows.append(
+            {
+                "ioc_type": ioc_type,
+                "ioc_value": ioc_value,
+                "event_time": event_time,
+                "source_system": source_system,
+                "host_context_json": json.dumps(_derive_host_context(row), sort_keys=True),
+                "rule_context_json": json.dumps(_derive_rule_context(row), sort_keys=True),
+            }
+        )
+        detections_rows.append(
+            {
+                "ioc_type": ioc_type,
+                "ioc_value": ioc_value,
+                "event_time": event_time,
+                "scanner_family": str(row.get("rule_family") or "unknown"),
+                "severity_score": _derive_severity_score(row),
+            }
+        )
+        verdict = _coerce_dict(_coerce_dict(row.get("target_payload")).get("adjudication")).get("verdict")
+        if isinstance(verdict, str) and verdict.strip():
+            outcomes_rows.append(
+                {
+                    "ioc_type": ioc_type,
+                    "ioc_value": ioc_value,
+                    "event_time": event_time,
+                    "verdict": verdict.strip(),
+                }
+            )
+
+    observables_path = dataset_root / "observables.csv"
+    detections_path = dataset_root / "detections.csv"
+    outcomes_path = dataset_root / "outcomes.csv"
+    source_trust_path = dataset_root / "source_trust.csv"
+
+    _write_csv(
+        observables_path,
+        observables_rows,
+        ["ioc_type", "ioc_value", "event_time", "source_system", "host_context_json", "rule_context_json"],
+    )
+    _write_csv(
+        detections_path,
+        detections_rows,
+        ["ioc_type", "ioc_value", "event_time", "scanner_family", "severity_score"],
+    )
+    _write_csv(
+        outcomes_path,
+        outcomes_rows,
+        ["ioc_type", "ioc_value", "event_time", "verdict"],
+    )
+    _write_csv(
+        source_trust_path,
+        [{"source_system": key, "trust_score": value} for key, value in sorted(trust_scores.items())],
+        ["source_system", "trust_score"],
+    )
+
+    return {
+        "observables": observables_path.name,
+        "detections": detections_path.name,
+        "outcomes": outcomes_path.name,
+        "source_trust": source_trust_path.name,
+    }
+
+
+def _build_dataset_quality_report(
+    *,
+    normalized_rows: list[dict[str, Any]],
+    manifests: list[dict[str, Any]],
+    skipped_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    source_counts: dict[str, int] = {}
+    family_counts: dict[str, int] = {}
+    verdict_counts: dict[str, int] = {}
+    missing_field_counts: dict[str, int] = {}
+    duplicate_keys_by_source: dict[str, set[str]] = {}
+    total_keys_by_source: dict[str, list[str]] = {}
+    parser_diagnostics_by_source: dict[str, dict[str, int]] = {}
+    provenance_complete = 0
+    partial_rows = 0
+
+    for row in normalized_rows:
+        source_name = str(_coerce_dict(row.get("source_file")).get("source_name") or "unknown")
+        rule_family = str(row.get("rule_family") or "unknown")
+        source_counts[source_name] = source_counts.get(source_name, 0) + 1
+        family_counts[rule_family] = family_counts.get(rule_family, 0) + 1
+        if row.get("is_partial"):
+            partial_rows += 1
+        if _row_has_complete_provenance(row):
+            provenance_complete += 1
+
+        verdict = _coerce_dict(_coerce_dict(row.get("target_payload")).get("adjudication")).get("verdict")
+        if isinstance(verdict, str) and verdict.strip():
+            verdict_counts[verdict.strip()] = verdict_counts.get(verdict.strip(), 0) + 1
+
+        for field in row.get("missing_fields") or []:
+            key = str(field)
+            missing_field_counts[key] = missing_field_counts.get(key, 0) + 1
+
+        for item in row.get("parser_diagnostics") or []:
+            if not isinstance(item, dict):
+                continue
+            severity = str(item.get("severity") or "warning").lower()
+            bucket = parser_diagnostics_by_source.setdefault(source_name, {"info": 0, "warning": 0, "error": 0})
+            if severity not in bucket:
+                severity = "warning"
+            bucket[severity] += 1
+
+        duplicate_key = _derive_duplicate_key(row)
+        if duplicate_key:
+            total_keys_by_source.setdefault(source_name, []).append(duplicate_key)
+            duplicate_keys_by_source.setdefault(source_name, set())
+            if total_keys_by_source[source_name].count(duplicate_key) > 1:
+                duplicate_keys_by_source[source_name].add(duplicate_key)
+
+    row_count = len(normalized_rows)
+    manifest_names = {str(item.get("source_name") or "unknown"): item for item in manifests}
+    row_counts_by_manifest = {
+        source: {
+            "rows": count,
+            "manifestPath": str(_coerce_dict(manifest_names.get(source)).get("__manifest_path") or ""),
+        }
+        for source, count in sorted(source_counts.items())
+    }
+    duplicate_pressure = {}
+    for source, keys in total_keys_by_source.items():
+        total = len(keys)
+        duplicate_count = len(duplicate_keys_by_source.get(source, set()))
+        duplicate_pressure[source] = {
+            "uniqueIndicators": len(set(keys)),
+            "totalIndicators": total,
+            "duplicateKeys": sorted(duplicate_keys_by_source.get(source, set())),
+            "duplicateRate": _ratio(duplicate_count, total),
+        }
+
+    parser_error_sources = sorted(
+        source for source, counts in parser_diagnostics_by_source.items() if counts.get("error", 0) >= 3
+    )
+    dominant_source, dominant_share = _largest_share(source_counts, row_count)
+    rejection_reasons: list[str] = []
+    if _ratio(provenance_complete, row_count) < 0.95:
+        rejection_reasons.append("provenance_completeness_below_threshold")
+    if dominant_share >= 0.85:
+        rejection_reasons.append(f"source_dominance:{dominant_source}")
+    if _ratio(partial_rows, row_count) >= 0.60:
+        rejection_reasons.append("partial_row_rate_above_threshold")
+    if parser_error_sources:
+        rejection_reasons.append("repeated_high_severity_parser_diagnostics")
+
+    return {
+        "generatedAtUtc": _utc_now_iso(),
+        "rowCounts": {
+            "total": row_count,
+            "bySource": row_counts_by_manifest,
+            "byRuleFamily": dict(sorted(family_counts.items())),
+        },
+        "partialRowRate": _ratio(partial_rows, row_count),
+        "missingCriticalFieldCounts": dict(sorted(missing_field_counts.items())),
+        "verdictDistribution": dict(sorted(verdict_counts.items())),
+        "familyDistribution": dict(sorted(family_counts.items())),
+        "provenanceCompletenessRate": _ratio(provenance_complete, row_count),
+        "duplicatePressureBySource": duplicate_pressure,
+        "parserDiagnostics": {
+            "bySource": parser_diagnostics_by_source,
+            "skippedItems": skipped_items,
+        },
+        "activeUseEligibility": {
+            "passed": len(rejection_reasons) == 0,
+            "reasons": rejection_reasons,
+            "thresholds": {
+                "minimumProvenanceCompleteness": 0.95,
+                "maximumSingleSourceShare": 0.85,
+                "maximumPartialRowRate": 0.60,
+                "parserErrorBurstThreshold": 3,
+            },
+        },
+    }
+
+
+def _row_has_complete_provenance(row: dict[str, Any]) -> bool:
+    provenance = row.get("provenance")
+    if not isinstance(provenance, list) or not provenance:
+        return False
+    required_non_empty = {"source", "key", "value", "retrieved_at_utc", "retrieved_by", "record_locator"}
+    for item in provenance:
+        if not isinstance(item, dict):
+            return False
+        if any(field not in item for field in CANONICAL_PROVENANCE_FIELDS):
+            return False
+        if any(item.get(field) in (None, "") for field in required_non_empty):
+            return False
+    return True
+
+
+def _derive_snapshot_observable(row: dict[str, Any]) -> tuple[str, str] | None:
+    package_payload = _coerce_dict(row.get("package_payload"))
+    object_metadata = _coerce_dict(package_payload.get("object_metadata"))
+    raw_hit_payload = _coerce_dict(package_payload.get("raw_hit_payload"))
+    custom = _coerce_dict(object_metadata.get("custom_attributes"))
+
+    if isinstance(custom.get("sha256"), str) and custom["sha256"].strip():
+        return ("hash_sha256", custom["sha256"].strip())
+    if isinstance(custom.get("sha1"), str) and custom["sha1"].strip():
+        return ("hash_sha1", custom["sha1"].strip())
+    if isinstance(custom.get("md5"), str) and custom["md5"].strip():
+        return ("hash_md5", custom["md5"].strip())
+
+    network = _coerce_dict(raw_hit_payload.get("network"))
+    for field_name in ("dst_ip", "src_ip", "ip"):
+        for source in (network, raw_hit_payload):
+            value = source.get(field_name)
+            if isinstance(value, str) and value.strip():
+                return ("ip", value.strip())
+    for field_name in ("domain", "hostname"):
+        value = raw_hit_payload.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return ("domain", value.strip())
+    for field_name in ("url", "uri", "request_url"):
+        value = raw_hit_payload.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return ("url", value.strip())
+
+    object_id = object_metadata.get("object_id")
+    object_type = object_metadata.get("object_type")
+    if isinstance(object_id, str) and object_id.strip():
+        return (str(object_type or "artifact").strip().lower(), object_id.strip())
+    return None
+
+
+def _derive_source_system(row: dict[str, Any]) -> str:
+    package_payload = _coerce_dict(row.get("package_payload"))
+    object_metadata = _coerce_dict(package_payload.get("object_metadata"))
+    source_system = object_metadata.get("source_system")
+    if isinstance(source_system, str) and source_system.strip():
+        return source_system.strip().lower()
+    source_name = _coerce_dict(row.get("source_file")).get("source_name")
+    return str(source_name or "unknown").strip().lower()
+
+
+def _derive_host_context(row: dict[str, Any]) -> dict[str, Any]:
+    package_payload = _coerce_dict(row.get("package_payload"))
+    object_metadata = _coerce_dict(package_payload.get("object_metadata"))
+    asset_context = _coerce_dict(package_payload.get("asset_context"))
+    return {
+        "host_id": object_metadata.get("object_id"),
+        "host_type": object_metadata.get("object_type"),
+        "environment": asset_context.get("environment"),
+        "criticality": asset_context.get("criticality"),
+    }
+
+
+def _derive_rule_context(row: dict[str, Any]) -> dict[str, Any]:
+    package_payload = _coerce_dict(row.get("package_payload"))
+    rule_metadata = _coerce_dict(package_payload.get("rule_metadata"))
+    return {
+        "scanner_family": row.get("rule_family"),
+        "rule_id": rule_metadata.get("rule_id") or rule_metadata.get("sid"),
+        "rule_name": rule_metadata.get("rule_name") or rule_metadata.get("title") or rule_metadata.get("msg"),
+        "source": rule_metadata.get("source"),
+    }
+
+
+def _derive_severity_score(row: dict[str, Any]) -> float:
+    adjudication = _coerce_dict(_coerce_dict(row.get("target_payload")).get("adjudication"))
+    confidence = _float_or_none(adjudication.get("confidence")) or 0.0
+    verdict = str(adjudication.get("verdict") or "").strip().lower()
+    if verdict in {"malicious", "confirmed_malicious"}:
+        return max(0.90, confidence)
+    if verdict in {"likely_malicious", "suspicious"}:
+        return max(0.65, confidence)
+    if verdict in {"likely_benign", "benign", "false_positive"}:
+        return min(0.25, confidence or 0.25)
+    return min(0.40, confidence or 0.35)
+
+
+def _default_source_trust_score(row: dict[str, Any]) -> float:
+    source_name = str(_coerce_dict(row.get("source_file")).get("source_name") or "unknown").lower()
+    if "allowlist" in source_name or "baseline" in source_name:
+        return 0.9
+    if source_name == "internal-reviewed-telemetry":
+        return 0.71
+    if "analyst" in source_name:
+        return 0.82
+    if source_name in {"malwarebazaar", "yaraify", "threatfox", "urlhaus"}:
+        return 0.72
+    if "fixture" in source_name:
+        return 0.55
+    return 0.65
+
+
+def _derive_duplicate_key(row: dict[str, Any]) -> str | None:
+    observable = _derive_snapshot_observable(row)
+    if observable is not None:
+        return f"{observable[0]}:{observable[1]}"
+    return row.get("group_key") if isinstance(row.get("group_key"), str) else None
+
+
+def _largest_share(counts: dict[str, int], total: int) -> tuple[str | None, float]:
+    if total <= 0 or not counts:
+        return None, 0.0
+    source, count = max(counts.items(), key=lambda item: item[1])
+    return source, _ratio(count, total)
+
+
+def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field) for field in fieldnames})
 
 
 def _scenario_label_from_filename(filename: str, family: str) -> str:

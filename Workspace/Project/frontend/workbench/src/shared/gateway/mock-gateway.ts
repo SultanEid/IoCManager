@@ -1010,6 +1010,33 @@ export class MockGateway implements Gateway {
     }
   }
 
+  async getLatestAiDecisionForDetection(detectionId: string, _signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
+    return this.getAiAdjudicationResult(detectionId, _signal)
+  }
+
+  async getLatestAiDecisionForIoc(iocId: string, _signal?: AbortSignal) {
+    return {
+      iocId,
+      detectionId: iocId,
+      result: await this.getAiAdjudicationResult(iocId, _signal),
+    }
+  }
+
+  async generateAiDecisionForIoc(
+    _iocId: string,
+    input: { submittedByUserId: string },
+  ): Promise<SubmitAiAdjudicationAcceptedResponse> {
+    return this.submitAiAdjudication({
+      caseId: _iocId,
+      detectionId: `legacy-ioc:${_iocId}`,
+      iocType: "artifact",
+      iocValue: _iocId,
+      observedAtUtc: new Date().toISOString(),
+      detectionPackage: { legacyIocId: _iocId },
+      submittedByUserId: input.submittedByUserId,
+    })
+  }
+
   async getAiAdjudicationExplanation(
     adjudicationId: string,
     _signal?: AbortSignal,

@@ -10,6 +10,7 @@ from cti_service.eval_framework import (
     compare_against_baselines,
 )
 from cti_service.scorer import BaselineScorer, ScorerContext
+from cti_service.snort_adjudication import adjudicate_snort
 
 
 def _build_scorer(now: datetime) -> BaselineScorer:
@@ -150,6 +151,66 @@ def test_grounded_decision_confidence_semantics_are_bounded() -> None:
     diagnostics = scorer.score_case(request)
     grounded = build_grounded_decision(diagnostics, request)
     assert 0.0 <= grounded.confidence <= 1.0
+
+
+def test_family_decision_confidence_uses_calibrated_score_for_medium_signal_live_rows() -> None:
+    now = datetime(2026, 4, 22, 13, 0, tzinfo=timezone.utc)
+    scorer = _build_scorer(now)
+    detection_package = {
+        "rule_family": "suricata",
+        "source": "legacy-ioc-explorer",
+        "rule_metadata": {
+            "source": "legacy-ioc-explorer",
+            "rule_id": "legacy-network-row-1",
+            "msg": "IOC Manager Suricata Hunt Linux",
+            "severity": "High",
+            "tags": ["legacy_ioc", "high"],
+        },
+        "raw_hit_payload": {
+            "event_id": "legacy-row-1",
+            "message": "observed network flow requiring analyst review",
+            "network": {
+                "five_tuple": {
+                    "src_ip": "172.165.50.200",
+                    "dst_ip": "172.165.50.132",
+                    "protocol": "tcp",
+                },
+                "flow_id": "flow-1",
+            },
+        },
+        "object_metadata": {
+            "object_id": "legacy-row-1",
+            "object_type": "network_flow",
+            "source_system": "ids",
+        },
+    }
+    request = ScoreCaseRequest(
+        case_id="case-live-medium-signal",
+        as_of_time=now,
+        source_system="ids",
+        ioc_type="ip",
+        ioc_value="172.165.50.200 -> 172.165.50.132",
+        host_context={"criticality": 0.5, "assetExposure": 0.5},
+        rule_context={
+            "ruleFamily": "suricata",
+            "severity": "High",
+            "severityScore": 0.78,
+            "sourceTrust": 0.64,
+            "scannerAgreement": 0.44,
+            "sourceName": "legacy-ioc-explorer",
+            "activitySignal": 0.58,
+        },
+        detection_package=detection_package,
+    )
+
+    diagnostics = scorer.score_case(request)
+    family_result = adjudicate_snort(detection_package=detection_package)
+    grounded = build_grounded_decision(diagnostics, request)
+
+    assert family_result.verdict == "insufficient_evidence"
+    assert grounded.verdict == family_result.verdict
+    assert grounded.confidence > family_result.confidence
+    assert grounded.confidence >= 0.15
 
 
 def test_evidence_fusion_conflict_escalates_to_insufficient_evidence() -> None:
@@ -360,6 +421,49 @@ def test_missing_enrichment_degrades_gracefully_instead_of_failing() -> None:
     assert grounded.safety_diagnostics.enrichment_status == "unavailable"
     assert "linked_enrichment_unavailable" in grounded.safety_diagnostics.degradation_reasons
     assert grounded.action_plan.never_auto_executes is True
+
+
+def test_snort_flat_network_payload_does_not_fail_critical_field_validation() -> None:
+    now = datetime(2026, 3, 13, 12, 0, tzinfo=timezone.utc)
+    scorer = _build_scorer(now)
+    request = ScoreCaseRequest(
+        case_id="case-snort-flat-network",
+        as_of_time=now,
+        source_system="ids",
+        ioc_type="ip",
+        ioc_value="198.51.100.44",
+        host_context={"criticality": 0.6, "assetExposure": 0.5},
+        rule_context={"ruleFamily": "snort"},
+        detection_package={
+            "rule_family": "snort",
+            "full_rule_text": (
+                "alert tcp $HOME_NET any -> $EXTERNAL_NET 443 "
+                "(msg:\"Suspicious periodic beacon cadence\"; flow:to_server,established; "
+                "content:\"/api/poll\"; http_uri; sid:551001; rev:3; classtype:trojan-activity;)"
+            ),
+            "rule_metadata": {
+                "source": "soc",
+                "rule_id": "SNORT-DET-FLAT-1",
+                "sid": 551001,
+                "rev": 3,
+                "msg": "Suspicious periodic beacon cadence",
+                "classification": "trojan-activity",
+            },
+            "raw_hit_payload": {
+                "src_ip": "10.10.10.21",
+                "dst_ip": "198.51.100.44",
+                "dst_port": 443,
+                "uri_path": "/api/poll",
+            },
+            "object_metadata": {"object_id": "obj-snort-flat-1", "object_type": "network_flow", "source_system": "ids"},
+        },
+    )
+
+    diagnostics = scorer.score_case(request)
+    grounded = build_grounded_decision(diagnostics, request)
+
+    assert "raw_hit_payload.network.five_tuple_or_message_or_event_id" not in grounded.safety_diagnostics.missing_critical_fields
+    assert grounded.abstain_reason != "missing_critical_fields"
 
 
 def test_logging_emits_abstention_partial_evidence_and_enrichment_events(caplog) -> None:

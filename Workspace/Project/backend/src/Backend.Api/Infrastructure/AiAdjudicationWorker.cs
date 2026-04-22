@@ -253,7 +253,7 @@ public sealed class AiAdjudicationOrchestrator : IAiAdjudicationOrchestrator
                 completedAtUtc: DateTimeOffset.UtcNow,
                 modelVersion: score.ModelVersion,
                 datasetVersion: score.DatasetVersion);
-            job.CompleteSucceeded(actorUserId, DateTimeOffset.UtcNow, "Adjudication completed successfully.");
+            job.CompleteSucceeded(actorUserId, DateTimeOffset.UtcNow, "Decision completed successfully.");
 
             await repository.SaveChangesAsync(cancellationToken);
         }
@@ -279,7 +279,7 @@ public sealed class AiAdjudicationOrchestrator : IAiAdjudicationOrchestrator
                 job.CompleteFailed(
                     actorUserId: actorUserId,
                     completedAtUtc: now,
-                    summary: $"Adjudication attempt failed. Retry scheduled in {backoffSeconds} seconds.",
+                    summary: $"Decision attempt failed. Retry scheduled in {backoffSeconds} seconds.",
                     errorCode: failureCode,
                     errorMessage: ex.Message,
                     nextAttemptAtUtc: nextAttemptAt);
@@ -288,7 +288,7 @@ public sealed class AiAdjudicationOrchestrator : IAiAdjudicationOrchestrator
 
                 _logger.LogWarning(
                     ex,
-                    "AI adjudication {AdjudicationId} failed on attempt {AttemptNumber}. Retrying at {NextAttemptAtUtc}.",
+                    "AI decision {AdjudicationId} failed on attempt {AttemptNumber}. Retrying at {NextAttemptAtUtc}.",
                     request.Id,
                     request.AttemptCount,
                     nextAttemptAt);
@@ -303,7 +303,7 @@ public sealed class AiAdjudicationOrchestrator : IAiAdjudicationOrchestrator
             job.CompleteFailed(
                 actorUserId: actorUserId,
                 completedAtUtc: now,
-                summary: "Adjudication failed and retries were exhausted.",
+                summary: "Decision failed and retries were exhausted.",
                 errorCode: failureCode,
                 errorMessage: ex.Message,
                 nextAttemptAtUtc: null);
@@ -311,7 +311,7 @@ public sealed class AiAdjudicationOrchestrator : IAiAdjudicationOrchestrator
 
             _logger.LogError(
                 ex,
-                "AI adjudication {AdjudicationId} failed permanently after {AttemptCount} attempts.",
+                "AI decision {AdjudicationId} failed permanently after {AttemptCount} attempts.",
                 request.Id,
                 request.AttemptCount);
         }
@@ -323,7 +323,7 @@ public sealed class AiAdjudicationOrchestrator : IAiAdjudicationOrchestrator
         {
             var configured = _optionsMonitor.CurrentValue.WorkerActorUserId;
             return string.IsNullOrWhiteSpace(configured)
-                ? "system-ai-adjudication-worker"
+                ? "system-ai-decision-worker"
                 : configured.Trim();
         }
     }

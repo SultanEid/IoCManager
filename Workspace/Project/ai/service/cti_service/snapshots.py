@@ -161,7 +161,7 @@ class SnapshotLoader:
         normalized["ioc_type"] = normalized["ioc_type"].astype(str).str.strip().str.lower()
         normalized["ioc_value"] = normalized["ioc_value"].astype(str).str.strip()
         normalized["source_system"] = normalized["source_system"].astype(str).str.strip().str.lower()
-        normalized["event_time"] = pd.to_datetime(normalized["event_time"], utc=True, errors="coerce")
+        normalized["event_time"] = normalized["event_time"].apply(_coerce_timestamp_utc)
         normalized = normalized.dropna(subset=["event_time"])
         normalized["host_context"] = normalized.apply(
             lambda row: _parse_json_cell(row.get("host_context_json")),
@@ -179,7 +179,7 @@ class SnapshotLoader:
         normalized["ioc_type"] = normalized["ioc_type"].astype(str).str.strip().str.lower()
         normalized["ioc_value"] = normalized["ioc_value"].astype(str).str.strip()
         normalized["scanner_family"] = normalized["scanner_family"].astype(str).str.strip().str.lower()
-        normalized["event_time"] = pd.to_datetime(normalized["event_time"], utc=True, errors="coerce")
+        normalized["event_time"] = normalized["event_time"].apply(_coerce_timestamp_utc)
         if "severity_score" in normalized.columns:
             normalized["severity_score"] = pd.to_numeric(normalized["severity_score"], errors="coerce").fillna(0.0)
         else:
@@ -193,7 +193,7 @@ class SnapshotLoader:
         normalized["ioc_type"] = normalized["ioc_type"].astype(str).str.strip().str.lower()
         normalized["ioc_value"] = normalized["ioc_value"].astype(str).str.strip()
         normalized["verdict"] = normalized["verdict"].astype(str).str.strip().str.lower()
-        normalized["event_time"] = pd.to_datetime(normalized["event_time"], utc=True, errors="coerce")
+        normalized["event_time"] = normalized["event_time"].apply(_coerce_timestamp_utc)
         normalized = normalized.dropna(subset=["event_time"])
         return normalized.sort_values("event_time").reset_index(drop=True)
 
@@ -328,3 +328,32 @@ def _ensure_datetime_utc(value: Any) -> datetime:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
     raise ValueError(f"Unsupported datetime value: {value!r}")
+
+
+def _coerce_timestamp_utc(value: Any) -> pd.Timestamp | pd.NaT:
+    if value is None:
+        return pd.NaT
+    if isinstance(value, pd.Timestamp):
+        return value.tz_convert("UTC") if value.tzinfo is not None else value.tz_localize("UTC")
+    if isinstance(value, datetime):
+        parsed = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return pd.Timestamp(parsed.astimezone(timezone.utc))
+    if isinstance(value, float) and pd.isna(value):
+        return pd.NaT
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return pd.NaT
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return pd.Timestamp(parsed.astimezone(timezone.utc))
+        except ValueError:
+            pass
+        try:
+            parsed = pd.to_datetime(text, utc=True, errors="raise")
+            return parsed if isinstance(parsed, pd.Timestamp) else pd.Timestamp(parsed)
+        except (ValueError, TypeError):
+            return pd.NaT
+    return pd.NaT

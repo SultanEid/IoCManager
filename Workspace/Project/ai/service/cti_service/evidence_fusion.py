@@ -165,7 +165,7 @@ def to_dataset_missing_item(item: MissingEvidenceItem) -> dict[str, Any]:
 
 def _extract_rule_semantics(package: dict[str, Any]) -> list[EvidenceAtom]:
     output: list[EvidenceAtom] = []
-    metadata = package.get("rule_metadata") if isinstance(package.get("rule_metadata"), dict) else {}
+    metadata = _effective_rule_metadata(package)
     full_rule_text = _normalize_string(package.get("full_rule_text"))
     if not metadata and not full_rule_text:
         return output
@@ -206,7 +206,7 @@ def _extract_rule_semantics(package: dict[str, Any]) -> list[EvidenceAtom]:
 
 def _extract_hit_payload(package: dict[str, Any], rule_context: dict[str, Any]) -> list[EvidenceAtom]:
     output: list[EvidenceAtom] = []
-    hit = package.get("raw_hit_payload") if isinstance(package.get("raw_hit_payload"), dict) else {}
+    hit = _effective_hit_payload(package)
     object_metadata = package.get("object_metadata") if isinstance(package.get("object_metadata"), dict) else {}
     if not hit and not rule_context:
         return output
@@ -242,6 +242,48 @@ def _extract_hit_payload(package: dict[str, Any], rule_context: dict[str, Any]) 
         )
     )
     return output
+
+
+def _effective_rule_metadata(package: dict[str, Any]) -> dict[str, Any]:
+    metadata = package.get("rule_metadata") if isinstance(package.get("rule_metadata"), dict) else {}
+    if metadata:
+        return metadata
+    alert = package.get("alert") if isinstance(package.get("alert"), dict) else {}
+    alert_rule = alert.get("rule") if isinstance(alert.get("rule"), dict) else {}
+    if alert_rule:
+        return alert_rule
+    return {}
+
+
+def _effective_hit_payload(package: dict[str, Any]) -> dict[str, Any]:
+    hit = package.get("raw_hit_payload") if isinstance(package.get("raw_hit_payload"), dict) else {}
+    if hit:
+        return hit
+
+    alert = package.get("alert") if isinstance(package.get("alert"), dict) else {}
+    flow = package.get("flow") if isinstance(package.get("flow"), dict) else {}
+    pcap = package.get("pcap") if isinstance(package.get("pcap"), dict) else {}
+    if not alert and not flow and not pcap:
+        return {}
+
+    alert_rule = alert.get("rule") if isinstance(alert.get("rule"), dict) else {}
+    derived = {
+        "event_id": alert.get("event_id"),
+        "timestamp": alert.get("timestamp"),
+        "sensor": alert.get("sensor"),
+        "src_ip": alert.get("src_ip") or flow.get("src_ip"),
+        "src_port": alert.get("src_port") or flow.get("src_port"),
+        "dst_ip": alert.get("dst_ip") or flow.get("dst_ip"),
+        "dst_port": alert.get("dst_port") or flow.get("dst_port"),
+        "protocol": alert.get("protocol") or flow.get("protocol") or alert_rule.get("protocol"),
+        "flow": alert.get("flow") or flow.get("directionality"),
+        "flow_id": flow.get("flow_id"),
+        "observed_at": flow.get("observed_at"),
+        "threshold": alert.get("threshold"),
+        "message": alert_rule.get("msg"),
+        "pcap_metadata": pcap,
+    }
+    return {key: value for key, value in derived.items() if value is not None}
 
 
 def _extract_environment_context(package: dict[str, Any], host_context: dict[str, Any]) -> list[EvidenceAtom]:

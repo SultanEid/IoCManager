@@ -211,7 +211,7 @@ function summarizeActionPlanApproval(actionPlan: AiAdjudicationActionPlanRespons
 
 function describeSafetyStatus(safetyDiagnostics: AiSafetyDiagnosticsResponse | null) {
   if (!safetyDiagnostics) {
-    return "The backend did not return machine-readable safety diagnostics for this adjudication."
+    return "The backend did not return machine-readable safety diagnostics for this decision."
   }
 
   const signals = [
@@ -229,7 +229,7 @@ function describeSafetyStatus(safetyDiagnostics: AiSafetyDiagnosticsResponse | n
 
 function summarizeDecisionNarrative(result: AiAdjudicationResultResponse | null) {
   if (!result?.decision) {
-    return "Submit adjudication to load the current verdict, supporting rationale, and uncertainty limits."
+    return "Run the AI decision to load the current verdict, supporting rationale, and uncertainty limits."
   }
 
   const decision = result.decision
@@ -276,7 +276,7 @@ function summarizeProgressLabel({
   pollingExhausted: boolean
 }) {
   if (isSubmitting) {
-    return "Submitting adjudication request"
+    return "Submitting decision request"
   }
 
   if (pollingExhausted) {
@@ -306,15 +306,15 @@ function summarizeProgressLabel({
 
 function overrideActionHelp(action: OverrideAction) {
   if (action === "accept") {
-    return "Close the adjudication with the recommended outcome after analyst review."
+    return "Close the decision with the recommended outcome after analyst review."
   }
   if (action === "reject") {
-    return "Replace the adjudication verdict and close the current recommendation."
+    return "Replace the decision verdict and close the current recommendation."
   }
   if (action === "modify") {
     return "Keep the case open to a different analyst decision with a revised verdict and rationale."
   }
-  return "Record follow-up work without marking the adjudication as final."
+  return "Record follow-up work without marking the decision as final."
 }
 
 function PhrasingOriginBadge({ diagnostics }: { diagnostics: AiPhrasingDiagnosticsResponse | null | undefined }) {
@@ -620,19 +620,21 @@ export default function DetectionAdjudicationPage() {
     setPollingExhausted(false)
 
     try {
-      const submitted = await gateway.submitAiAdjudication({
-        caseId: selectedCase.id,
-        detectionId: detectionQuery.data.id,
-        iocType: detectionQuery.data.iocType ?? "unknown",
-        iocValue: detectionQuery.data.iocValue ?? detectionQuery.data.fingerprint,
-        observedAtUtc: detectionQuery.data.observedAtUtc,
-        detectionPackage: {
+        const submitted = await gateway.submitAiAdjudication({
+          caseId: selectedCase.id,
           detectionId: detectionQuery.data.id,
-          fingerprint: detectionQuery.data.fingerprint,
-          scannerFamily: detectionQuery.data.scannerFamily,
-          source: detectionQuery.data.source,
-          ruleName: detectionQuery.data.ruleName,
-          iocType: detectionQuery.data.iocType,
+          iocType: detectionQuery.data.iocType ?? "unknown",
+          iocValue: detectionQuery.data.iocValue ?? detectionQuery.data.fingerprint,
+          observedAtUtc: detectionQuery.data.observedAtUtc,
+          detectionPackage: {
+            caseId: selectedCase.id,
+            detectionId: detectionQuery.data.id,
+            observedAt: detectionQuery.data.observedAtUtc,
+            fingerprint: detectionQuery.data.fingerprint,
+            scannerFamily: detectionQuery.data.scannerFamily,
+            source: detectionQuery.data.source,
+            ruleName: detectionQuery.data.ruleName,
+            iocType: detectionQuery.data.iocType,
           iocValue: detectionQuery.data.iocValue,
           linkedCases: detectionQuery.data.linkedCases,
           linkedAlerts: detectionQuery.data.linkedAlerts,
@@ -764,8 +766,8 @@ export default function DetectionAdjudicationPage() {
   if (isMockMode) {
     return (
       <UnavailableState
-        title="AI adjudication unavailable"
-        description="This operator surface is only available in real backend mode. Demo mode does not provide AI verdicts or action plans."
+        title="AI decision unavailable"
+        description="This operator surface is only available in real backend mode. Demo mode does not provide AI decisions or action plans."
       />
     )
   }
@@ -780,7 +782,7 @@ export default function DetectionAdjudicationPage() {
 
   const detection = detectionQuery.data
   const caseSelectionRequired = linkedCases.length > 1 && !selectedCaseId
-  const canSubmitAdjudication = linkedCases.length > 0 && !caseSelectionRequired && !isSubmitting
+  const canSubmitDecision = linkedCases.length > 0 && !caseSelectionRequired && !isSubmitting
 
   const contradictoryEvidence = (evidenceSources?.items ?? []).filter((item) => parseEvidencePolarity(item) === "contradictory")
   const evidenceUsedPositive = (evidenceSources?.items ?? []).filter((item) => parseEvidencePolarity(item) === "positive")
@@ -821,7 +823,7 @@ export default function DetectionAdjudicationPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="wb-kicker">Scans / Detection Detail</p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight">Detection adjudication</h2>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight">Detection decision</h2>
             <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
               This operator surface presents decision support only. No recommendation executes automatically, and uncertainty is shown directly.
             </p>
@@ -869,7 +871,7 @@ export default function DetectionAdjudicationPage() {
               </Badge>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Choose the case that should receive this adjudication before you submit analysis.
+              Choose the case that should receive this decision before you submit analysis.
             </p>
             <select
               aria-label="Linked case selection"
@@ -893,7 +895,7 @@ export default function DetectionAdjudicationPage() {
             </select>
             {linkedCases.length === 0 ? (
               <p className="mt-2 text-xs text-amber-100">
-                Link this detection to a case before submitting adjudication.
+                Link this detection to a case before running the decision.
               </p>
             ) : null}
             {caseSelectionRequired ? (
@@ -909,18 +911,18 @@ export default function DetectionAdjudicationPage() {
         <motion.article className="wb-panel space-y-4" variants={panelMotion}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold tracking-tight">Adjudication Summary</h3>
+              <h3 className="text-sm font-semibold tracking-tight">Decision Summary</h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Review the current verdict, uncertainty, and lifecycle state before taking operator action.
               </p>
             </div>
-            <Button type="button" size="sm" onClick={handleSubmitAdjudication} disabled={!canSubmitAdjudication}>
-              {isSubmitting ? "Submitting..." : "Submit AI adjudication"}
+            <Button type="button" size="sm" onClick={handleSubmitAdjudication} disabled={!canSubmitDecision}>
+              {isSubmitting ? "Submitting..." : "Run AI decision"}
             </Button>
           </div>
 
-          {submitError ? <InlineState title="Adjudication submit failed" description={submitError} tone="danger" /> : null}
-          {pollingError ? <InlineState title="Adjudication refresh degraded" description={pollingError} tone="warning" /> : null}
+          {submitError ? <InlineState title="Decision request failed" description={submitError} tone="danger" /> : null}
+          {pollingError ? <InlineState title="Decision refresh degraded" description={pollingError} tone="warning" /> : null}
 
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -985,7 +987,7 @@ export default function DetectionAdjudicationPage() {
                     ))}
                   </ul>
                 ) : (
-                  <InlineState title="No rationale returned" description="The backend did not return decision rationale lines for this adjudication." />
+                  <InlineState title="No rationale returned" description="The backend did not return decision rationale lines for this decision." />
                 )}
               </div>
 
@@ -1002,7 +1004,7 @@ export default function DetectionAdjudicationPage() {
               description={
                 adjudicationId
                   ? "The backend has accepted the request, but the decision payload is not ready yet."
-                  : "Submit adjudication to load the current verdict, uncertainty, and recommendation state."
+                  : "Run the AI decision to load the current verdict, uncertainty, and recommendation state."
               }
             />
           )}
@@ -1088,11 +1090,11 @@ export default function DetectionAdjudicationPage() {
             ) : adjudicationId && actionPlanPendingMessage ? (
               <InlineState title="Waiting for action plan" description={actionPlanPendingMessage} />
             ) : adjudicationResult && !adjudicationResult.actionPlanAvailable ? (
-              <InlineState title="Action plan unavailable" description="The backend did not return an action plan for this adjudication." />
+              <InlineState title="Action plan unavailable" description="The backend did not return an action plan for this decision." />
             ) : adjudicationId ? (
               <InlineState title="Action plan pending" description="The backend is still preparing the recommended action list." />
             ) : (
-              <InlineState title="Action plan not started" description="Submit adjudication to load ranked operator recommendations." />
+              <InlineState title="Action plan not started" description="Run the AI decision to load ranked operator recommendations." />
             )}
           </section>
 
@@ -1137,18 +1139,18 @@ export default function DetectionAdjudicationPage() {
             ) : similarError ? (
               <InlineState title="Similar detections degraded" description={similarError} tone="warning" />
             ) : adjudicationResult && !adjudicationResult.similarDetectionsAvailable ? (
-              <InlineState title="Similar detections unavailable" description="No historical similarity surface was returned for this adjudication." />
+              <InlineState title="Similar detections unavailable" description="No historical similarity surface was returned for this decision." />
             ) : adjudicationId ? (
               <InlineState title="Similar detections pending" description="The backend is still preparing the similarity lookup." />
             ) : (
-              <InlineState title="Similarity lookup not started" description="Submit adjudication to load historical comparisons." />
+              <InlineState title="Similarity lookup not started" description="Run the AI decision to load historical comparisons." />
             )}
           </section>
 
           <section className="space-y-3">
             <p className="text-sm font-semibold tracking-tight">Audit Trail</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <CompactMetric label="Adjudication ID" value={adjudicationId ?? "Not assigned"} />
+              <CompactMetric label="Decision ID" value={adjudicationId ?? "Not assigned"} />
               <CompactMetric label="Lifecycle Status" value={progressLabel} />
               <CompactMetric label="Scored At" value={formatTimestamp(adjudicationResult?.decision?.scoredAtUtc)} />
               <CompactMetric
@@ -1188,11 +1190,11 @@ export default function DetectionAdjudicationPage() {
             ) : adjudicationId && explanationPendingMessage ? (
               <InlineState title="Waiting for explanation" description={explanationPendingMessage} />
             ) : adjudicationResult && !adjudicationResult.explanationAvailable ? (
-              <InlineState title="Explanation unavailable" description="The backend did not return a separate explanation for this adjudication." />
+              <InlineState title="Explanation unavailable" description="The backend did not return a separate explanation for this decision." />
             ) : adjudicationId ? (
               <InlineState title="Explanation pending" description="The backend is still preparing the operator explanation." />
             ) : (
-              <InlineState title="Explanation not started" description="Submit adjudication to load the explanation and supporting rationale." />
+              <InlineState title="Explanation not started" description="Run the AI decision to load the explanation and supporting rationale." />
             )}
           </section>
 
@@ -1224,7 +1226,7 @@ export default function DetectionAdjudicationPage() {
             {!safetyDiagnostics ? (
               <InlineState
                 title="Safety diagnostics unavailable"
-                description="The backend did not return machine-readable safety diagnostics for this adjudication."
+                description="The backend did not return machine-readable safety diagnostics for this decision."
               />
             ) : null}
           </section>
@@ -1248,7 +1250,7 @@ export default function DetectionAdjudicationPage() {
             ) : adjudicationId && !evidenceSources && adjudicationResult?.evidenceSourcesAvailable ? (
               <InlineState title="Evidence summary pending" description="The backend is still preparing the evidence source list." />
             ) : adjudicationResult && !adjudicationResult.evidenceSourcesAvailable && missingEvidence.length === 0 ? (
-              <InlineState title="Evidence summary unavailable" description="The backend did not return a dedicated evidence source list for this adjudication." />
+              <InlineState title="Evidence summary unavailable" description="The backend did not return a dedicated evidence source list for this decision." />
             ) : evidenceSources || missingEvidence.length > 0 ? (
               <div className="space-y-4">
                 <div>
@@ -1297,7 +1299,7 @@ export default function DetectionAdjudicationPage() {
                 </div>
               </div>
             ) : (
-              <InlineState title="Evidence summary not started" description="Submit adjudication to load evidence use, conflicts, and missing-evidence requests." />
+              <InlineState title="Evidence summary not started" description="Run the AI decision to load evidence use, conflicts, and missing-evidence requests." />
             )}
           </section>
 
@@ -1324,7 +1326,7 @@ export default function DetectionAdjudicationPage() {
             ) : adjudicationResult ? (
               <InlineState title="Decision provenance unavailable" description="No machine-readable provenance items were returned for this decision." />
             ) : (
-              <InlineState title="Decision provenance not started" description="Submit adjudication to load machine-readable provenance for the verdict." />
+              <InlineState title="Decision provenance not started" description="Run the AI decision to load machine-readable provenance for the verdict." />
             )}
           </section>
         </motion.article>
@@ -1386,8 +1388,8 @@ export default function DetectionAdjudicationPage() {
                 title={overrideAction === "accept" ? "Closure behavior" : "Follow-up behavior"}
                 description={
                   overrideAction === "accept"
-                    ? "This records analyst acceptance and closes the current adjudication."
-                    : "This keeps the adjudication open for follow-up without marking it as final."
+                    ? "This records analyst acceptance and closes the current decision."
+                    : "This keeps the decision open for follow-up without marking it as final."
                 }
               />
             )}
@@ -1431,7 +1433,7 @@ export default function DetectionAdjudicationPage() {
               {isSubmittingOverride ? "Submitting..." : "Submit operator action"}
             </Button>
             {!adjudicationId ? (
-              <p className="text-xs text-muted-foreground">Submit adjudication first to enable analyst decision entry.</p>
+              <p className="text-xs text-muted-foreground">Run the AI decision first to enable analyst decision entry.</p>
             ) : null}
           </div>
         </motion.article>

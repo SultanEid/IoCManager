@@ -1,6 +1,6 @@
 ﻿import { decodeJwt } from "jose"
 
-export type UserRole = "Analyst" | "Lead" | "Admin"
+export type UserRole = "IT" | "Analyst" | "Lead" | "Admin" | "DEV"
 
 export type SessionState = {
   token: string
@@ -14,16 +14,24 @@ const STORAGE_KEY = "cti.workbench.session.v1"
 const ROLE_CLAIM = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
 
 function isRole(value: string): value is UserRole {
-  return value === "Analyst" || value === "Lead" || value === "Admin"
+  return value === "IT" || value === "Analyst" || value === "Lead" || value === "Admin" || value === "DEV"
 }
 
 export function roleLabel(role: UserRole | string) {
+  if (role === "IT") {
+    return "IT Operations"
+  }
+
   if (role === "Lead") {
     return "Operator"
   }
 
   if (role === "Admin") {
     return "Administrator"
+  }
+
+  if (role === "DEV") {
+    return "Developer"
   }
 
   return role
@@ -116,9 +124,17 @@ export function hasRole(session: SessionState | null, role: UserRole) {
 }
 
 export function canAccessLeadActions(session: SessionState | null) {
-  return hasRole(session, "Lead") || hasRole(session, "Admin")
+  return hasRole(session, "Analyst") || hasRole(session, "Lead") || hasRole(session, "DEV")
 }
 
 export function canAccessAdminActions(session: SessionState | null) {
-  return hasRole(session, "Admin")
+  return hasRole(session, "Admin") || hasRole(session, "DEV")
+}
+
+export function canAccessWorkflowSettingsActions(session: SessionState | null) {
+  return hasRole(session, "Analyst") || hasRole(session, "Lead") || hasRole(session, "Admin") || hasRole(session, "DEV")
+}
+
+export function canAccessAlertActions(session: SessionState | null) {
+  return hasRole(session, "IT") || hasRole(session, "Analyst") || hasRole(session, "Lead") || hasRole(session, "DEV")
 }

@@ -225,18 +225,18 @@ describe("DetectionAdjudicationPage", () => {
 
     render(<DetectionAdjudicationPage />)
 
-    const submit = screen.getByRole("button", { name: "Submit AI adjudication" })
+    const submit = screen.getByRole("button", { name: "Run AI decision" })
     expect(submit).toBeDisabled()
     expect(screen.getByText(/select the target case before submitting analysis/i)).toBeInTheDocument()
   })
 
-  it("blocks adjudication content in demo mode", () => {
+  it("blocks decision content in demo mode", () => {
     gatewayState.isMockMode = true
 
     render(<DetectionAdjudicationPage />)
 
-    expect(screen.getByText("AI adjudication unavailable")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Submit AI adjudication" })).not.toBeInTheDocument()
+    expect(screen.getByText("AI decision unavailable")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run AI decision" })).not.toBeInTheDocument()
   })
 
   it("renders operator-facing safety, provenance, and action summaries", async () => {
@@ -345,7 +345,17 @@ describe("DetectionAdjudicationPage", () => {
 
     render(<DetectionAdjudicationPage />)
 
-    await userEvent.click(screen.getByRole("button", { name: "Submit AI adjudication" }))
+    await userEvent.click(screen.getByRole("button", { name: "Run AI decision" }))
+    await waitFor(() => expect(mockedGateway.submitAiAdjudication).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: "case-1",
+      detectionId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      observedAtUtc: "2026-04-20T00:00:00Z",
+      detectionPackage: expect.objectContaining({
+        caseId: "case-1",
+        detectionId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+        observedAt: "2026-04-20T00:00:00Z",
+      }),
+    })))
     await waitFor(() => expect(screen.getByText("Decision Support")).toBeInTheDocument())
 
     expect(screen.getByText(/False-positive risk is 62%/i)).toBeInTheDocument()
@@ -358,7 +368,7 @@ describe("DetectionAdjudicationPage", () => {
   it("maps accept/reject/modify/defer operator actions to expected API payloads", async () => {
     render(<DetectionAdjudicationPage />)
 
-    await userEvent.click(screen.getByRole("button", { name: "Submit AI adjudication" }))
+    await userEvent.click(screen.getByRole("button", { name: "Run AI decision" }))
     await waitFor(() => expect(mockedGateway.submitAiAdjudication).toHaveBeenCalledTimes(1))
 
     const submitOperatorAction = screen.getByRole("button", { name: "Submit operator action" })

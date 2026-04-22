@@ -39,6 +39,71 @@
 }
 
 :root {
+  color-scheme: light;
+
+  --background: oklch(0.985 0.004 251);
+  --foreground: oklch(0.24 0.022 251);
+
+  --surface-1: oklch(0.97 0.008 251);
+  --surface-2: oklch(0.943 0.01 251);
+  --surface-3: oklch(0.905 0.014 251);
+  --shell-sidebar: oklch(0.96 0.008 251 / 0.96);
+  --shell-header: oklch(0.975 0.006 251 / 0.95);
+
+  --card: var(--surface-1);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.99 0.004 251 / 0.98);
+  --popover-foreground: var(--foreground);
+
+  --primary: oklch(0.56 0.15 238);
+  --primary-foreground: oklch(0.985 0.004 251);
+
+  --secondary: oklch(0.91 0.018 251);
+  --secondary-foreground: oklch(0.24 0.022 251);
+
+  --muted: oklch(0.93 0.01 251);
+  --muted-foreground: oklch(0.47 0.02 251);
+
+  --accent: oklch(0.92 0.02 251);
+  --accent-foreground: oklch(0.24 0.022 251);
+
+  --border: oklch(0.52 0.03 251 / 0.28);
+  --input: oklch(0.52 0.03 251 / 0.32);
+  --ring: oklch(0.57 0.16 238 / 0.56);
+  --destructive: oklch(0.67 0.2 24);
+  --success: oklch(0.77 0.11 157);
+  --warning: oklch(0.82 0.13 83);
+  --info: oklch(0.77 0.09 232);
+
+  --background-tail: oklch(0.94 0.01 251);
+
+  --shadow-page-header: 0 18px 54px rgba(15, 23, 42, 0.16), inset 0 1px 0 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+  --shadow-panel: 0 14px 38px rgba(15, 23, 42, 0.14), inset 0 1px 0 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  --shadow-panel-muted: 0 10px 24px rgba(15, 23, 42, 0.1);
+  --shadow-hero: 0 20px 58px rgba(15, 23, 42, 0.18), inset 0 1px 0 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+  --shadow-metric: 0 14px 34px rgba(15, 23, 42, 0.14);
+  --shadow-reading-surface: 0 24px 70px rgba(15, 23, 42, 0.2);
+  --shadow-soft: 0 12px 28px rgba(15, 23, 42, 0.16);
+  --shadow-emphasis: 0 22px 56px rgba(15, 23, 42, 0.22), 0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent);
+
+  --radius: 0.85rem;
+
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.25rem;
+  --space-xl: 1.75rem;
+  --space-2xl: 2.25rem;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-fast: 130ms;
+  --motion-base: 210ms;
+  --motion-slow: 320ms;
+}
+
+.dark {
   color-scheme: dark;
 
   --background: oklch(0.105 0.012 251);
@@ -70,26 +135,16 @@
   --border: oklch(0.86 0.021 251 / 0.24);
   --input: oklch(0.86 0.02 251 / 0.31);
   --ring: oklch(0.74 0.12 219 / 0.78);
-  --destructive: oklch(0.67 0.2 24);
-  --success: oklch(0.77 0.11 157);
-  --warning: oklch(0.82 0.13 83);
-  --info: oklch(0.77 0.09 232);
+  --background-tail: oklch(0.09 0.01 251);
 
-  --radius: 0.85rem;
-
-  --space-2xs: 0.25rem;
-  --space-xs: 0.5rem;
-  --space-sm: 0.75rem;
-  --space-md: 1rem;
-  --space-lg: 1.25rem;
-  --space-xl: 1.75rem;
-  --space-2xl: 2.25rem;
-
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
-  --motion-fast: 130ms;
-  --motion-base: 210ms;
-  --motion-slow: 320ms;
+  --shadow-page-header: 0 30px 80px rgba(0, 0, 0, 0.24), inset 0 1px 0 0 color-mix(in srgb, var(--foreground) 6%, transparent);
+  --shadow-panel: 0 24px 60px rgba(0, 0, 0, 0.22), inset 0 1px 0 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  --shadow-panel-muted: 0 18px 36px rgba(0, 0, 0, 0.16);
+  --shadow-hero: 0 36px 80px rgba(0, 0, 0, 0.28), inset 0 1px 0 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+  --shadow-metric: 0 20px 45px rgba(0, 0, 0, 0.2);
+  --shadow-reading-surface: 0 36px 100px rgba(0, 0, 0, 0.3);
+  --shadow-soft: 0 14px 34px rgba(0, 0, 0, 0.18);
+  --shadow-emphasis: 0 24px 54px rgba(0, 0, 0, 0.22), 0 0 0 1px color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
 @layer base {
@@ -108,7 +163,7 @@
       radial-gradient(circle at 7% 3%, color-mix(in srgb, var(--primary) 24%, transparent), transparent 36%),
       radial-gradient(circle at 100% 96%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 34%),
       radial-gradient(circle at 50% 0%, color-mix(in srgb, oklch(0.68 0.12 35) 11%, transparent), transparent 34%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 72%, var(--background)), var(--background) 42%, oklch(0.09 0.01 251));
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 72%, var(--background)), var(--background) 42%, var(--background-tail));
     background-attachment: fixed;
     text-rendering: geometricPrecision;
   }
@@ -141,23 +196,12 @@
   }
 
   .wb-page-header {
-    @apply relative overflow-hidden rounded-[1.6rem] border border-border/70 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--surface-2)_90%,transparent),color-mix(in_srgb,var(--surface-1)_78%,transparent))] px-5 py-5 shadow-[0_30px_80px_rgba(0,0,0,0.24),inset_0_1px_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)] backdrop-blur md:px-6 md:py-6;
-  }
-
-  .wb-page-header::before {
-    content: "";
-    @apply pointer-events-none absolute inset-x-0 top-0 h-px;
-    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 44%, transparent), transparent);
-  }
-
-  .wb-page-header::after {
-    content: "";
-    @apply pointer-events-none absolute -right-16 -top-24 h-52 w-52 rounded-full opacity-70 blur-3xl;
-    background: radial-gradient(circle, color-mix(in srgb, var(--primary) 18%, transparent), transparent 62%);
+    @apply px-0 py-0;
   }
 
   .wb-panel {
-    @apply relative overflow-hidden rounded-[1.45rem] border border-border/75 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_92%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.22),inset_0_1px_0_0_color-mix(in_srgb,var(--foreground)_4%,transparent)] backdrop-blur md:p-5;
+    @apply relative overflow-hidden rounded-[1.45rem] border border-border/75 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_92%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] p-4 backdrop-blur md:p-5;
+    box-shadow: var(--shadow-panel);
   }
 
   .wb-panel::before {
@@ -167,11 +211,12 @@
   }
 
   .wb-panel-muted {
-    @apply relative overflow-hidden rounded-[1.3rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_78%,transparent),color-mix(in_srgb,var(--surface-1)_78%,transparent))] p-4 shadow-[0_18px_36px_rgba(0,0,0,0.16)] backdrop-blur md:p-5;
+    @apply relative overflow-hidden rounded-[1.3rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_78%,transparent),color-mix(in_srgb,var(--surface-1)_78%,transparent))] p-4 backdrop-blur md:p-5;
+    box-shadow: var(--shadow-panel-muted);
   }
 
   .wb-kicker {
-    @apply text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground;
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground;
   }
 
   .wb-subtle {
@@ -183,7 +228,8 @@
   }
 
   .wb-hero {
-    @apply relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-2)_88%,transparent),color-mix(in_srgb,var(--surface-1)_86%,transparent)_45%,color-mix(in_srgb,var(--background)_88%,transparent))] p-5 shadow-[0_36px_80px_rgba(0,0,0,0.28),inset_0_1px_0_0_color-mix(in_srgb,var(--foreground)_5%,transparent)] md:p-6;
+    @apply relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-2)_88%,transparent),color-mix(in_srgb,var(--surface-1)_86%,transparent)_45%,color-mix(in_srgb,var(--background)_88%,transparent))] p-5 md:p-6;
+    box-shadow: var(--shadow-hero);
   }
 
   .wb-hero::before {
@@ -193,7 +239,8 @@
   }
 
   .wb-metric-card {
-    @apply relative overflow-hidden rounded-[1.3rem] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_78%,transparent),color-mix(in_srgb,var(--surface-1)_76%,transparent))] p-4 shadow-[0_20px_45px_rgba(0,0,0,0.2)] transition-transform duration-200;
+    @apply relative overflow-hidden rounded-[1.3rem] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_78%,transparent),color-mix(in_srgb,var(--surface-1)_76%,transparent))] p-4 transition-transform duration-200;
+    box-shadow: var(--shadow-metric);
   }
 
   .wb-metric-card::before {
@@ -215,7 +262,7 @@
   }
 
   .wb-chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-border/65 bg-surface-2/75 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground;
+    @apply inline-flex items-center gap-1.5 rounded-full border border-border/65 bg-surface-2/75 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground;
   }
 
   .wb-grid-label {
@@ -223,11 +270,64 @@
   }
 
   .wb-reading-surface {
-    @apply relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_94%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] p-5 shadow-[0_36px_100px_rgba(0,0,0,0.3)] md:p-6;
+    @apply relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_94%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] p-5 md:p-6;
+    box-shadow: var(--shadow-reading-surface);
   }
 }
 
 @layer utilities {
+  :root:not(.dark) .bg-black\/10 {
+    background-color: color-mix(in srgb, var(--surface-2) 58%, transparent) !important;
+  }
+
+  :root:not(.dark) .bg-black\/15 {
+    background-color: color-mix(in srgb, var(--surface-2) 70%, transparent) !important;
+  }
+
+  :root:not(.dark) .bg-black\/20 {
+    background-color: color-mix(in srgb, var(--surface-2) 80%, transparent) !important;
+  }
+
+  :root:not(.dark) .text-amber-100,
+  :root:not(.dark) .text-amber-100\/80,
+  :root:not(.dark) .text-amber-100\/85,
+  :root:not(.dark) .text-amber-100\/90,
+  :root:not(.dark) .text-amber-200 {
+    color: oklch(0.5 0.14 83) !important;
+  }
+
+  :root:not(.dark) .text-rose-100,
+  :root:not(.dark) .text-rose-100\/85,
+  :root:not(.dark) .text-rose-100\/90,
+  :root:not(.dark) .text-rose-200 {
+    color: oklch(0.54 0.2 20) !important;
+  }
+
+  :root:not(.dark) .text-sky-100,
+  :root:not(.dark) .text-sky-100\/85,
+  :root:not(.dark) .text-sky-100\/90 {
+    color: oklch(0.5 0.11 238) !important;
+  }
+
+  :root:not(.dark) .text-emerald-100,
+  :root:not(.dark) .text-emerald-200 {
+    color: oklch(0.5 0.14 160) !important;
+  }
+
+  :root:not(.dark) .text-violet-50,
+  :root:not(.dark) .text-violet-100 {
+    color: oklch(0.5 0.14 295) !important;
+  }
+
+  :root:not(.dark) .text-blue-100 {
+    color: oklch(0.5 0.13 255) !important;
+  }
+
+  :root:not(.dark) .text-orange-50,
+  :root:not(.dark) .text-orange-100 {
+    color: oklch(0.57 0.15 56) !important;
+  }
+
   .animate-fade-up {
     animation: fade-up var(--motion-base) var(--ease-emphasized) both;
   }

@@ -36,6 +36,7 @@ class _NormalizedYaraInput:
     match_details: dict[str, Any]
     file_metadata: dict[str, Any]
     signer_publisher: dict[str, Any]
+    asset_context: dict[str, Any]
     prevalence: dict[str, Any]
     prior_clean_environment_hits: float
     linked_enrichment: list[dict[str, Any]]
@@ -84,6 +85,16 @@ BENIGN_ENRICHMENT_TOKENS = (
     "known_good",
     "allowlisted",
     "trusted",
+)
+HIGH_RISK_RULE_CATEGORY_TOKENS = (
+    "impact",
+    "credential_access",
+    "memory_injection",
+    "defense_evasion",
+    "persistence",
+    "c2",
+    "execution",
+    "script_obfuscation",
 )
 
 
@@ -150,6 +161,7 @@ def _normalize_input(
     rule_metadata = _coerce_dict(package.get("rule_metadata"))
     raw_hit = _coerce_dict(package.get("raw_hit_payload"))
     object_metadata = _coerce_dict(package.get("object_metadata"))
+    asset_context = _coerce_dict(package.get("asset_context"))
     allowlist = _coerce_dict(package.get("allowlist_baseline_context"))
     prevalence = _coerce_dict(package.get("time_prevalence_context"))
     linked_enrichment = _coerce_list_of_dicts(_coerce_dict(package.get("linked_enrichment")).get("enrichments"))
@@ -197,6 +209,21 @@ def _normalize_input(
     explicit_false_positive_signal = 0.0
     if _truthy(allowlist.get("allowlisted")) and _truthy(allowlist.get("baseline_match")):
         explicit_false_positive_signal = 1.0
+    false_positive_outcomes = 0
+    for outcome in prior_outcomes:
+        verdict = str(outcome.get("verdict", "")).strip().lower()
+        if verdict == "false_positive":
+            false_positive_outcomes += 1
+    if false_positive_outcomes > 0:
+        explicit_false_positive_signal = max(explicit_false_positive_signal, min(1.7, 0.95 + (0.25 * false_positive_outcomes)))
+    tags = _coerce_list_of_strings(rule_metadata.get("tags"))
+    if "false_positive" in tags:
+        explicit_false_positive_signal = max(explicit_false_positive_signal, 1.25)
+    if any(tag in {"packer", "installer"} for tag in tags):
+        explicit_false_positive_signal = max(explicit_false_positive_signal, 1.10)
+    category = str(_coerce_dict(rule_metadata.get("meta")).get("category", "")).strip().lower()
+    if category in {"packer", "installer"}:
+        explicit_false_positive_signal = max(explicit_false_positive_signal, 1.10)
 
     match_details = {
         "matched_strings": _coerce_list_of_strings(raw_hit.get("matched_strings")),
@@ -225,6 +252,7 @@ def _normalize_input(
         match_details=match_details,
         file_metadata=file_metadata,
         signer_publisher=signer_publisher,
+        asset_context=asset_context,
         prevalence=prevalence,
         prior_clean_environment_hits=prior_clean_hits,
         linked_enrichment=linked_enrichment,
@@ -256,6 +284,18 @@ def _extract_features(
 
     lexical_malicious_signal = _clip01(_token_count(text_blob, MALICIOUS_TOKENS) / 5.0)
     lexical_benign_signal = _clip01(_token_count(text_blob, BENIGN_TOKENS) / 4.0)
+    category_blob = " ".join(
+        part
+        for part in (
+            _first_non_empty(normalized.rule_metadata.get("namespace")) or "",
+            _first_non_empty(_coerce_dict(normalized.rule_metadata.get("meta")).get("category")) or "",
+            " ".join(_coerce_list_of_strings(normalized.rule_metadata.get("tags"))),
+        )
+        if part
+    ).lower()
+    high_risk_rule_category_signal = _clip01(_token_count(category_blob, HIGH_RISK_RULE_CATEGORY_TOKENS) / 3.0)
+    severity = str(_coerce_dict(normalized.rule_metadata.get("meta")).get("severity", "")).strip().lower()
+    high_severity_signal = 1.0 if severity == "critical" else 0.75 if severity == "high" else 0.35 if severity == "medium" else 0.0
 
     match_strength_signal = _clip01(_float(normalized.match_details.get("match_count"), default=0.0) / 6.0)
     missing_match_details_signal = 0.0 if (normalized.match_details.get("matched_strings") or match_strength_signal > 0) else 1.0
@@ -354,7 +394,9 @@ def _extract_features(
         clean_environment_signal = _clip01(clean_environment_signal + 0.15)
 
     critical_asset_signal = 0.0
-    criticality = str(_coerce_dict(normalized.rule_metadata.get("asset_context")).get("criticality", "")).lower()
+    criticality = str(normalized.asset_context.get("criticality", "")).lower()
+    if not criticality:
+        criticality = str(_coerce_dict(normalized.rule_metadata.get("asset_context")).get("criticality", "")).lower()
     if not criticality:
         criticality = str(_coerce_dict(normalized.prevalence).get("criticality", "")).lower()
     if criticality in {"high", "critical"}:
@@ -391,6 +433,8 @@ def _extract_features(
         "lexical_malicious_signal": lexical_malicious_signal,
         "lexical_benign_signal": lexical_benign_signal,
         "match_strength_signal": match_strength_signal,
+        "high_risk_rule_category_signal": high_risk_rule_category_signal,
+        "high_severity_signal": high_severity_signal,
         "behavior_malicious_signal": behavior_malicious_signal,
         "enrichment_malicious_signal": enrichment_malicious_signal,
         "enrichment_benign_signal": enrichment_benign_signal,
@@ -433,14 +477,16 @@ def _extract_features(
 
 def _score_buckets(features: dict[str, float]) -> YaraEvidenceBucketScores:
     positive = _clip01(
-        0.26 * features["behavior_malicious_signal"]
-        + 0.20 * features["enrichment_malicious_signal"]
-        + 0.14 * features["analyst_malicious_signal"]
+        0.23 * features["behavior_malicious_signal"]
+        + 0.18 * features["enrichment_malicious_signal"]
+        + 0.12 * features["analyst_malicious_signal"]
         + 0.10 * features["rare_emergent_prevalence_signal"]
         + 0.08 * features["related_supporting_signal"]
         + 0.08 * features["critical_asset_signal"]
         + 0.06 * features["match_strength_signal"]
-        + 0.08 * features["lexical_malicious_signal"]
+        + 0.07 * features["lexical_malicious_signal"]
+        + 0.08 * features["high_risk_rule_category_signal"]
+        + 0.06 * features["high_severity_signal"]
         + 0.08 * features["history_support_signal"]
         + 0.04 * features["history_recommendation_accept_signal"]
         + 0.03 * (features["history_sample_size_signal"] * features["history_recency_signal"])
@@ -468,10 +514,10 @@ def _score_buckets(features: dict[str, float]) -> YaraEvidenceBucketScores:
         + 0.04 * features["history_post_action_regression_signal"]
     )
     missing = _clip01(
-        0.24 * features["missing_behavior_evidence_signal"]
-        + 0.20 * features["missing_enrichment_signal"]
-        + 0.18 * features["missing_analyst_history_signal"]
-        + 0.14 * features["missing_prevalence_signal"]
+        0.20 * features["missing_behavior_evidence_signal"]
+        + 0.18 * features["missing_enrichment_signal"]
+        + 0.16 * features["missing_analyst_history_signal"]
+        + 0.12 * features["missing_prevalence_signal"]
         + 0.12 * features["missing_match_details_signal"]
         + 0.06 * features["missing_file_metadata_signal"]
         + 0.06 * features["missing_signer_publisher_signal"]
@@ -502,12 +548,18 @@ def _classify_verdict(
 
     if (
         explicit_false_positive_signal >= 0.90
-        and scores.negative_score >= 0.68
-        and (features["trusted_signer_signal"] >= 0.80 or features["common_prevalence_signal"] >= 0.80)
+        and scores.negative_score >= 0.60
+        and features["trusted_signer_signal"] >= 0.95
+        and features["clean_environment_signal"] >= 0.95
+        and features["related_contradictory_signal"] < 0.40
     ):
         return "benign", None
 
-    if explicit_false_positive_signal >= 0.90 and scores.positive_score < 0.55:
+    if (
+        explicit_false_positive_signal >= 1.10
+        and scores.negative_score >= 0.50
+        and scores.positive_score < 0.50
+    ):
         return "false_positive", None
 
     if scores.missing_score >= 0.70:
@@ -529,34 +581,52 @@ def _classify_verdict(
     )
 
     if (
-        malicious_index >= 0.80
-        and scores.positive_score >= 0.72
-        and scores.negative_score <= 0.45
-        and scores.contradictory_score <= 0.40
-        and scores.missing_score <= 0.45
+        scores.positive_score >= 0.48
+        and scores.negative_score <= 0.20
+        and scores.contradictory_score <= 0.20
+        and scores.missing_score <= 0.30
+        and features["high_severity_signal"] >= 0.90
+        and features["critical_asset_signal"] >= 0.90
+        and features["related_supporting_signal"] >= 0.80
+        and features["enrichment_malicious_signal"] >= 0.20
+        and features["behavior_malicious_signal"] >= 0.20
     ):
         return "malicious", None
 
     if (
-        malicious_index >= 0.68
-        and scores.positive_score >= 0.58
-        and scores.contradictory_score <= 0.52
-        and scores.missing_score <= 0.58
+        malicious_index >= 0.78
+        and scores.positive_score >= 0.60
+        and scores.negative_score <= 0.40
+        and scores.contradictory_score <= 0.40
+        and scores.missing_score <= 0.42
+    ):
+        return "malicious", None
+
+    if (
+        malicious_index >= 0.63
+        and scores.positive_score >= 0.46
+        and scores.contradictory_score <= 0.55
+        and scores.missing_score <= 0.60
     ):
         return "likely_malicious", None
 
-    if malicious_index >= 0.54 and scores.positive_score >= 0.42 and scores.missing_score <= 0.62:
+    if (
+        malicious_index >= 0.50
+        and scores.positive_score >= 0.34
+        and scores.missing_score <= 0.68
+        and scores.contradictory_score <= 0.58
+    ):
         return "suspicious", None
 
     if (
-        benign_index >= 0.78
-        and scores.negative_score >= 0.68
+        benign_index >= 0.72
+        and scores.negative_score >= 0.60
         and scores.positive_score <= 0.45
-        and scores.contradictory_score <= 0.40
+        and scores.contradictory_score <= 0.45
     ):
         return "benign", None
 
-    if benign_index >= 0.62 and scores.negative_score >= 0.50 and scores.contradictory_score <= 0.55:
+    if benign_index >= 0.56 and scores.negative_score >= 0.38 and scores.contradictory_score <= 0.60:
         return "likely_benign", None
 
     if scores.negative_score >= 0.72 and scores.positive_score <= 0.50 and scores.contradictory_score <= 0.45:

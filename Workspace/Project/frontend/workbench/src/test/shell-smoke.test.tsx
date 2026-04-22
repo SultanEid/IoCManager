@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WorkbenchShell } from "@/components/workbench/app-shell"
 import { WorkbenchInspectorProvider } from "@/components/workbench/workbench-inspector"
+import { THEME_STORAGE_KEY } from "@/shared/theme/theme"
+import { ThemeProvider } from "@/shared/theme/theme-provider"
 
 const mockedUseWorkbenchQuery = vi.hoisted(() => vi.fn())
 
@@ -32,6 +34,8 @@ vi.mock("@/shared/query/use-workbench-query", () => ({
 describe("WorkbenchShell smoke", () => {
   afterEach(() => {
     cleanup()
+    window.localStorage.removeItem(THEME_STORAGE_KEY)
+    document.documentElement.className = ""
   })
 
   beforeEach(() => {
@@ -58,11 +62,13 @@ describe("WorkbenchShell smoke", () => {
 
   it("renders shell-level global search, breadcrumbs, and notifications controls", () => {
     render(
-      <WorkbenchInspectorProvider>
-        <WorkbenchShell>
-          <div>Workbench Content</div>
-        </WorkbenchShell>
-      </WorkbenchInspectorProvider>,
+      <ThemeProvider>
+        <WorkbenchInspectorProvider>
+          <WorkbenchShell>
+            <div>Workbench Content</div>
+          </WorkbenchShell>
+        </WorkbenchInspectorProvider>
+      </ThemeProvider>,
     )
 
     expect(screen.getByTestId("global-search-trigger")).toBeInTheDocument()
@@ -72,15 +78,36 @@ describe("WorkbenchShell smoke", () => {
 
   it("shows explicit reduced-capability notification messaging", () => {
     render(
-      <WorkbenchInspectorProvider>
-        <WorkbenchShell>
-          <div>Workbench Content</div>
-        </WorkbenchShell>
-      </WorkbenchInspectorProvider>,
+      <ThemeProvider>
+        <WorkbenchInspectorProvider>
+          <WorkbenchShell>
+            <div>Workbench Content</div>
+          </WorkbenchShell>
+        </WorkbenchInspectorProvider>
+      </ThemeProvider>,
     )
 
     const [trigger] = screen.getAllByTestId("notifications-trigger")
     fireEvent.click(trigger)
-    expect(screen.getByText(/notification feed is intentionally reduced/i)).toBeInTheDocument()
+    expect(screen.getByText(/notification coverage is currently limited to job activity/i)).toBeInTheDocument()
+  })
+
+  it("defaults to dark and toggles to persisted light mode", () => {
+    render(
+      <ThemeProvider>
+        <WorkbenchInspectorProvider>
+          <WorkbenchShell>
+            <div>Workbench Content</div>
+          </WorkbenchShell>
+        </WorkbenchInspectorProvider>
+      </ThemeProvider>,
+    )
+
+    expect(document.documentElement.classList.contains("dark")).toBe(true)
+    const [themeToggle] = screen.getAllByTestId("theme-toggle")
+    fireEvent.click(themeToggle)
+
+    expect(document.documentElement.classList.contains("light")).toBe(true)
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light")
   })
 })

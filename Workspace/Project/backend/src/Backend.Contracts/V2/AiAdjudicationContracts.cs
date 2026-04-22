@@ -17,6 +17,9 @@ public sealed record SubmitAdjudicationAcceptedDto(
     DateTimeOffset SubmittedAtUtc,
     AdjudicationLinksDto Links);
 
+public sealed record GenerateIocDecisionRequestDto(
+    string SubmittedByUserId);
+
 public sealed record AdjudicationLinksDto(
     string Result,
     string Explanation,
@@ -40,6 +43,11 @@ public sealed record AdjudicationResultDto(
     bool ActionPlanAvailable,
     bool SimilarDetectionsAvailable,
     bool EvidenceSourcesAvailable);
+
+public sealed record IocLatestDecisionDto(
+    Guid IocId,
+    Guid? DetectionId,
+    AdjudicationResultDto Result);
 
 public sealed record AdjudicationDecisionDto(
     string Verdict,

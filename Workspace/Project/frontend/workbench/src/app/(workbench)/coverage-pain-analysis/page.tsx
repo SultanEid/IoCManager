@@ -23,7 +23,7 @@ const LEVEL_THEME: Record<
 > = {
   Ttp: {
     fill: "from-rose-500/85 to-orange-400/70",
-    accent: "text-rose-100",
+    accent: "text-rose-700 dark:text-rose-100",
     toneFrom: "#ef4444",
     toneTo: "#fb923c",
     stroke: "rgba(251,146,60,0.34)",
@@ -32,7 +32,7 @@ const LEVEL_THEME: Record<
   },
   Tool: {
     fill: "from-orange-400/80 to-amber-300/65",
-    accent: "text-orange-100",
+    accent: "text-orange-700 dark:text-orange-100",
     toneFrom: "#f59e0b",
     toneTo: "#fbbf24",
     stroke: "rgba(251,191,36,0.3)",
@@ -41,7 +41,7 @@ const LEVEL_THEME: Record<
   },
   HostArtifact: {
     fill: "from-amber-300/80 to-yellow-300/60",
-    accent: "text-amber-50",
+    accent: "text-amber-700 dark:text-amber-50",
     toneFrom: "#fcd34d",
     toneTo: "#eab308",
     stroke: "rgba(250,204,21,0.28)",
@@ -50,7 +50,7 @@ const LEVEL_THEME: Record<
   },
   Domain: {
     fill: "from-cyan-400/70 to-sky-300/60",
-    accent: "text-cyan-50",
+    accent: "text-cyan-700 dark:text-cyan-50",
     toneFrom: "#67e8f9",
     toneTo: "#38bdf8",
     stroke: "rgba(103,232,249,0.28)",
@@ -59,7 +59,7 @@ const LEVEL_THEME: Record<
   },
   IP: {
     fill: "from-sky-500/75 to-blue-400/60",
-    accent: "text-sky-50",
+    accent: "text-sky-700 dark:text-sky-50",
     toneFrom: "#60a5fa",
     toneTo: "#3b82f6",
     stroke: "rgba(96,165,250,0.28)",
@@ -68,7 +68,7 @@ const LEVEL_THEME: Record<
   },
   Hash: {
     fill: "from-violet-400/75 to-fuchsia-300/60",
-    accent: "text-violet-50",
+    accent: "text-violet-700 dark:text-violet-50",
     toneFrom: "#a78bfa",
     toneTo: "#c084fc",
     stroke: "rgba(167,139,250,0.28)",
@@ -255,9 +255,8 @@ export default function PyramidOfPainPage() {
 
   return (
     <section className="wb-page space-y-6">
-      <header className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[radial-gradient(circle_at_top,rgba(245,91,0,0.16),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(56,189,248,0.12),transparent_28%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.96))] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.32)]">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/45 to-transparent" />
-        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+      <header className="wb-page-header">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-primary/90">
               <Triangle className="h-3.5 w-3.5" />
@@ -309,7 +308,7 @@ export default function PyramidOfPainPage() {
           </div>
         </div>
 
-        <div className="relative mt-5 flex flex-wrap items-center gap-2">
+        <div className="mt-5 flex flex-wrap items-center gap-2">
           <Button type="button" size="sm" className="gap-2">
             <Clock3 className="h-3.5 w-3.5" />
             7 days
@@ -331,7 +330,7 @@ export default function PyramidOfPainPage() {
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <article className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,rgba(8,15,26,0.96),rgba(4,10,20,0.94))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.3)]">
+        <article className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_92%,transparent),color-mix(in_srgb,var(--surface-1)_90%,transparent))] p-5 shadow-[var(--shadow-reading-surface)]">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="wb-kicker">Pain Pyramid</p>
@@ -364,7 +363,7 @@ export default function PyramidOfPainPage() {
                   className={cn(
                     "group relative mx-auto block h-[4.5rem] overflow-visible text-left transition-all",
                     isActive
-                      ? "scale-[1.008] shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_18px_42px_rgba(0,0,0,0.24)]"
+                      ? "scale-[1.008] shadow-[var(--shadow-soft)]"
                       : "opacity-92 hover:opacity-100",
                   )}
                   style={{
@@ -386,23 +385,23 @@ export default function PyramidOfPainPage() {
                         <path d="M72 6 H905 Q944 6 956 28 L990 82 Q998 94 982 98 H28 Q8 98 10 82 L42 28 Q54 6 72 6 Z" />
                       </clipPath>
                       <filter id={shadowId} x="-8%" y="-18%" width="116%" height="150%">
-                        <feDropShadow dx="0" dy="12" stdDeviation="10" floodColor="rgba(0,0,0,0.28)" />
+                        <feDropShadow dx="0" dy="12" stdDeviation="10" floodColor="color-mix(in srgb, var(--foreground) 28%, transparent)" />
                       </filter>
                     </defs>
                     <path
                       d="M72 6 H905 Q944 6 956 28 L990 82 Q998 94 982 98 H28 Q8 98 10 82 L42 28 Q54 6 72 6 Z"
-                      fill="rgba(15,23,42,0.78)"
+                      fill="color-mix(in srgb, var(--surface-1) 86%, transparent)"
                       filter={`url(#${shadowId})`}
                     />
                     <path
                       d="M72 6 H905 Q944 6 956 28 L990 82 Q998 94 982 98 H28 Q8 98 10 82 L42 28 Q54 6 72 6 Z"
-                      fill="rgba(255,255,255,0.015)"
+                      fill="color-mix(in srgb, var(--foreground) 2%, transparent)"
                       stroke={theme.stroke}
                       strokeWidth="1.8"
                     />
                     <path
                       d="M72 6 H905"
-                      stroke="rgba(255,255,255,0.08)"
+                      stroke="color-mix(in srgb, var(--foreground) 14%, transparent)"
                       strokeWidth="1.4"
                       strokeLinecap="round"
                     />
@@ -453,7 +452,7 @@ export default function PyramidOfPainPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.24 }}
               className={cn(
-                "mt-5 rounded-[24px] border bg-[linear-gradient(180deg,rgba(12,20,34,0.96),rgba(6,12,24,0.94))] p-4 shadow-[0_14px_40px_rgba(0,0,0,0.2)]",
+                "mt-5 rounded-[24px] border bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_92%,transparent),color-mix(in_srgb,var(--surface-1)_88%,transparent))] p-4 shadow-[var(--shadow-soft)]",
                 LEVEL_THEME[activeLevelSummary.level as keyof typeof LEVEL_THEME].border,
               )}
             >
@@ -502,7 +501,7 @@ export default function PyramidOfPainPage() {
           ) : null}
         </article>
 
-        <article className="rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,rgba(7,14,24,0.96),rgba(3,8,18,0.94))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+        <article className="rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_92%,transparent),color-mix(in_srgb,var(--surface-1)_88%,transparent))] p-5 shadow-[var(--shadow-reading-surface)]">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="wb-kicker">Trend Rail</p>
@@ -531,7 +530,7 @@ export default function PyramidOfPainPage() {
                     "w-full rounded-2xl border bg-surface-2/40 p-2.5 text-left transition-colors",
                     theme.border,
                     activeLevel === level.level
-                      ? "bg-surface-2/60 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_16px_34px_rgba(0,0,0,0.18)]"
+                      ? "bg-surface-2/60 shadow-[var(--shadow-soft)]"
                       : "hover:bg-surface-2/55",
                   )}
                 >
@@ -546,8 +545,8 @@ export default function PyramidOfPainPage() {
                     <svg viewBox="0 0 220 52" className="h-11 w-full">
                       <defs>
                         <linearGradient id={`spark-${level.level}`} x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="rgba(255,255,255,0.18)" />
-                          <stop offset="100%" stopColor="rgba(255,255,255,0.72)" />
+                          <stop offset="0%" stopColor="color-mix(in srgb, var(--foreground) 18%, transparent)" />
+                          <stop offset="100%" stopColor="color-mix(in srgb, var(--foreground) 72%, transparent)" />
                         </linearGradient>
                       </defs>
                       {points ? (

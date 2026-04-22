@@ -25,7 +25,7 @@ public sealed class AiSidecarHealthCheck : IHealthCheck
         CancellationToken cancellationToken = default)
     {
         var client = _httpClientFactory.CreateClient(ProbeClientName);
-        using var request = new HttpRequestMessage(HttpMethod.Head, BuildProbeUri(_options.BaseUrl));
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildProbeUri(_options.BaseUrl));
 
         try
         {
@@ -39,9 +39,7 @@ public sealed class AiSidecarHealthCheck : IHealthCheck
                 return HealthCheckResult.Degraded("AI sidecar temporarily unavailable.");
             }
 
-            if (response.StatusCode is HttpStatusCode.MethodNotAllowed
-                or HttpStatusCode.NotFound
-                or HttpStatusCode.Unauthorized
+            if (response.StatusCode is HttpStatusCode.Unauthorized
                 or HttpStatusCode.Forbidden)
             {
                 return HealthCheckResult.Healthy("AI sidecar reachable.");
@@ -64,6 +62,6 @@ public sealed class AiSidecarHealthCheck : IHealthCheck
     private static Uri BuildProbeUri(string baseUrl)
     {
         var baseUri = new Uri(baseUrl, UriKind.Absolute);
-        return new Uri(baseUri, "/");
+        return new Uri(baseUri, "/health");
     }
 }

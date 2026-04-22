@@ -90,6 +90,21 @@ function deriveErrorMessage(payload: unknown, status: number, problemDetails: Pr
   }
 
   if (typeof payload === "string" && payload.length > 0) {
+    const trimmedPayload = payload.trim()
+    if (trimmedPayload.startsWith("{") && trimmedPayload.endsWith("}")) {
+      try {
+        const parsedPayload = JSON.parse(trimmedPayload)
+        const parsedDetails = parseProblemDetails(parsedPayload)
+        if (parsedDetails?.detail) {
+          return parsedDetails.detail
+        }
+        if (parsedDetails?.title) {
+          return parsedDetails.title
+        }
+      } catch {
+        // Keep the original payload message fallback.
+      }
+    }
     return payload
   }
 

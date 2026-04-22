@@ -26,6 +26,10 @@ internal static class SmokeChecks
             new SmokeCase("controllers fall back to legacy Azure reads for mapped surfaces", Controllers_UseLegacyAzureFallbackAsync),
             new SmokeCase("ai adjudication contracts carry safety diagnostics end to end", AiAdjudicationContracts_CarrySafetyDiagnosticsAsync),
             new SmokeCase("obsolete ai decision parser has been removed", ObsoleteAiDecisionParser_IsRemovedAsync),
+            new SmokeCase("authorization policy catalog enforces admin it analyst dev scopes", AuthorizationPolicies_EnforceRoleScopesAsync),
+            new SmokeCase("v2 controllers use updated role policies for alerts retention audit and infrastructure", V2Controllers_UseUpdatedRolePoliciesAsync),
+            new SmokeCase("identity bootstrap seeds IT and DEV role model", IdentityBootstrapper_SeedsItAndDevAsync),
+            new SmokeCase("frontend role access matrix enforces canonical role routing", FrontendRoleAccess_EnforcesCanonicalRoutingAsync),
         };
 
         var failures = new List<string>();
@@ -234,6 +238,59 @@ internal static class SmokeChecks
             "AiDecisionContractParser.cs");
 
         Expect.False(File.Exists(Path.GetFullPath(parserPath)), "Obsolete AI decision parser should be removed from the backend.");
+        return Task.CompletedTask;
+    }
+
+    private static Task AuthorizationPolicies_EnforceRoleScopesAsync()
+    {
+        var source = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Infrastructure", "AuthorizationPolicies.cs"));
+        Expect.Contains("policy.RequireRole(\"Analyst\", \"Lead\", \"DEV\")", source, "Analyst access should include Analyst, Lead, and DEV.");
+        Expect.Contains("policy.RequireRole(\"Admin\", \"DEV\")", source, "Admin access should include Admin and DEV.");
+        Expect.Contains("policy.RequireRole(\"IT\", \"Analyst\", \"Lead\", \"DEV\")", source, "Alert access should include IT + security roles + DEV.");
+        Expect.Contains("InfrastructureReadAccess", source, "Infrastructure read policy should be present.");
+        Expect.Contains("WorkflowSettingsAccess", source, "Workflow settings policy should be present.");
+        Expect.Contains("AuditAccess", source, "Audit access policy should be present.");
+        return Task.CompletedTask;
+    }
+
+    private static Task V2Controllers_UseUpdatedRolePoliciesAsync()
+    {
+        var alertsSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Controllers", "V2", "AlertsController.cs"));
+        Expect.Contains("[Authorize(Policy = AuthorizationPolicies.AlertAccess)]", alertsSource, "Alerts controller should use AlertAccess policy.");
+
+        var retentionSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Controllers", "V2", "RetentionController.cs"));
+        Expect.Contains("[Authorize(Policy = AuthorizationPolicies.AdminAccess)]", retentionSource, "Retention controller should be admin-only.");
+
+        var auditSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Controllers", "V2", "AuditController.cs"));
+        Expect.Contains("[Authorize(Policy = AuthorizationPolicies.AuditAccess)]", auditSource, "Audit controller should use AuditAccess policy.");
+
+        var infrastructureSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Controllers", "V2", "InfrastructureController.cs"));
+        Expect.Contains("[Authorize(Policy = AuthorizationPolicies.InfrastructureReadAccess)]", infrastructureSource, "Infrastructure controller should use InfrastructureReadAccess policy.");
+        Expect.Contains("[HttpPost(\"scanners\")]", infrastructureSource, "Infrastructure controller should expose scanner create.");
+        Expect.Contains("[Authorize(Policy = AuthorizationPolicies.WorkflowSettingsAccess)]", infrastructureSource, "Scanner settings mutations should use WorkflowSettingsAccess policy.");
+        return Task.CompletedTask;
+    }
+
+    private static Task IdentityBootstrapper_SeedsItAndDevAsync()
+    {
+        var source = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Infrastructure", "Security", "IdentityBootstrapper.cs"));
+        Expect.Contains("\"IT\"", source, "Identity bootstrap should include IT role.");
+        Expect.Contains("\"DEV\"", source, "Identity bootstrap should include DEV role.");
+        Expect.Contains("[\"DEV\"] = PermissionCatalog", source, "DEV role should receive full permission catalog.");
+        Expect.Contains("[\"IT\"]", source, "Identity bootstrap should define IT grants.");
+
+        var devConfig = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "appsettings.Development.json"));
+        Expect.Contains("\"Role\": \"DEV\"", devConfig, "Development bootstrap role should default to DEV.");
+        return Task.CompletedTask;
+    }
+
+    private static Task FrontendRoleAccess_EnforcesCanonicalRoutingAsync()
+    {
+        var roleAccessSource = File.ReadAllText(ResolveRepoPath("Project", "frontend", "workbench", "src", "shared", "auth", "role-access.ts"));
+        Expect.Contains("return \"/settings\"", roleAccessSource, "Admin default route should be /settings.");
+        Expect.Contains("return \"/alerts\"", roleAccessSource, "IT default route should be /alerts.");
+        Expect.Contains("path === \"/settings\"", roleAccessSource, "Admin canonical access should be settings-only.");
+        Expect.Contains("path === \"/alerts\" || path.startsWith(\"/alerts/\")", roleAccessSource, "IT canonical access should be alerts-only.");
         return Task.CompletedTask;
     }
 

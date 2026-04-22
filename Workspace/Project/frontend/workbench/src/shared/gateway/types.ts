@@ -4,6 +4,7 @@ import type {
   AiAdjudicationExplanationOrPendingResponse,
   AiAdjudicationResultResponse,
   AiEvidenceSourcesResponse,
+  IocLatestAiDecisionResponse,
   AiOverrideOrClosureResponse,
   AiSimilarDetectionsResponse,
   AlertListResponse,
@@ -706,6 +707,10 @@ export type SubmitAiAdjudicationInput = {
   submittedByUserId: string
 }
 
+export type GenerateAiDecisionForIocInput = {
+  submittedByUserId: string
+}
+
 export type AiAdjudicationCursorQuery = {
   limit?: number
   cursor?: string
@@ -739,6 +744,9 @@ export interface Gateway {
   listIocs(query?: IocListQuery, signal?: AbortSignal): Promise<IocListResponse>
   listDetections(query?: DetectionListQuery, signal?: AbortSignal): Promise<DetectionHistoryResponse>
   getDetectionDetail(detectionId: string, signal?: AbortSignal): Promise<DetectionDetailResponse>
+  getLatestAiDecisionForIoc(iocId: string, signal?: AbortSignal): Promise<IocLatestAiDecisionResponse>
+  generateAiDecisionForIoc(iocId: string, input: GenerateAiDecisionForIocInput): Promise<SubmitAiAdjudicationAcceptedResponse>
+  getLatestAiDecisionForDetection(detectionId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse>
   submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse>
   getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse>
   getAiAdjudicationExplanation(

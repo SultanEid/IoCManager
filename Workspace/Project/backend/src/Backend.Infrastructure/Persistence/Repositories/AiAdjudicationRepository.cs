@@ -1,6 +1,7 @@
 using Backend.Application.Abstractions.Persistence;
 using Backend.Domain.AiAdjudication;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace Backend.Infrastructure.Persistence.Repositories;
 
@@ -25,6 +26,113 @@ public sealed class AiAdjudicationRepository : IAiAdjudicationRepository
             : _dbContext.AiAdjudicationRequests.AsNoTracking();
 
         return await query.FirstOrDefaultAsync(x => x.Id == adjudicationId, cancellationToken);
+    }
+
+    public async Task<AiAdjudicationRequest?> GetLatestRequestByDetectionAsync(string detectionId, CancellationToken cancellationToken)
+    {
+        var normalizedDetectionId = detectionId.Trim();
+        var parsedDetectionId = Guid.TryParse(normalizedDetectionId, out var detectionRecordId) ? detectionRecordId : (Guid?)null;
+
+        return await _dbContext.AiAdjudicationRequests
+            .AsNoTracking()
+            .Where(x => x.DetectionId == normalizedDetectionId
+                || (parsedDetectionId.HasValue && x.DetectionRecordId == parsedDetectionId.Value))
+            .OrderByDescending(x => x.SubmittedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<AiLatestDecisionReference?> GetLatestDecisionReferenceByIocAsync(Guid iocId, CancellationToken cancellationToken)
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT TOP (1)
+                    [IocId],
+                    [DetectionId],
+                    [AdjudicationRequestId]
+                FROM [dbo].[vw_ai_latest_ioc_decisions]
+                WHERE [IocId] = @iocId
+                """;
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@iocId";
+            parameter.DbType = DbType.Guid;
+            parameter.Value = iocId;
+            command.Parameters.Add(parameter);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            return new AiLatestDecisionReference(
+                IocId: reader.GetGuid(0),
+                DetectionId: reader.GetGuid(1),
+                AdjudicationRequestId: reader.GetGuid(2));
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    public async Task<AiLatestDecisionReference?> GetLatestDecisionReferenceByLegacyIocAsync(Guid iocId, CancellationToken cancellationToken)
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT TOP (1)
+                    req.[Id],
+                    req.[DetectionRecordId]
+                FROM [dbo].[ai_adjudication_requests] req
+                WHERE JSON_VALUE(req.[DetectionPackageJson], '$.legacyIocId') = @iocId
+                ORDER BY req.[SubmittedAtUtc] DESC
+                """;
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@iocId";
+            parameter.DbType = DbType.String;
+            parameter.Value = iocId.ToString("D");
+            command.Parameters.Add(parameter);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            return new AiLatestDecisionReference(
+                IocId: iocId,
+                DetectionId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                AdjudicationRequestId: reader.GetGuid(0));
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
     }
 
     public async Task<IReadOnlyList<AiAdjudicationRequest>> ListDueRequestsAsync(DateTimeOffset asOfUtc, int take, CancellationToken cancellationToken)

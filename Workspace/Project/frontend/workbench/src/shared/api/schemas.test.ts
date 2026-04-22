@@ -214,6 +214,17 @@ describe("API schemas", () => {
     expect(rolePermission.permissionId).toBe(permission.id)
   })
 
+  it("parses role-permission payloads with legacy non-RFC UUID role identifiers", () => {
+    const parsed = rolePermissionResponseSchema.parse({
+      roleId: "9eecbe9f-a035-4b03-d69d-08de9f59f50f",
+      permissionId: "2a072f40-53e9-4d4a-b7ed-e3535c388370",
+      grantedByUserId: "system",
+      grantedAtUtc: "2026-04-21T03:56:24.9251586+00:00",
+    })
+
+    expect(parsed.roleId).toBe("9eecbe9f-a035-4b03-d69d-08de9f59f50f")
+  })
+
   it("parses discovery run response", () => {
     const parsed = discoveryRunResponseSchema.parse({
       id: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",

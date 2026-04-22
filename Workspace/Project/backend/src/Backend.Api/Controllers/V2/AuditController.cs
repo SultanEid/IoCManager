@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Api.Controllers.V2;
 
 [ApiController]
-[Authorize(Policy = AuthorizationPolicies.AnalystAccess)]
+[Authorize(Policy = AuthorizationPolicies.AuditAccess)]
 [Route("api/v2/audit-logs")]
 public sealed class AuditController : ControllerBase
 {

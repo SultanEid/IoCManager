@@ -299,7 +299,7 @@ def _normalize_input(
     if _truthy(allowlist_baseline.get("allowlisted")) and _truthy(allowlist_baseline.get("baseline_match")):
         explicit_false_positive_signal = 1.0
     if "false_positive" in _coerce_list_of_strings(rule_metadata.get("tags")):
-        explicit_false_positive_signal = max(explicit_false_positive_signal, 0.80)
+        explicit_false_positive_signal = max(explicit_false_positive_signal, 1.20)
 
     return _NormalizedSigmaInput(
         rule_text=_first_non_empty(package.get("full_rule_text")) or "",
@@ -645,6 +645,18 @@ def _classify_verdict(
         return "insufficient_evidence", "missing_non_string_corroboration"
 
     if explicit_false_positive_signal >= 0.90 and scores.positive_score < 0.55:
+        if (
+            explicit_false_positive_signal < 1.10
+            and
+            scores.negative_score >= 0.65
+            and features["baseline_allowlist_signal"] >= 0.90
+            and features["analyst_benign_signal"] >= 0.80
+            and features["stable_widespread_signal"] >= 0.90
+            and features["benign_admin_signal"] >= 0.55
+            and features["admin_mismatch_signal"] <= 0.10
+            and features["lexical_benign_signal"] >= 0.20
+        ):
+            return "benign", None
         return "false_positive", None
 
     if scores.missing_score >= 0.70:
@@ -664,6 +676,19 @@ def _classify_verdict(
         + 0.15 * (1.0 - scores.contradictory_score)
         + 0.10 * (1.0 - scores.missing_score)
     )
+
+    if (
+        scores.positive_score >= 0.34
+        and scores.negative_score <= 0.20
+        and scores.contradictory_score <= 0.20
+        and scores.missing_score <= 0.35
+        and features["critical_asset_signal"] >= 0.90
+        and features["related_supporting_signal"] >= 0.80
+        and features["rare_new_prevalence_signal"] >= 0.70
+        and features["lexical_suspicious_signal"] >= 0.65
+        and features["suspicious_execution_signal"] >= 0.32
+    ):
+        return "malicious", None
 
     if (
         malicious_index >= 0.82

@@ -27,9 +27,11 @@ public sealed class AiAdjudicationService : IAiAdjudicationService
     public async Task<SubmitAdjudicationAcceptedDto> SubmitAsync(SubmitAdjudicationRequestDto request, CancellationToken cancellationToken)
     {
         var nowUtc = DateTimeOffset.UtcNow;
+        Guid? detectionRecordId = Guid.TryParse(request.DetectionId, out var parsedDetectionId) ? parsedDetectionId : null;
         var row = AiAdjudicationRequest.Queue(
             caseId: request.CaseId,
             detectionId: request.DetectionId,
+            detectionRecordId: detectionRecordId,
             iocType: request.IocType,
             iocValue: request.IocValue,
             observedAtUtc: request.ObservedAtUtc,
@@ -46,6 +48,38 @@ public sealed class AiAdjudicationService : IAiAdjudicationService
             Status: row.Status.ToString(),
             SubmittedAtUtc: row.SubmittedAtUtc,
             Links: BuildLinks(row.Id));
+    }
+
+    public async Task<IocLatestDecisionDto?> GetLatestResultByIocAsync(Guid iocId, CancellationToken cancellationToken)
+    {
+        var reference = await _repository.GetLatestDecisionReferenceByIocAsync(iocId, cancellationToken);
+        reference ??= await _repository.GetLatestDecisionReferenceByLegacyIocAsync(iocId, cancellationToken);
+        if (reference is null)
+        {
+            return null;
+        }
+
+        var result = await GetResultAsync(reference.AdjudicationRequestId, cancellationToken);
+        if (result is null)
+        {
+            return null;
+        }
+
+        return new IocLatestDecisionDto(
+            IocId: reference.IocId,
+            DetectionId: reference.DetectionId,
+            Result: result);
+    }
+
+    public async Task<AdjudicationResultDto?> GetLatestResultByDetectionAsync(Guid detectionId, CancellationToken cancellationToken)
+    {
+        var request = await _repository.GetLatestRequestByDetectionAsync(detectionId.ToString("D"), cancellationToken);
+        if (request is null)
+        {
+            return null;
+        }
+
+        return await GetResultAsync(request.Id, cancellationToken);
     }
 
     public async Task<AdjudicationResultDto?> GetResultAsync(Guid adjudicationId, CancellationToken cancellationToken)
@@ -177,7 +211,7 @@ public sealed class AiAdjudicationService : IAiAdjudicationService
         var row = await _repository.GetRequestAsync(adjudicationId, asTracking: true, cancellationToken);
         if (row is null)
         {
-            throw new NotFoundException($"Adjudication {adjudicationId} was not found.");
+            throw new NotFoundException($"Decision {adjudicationId} was not found.");
         }
 
         var nowUtc = DateTimeOffset.UtcNow;

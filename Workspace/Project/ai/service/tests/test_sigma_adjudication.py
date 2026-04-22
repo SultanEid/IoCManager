@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 
 import pytest
 
@@ -302,6 +304,11 @@ def _stale_or_revoked_package() -> dict[str, object]:
     return payload
 
 
+def _load_sigma_fixture(name: str) -> dict[str, object]:
+    path = Path(__file__).resolve().parents[2] / "fixtures" / "sigma" / "scenarios" / name
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_sigma_adjudication_is_deterministic_for_identical_input() -> None:
     package = _malicious_package()
     first = adjudicate_sigma(detection_package=package)
@@ -465,3 +472,15 @@ def test_sigma_adjudication_produces_explanation_and_suggested_checks() -> None:
     assert "SIGMA deterministic adjudication produced verdict=" in result.explanation
     assert result.explanation_lines
     assert result.suggested_next_checks
+
+
+def test_sigma_benign_fixture_promotes_to_benign_without_becoming_false_positive() -> None:
+    result = adjudicate_sigma(detection_package=_load_sigma_fixture("sigma-benign.example.json"))
+
+    assert result.verdict == "benign"
+
+
+def test_sigma_malicious_fixture_promotes_above_suspicious_without_coarse_regression() -> None:
+    result = adjudicate_sigma(detection_package=_load_sigma_fixture("sigma-malicious.example.json"))
+
+    assert result.verdict == "malicious"

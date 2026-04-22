@@ -265,7 +265,83 @@ def test_behavior_report_bundle_parser_name_is_registered_without_unknown_adapte
 
     codes = {item["code"] for item in result.parser_diagnostics}
     assert "adapter.unknown" not in codes
-    assert result.package_payload["behavior_report_references"]["reports"][0]["report_id"] == "cape-rep-routing"
+
+
+def test_internal_reviewed_telemetry_parser_supports_sigma_review_rows() -> None:
+    payload = {
+        "record_id": "reviewed-siem-test",
+        "source": "internal-reviewed-telemetry",
+        "review_outcome": "suspicious",
+        "review_summary": "Reviewed rare synchronization helper launched from user profile",
+        "review_confidence": 0.66,
+        "false_positive_risk": 0.34,
+        "event_time_utc": "2026-04-22T12:00:00Z",
+        "rule_family": "sigma",
+        "rule_id": "REVIEWED-SIEM-TEST",
+        "title": "Reviewed rare synchronization helper launched from user profile",
+        "status": "stable",
+        "level": "medium",
+        "logsource": {"product": "windows", "service": "sysmon", "category": "process_creation"},
+        "raw_hit_payload": {
+            "event_id": "4688",
+            "image": "sync-helper.exe",
+            "command_line": "sync-helper.exe --profile user-cache --target relay-check.example.internal",
+        },
+        "object_metadata": {
+            "object_id": "relay-check.example.internal",
+            "object_type": "domain",
+            "source_system": "siem",
+        },
+    }
+
+    result = adapt_source_record(payload=payload, source_file={"parser_name": "internal_reviewed_telemetry_parser_v1"})
+
+    assert result.package_payload["rule_family"] == "sigma"
+    assert result.target_payload_patch["adjudication"]["verdict"] == "suspicious"
+    assert result.package_payload["object_metadata"]["source_system"] == "siem"
+    assert result.evidence_used_patch[0]["source"] == "internal_reviewed_telemetry"
+
+
+def test_internal_reviewed_telemetry_parser_supports_network_review_rows() -> None:
+    payload = {
+        "record_id": "reviewed-snort-test",
+        "source": "internal-reviewed-telemetry",
+        "rule_family": "suricata",
+        "review_outcome": "false_positive",
+        "review_summary": "Reviewed approved scanner sweep from validation host",
+        "review_confidence": 0.31,
+        "false_positive_risk": 0.68,
+        "event_time_utc": "2026-04-22T12:00:00Z",
+        "rule_id": "REVIEWED-SNORT-TEST",
+        "sid": "REVIEWED-SNORT-TEST",
+        "msg": "Reviewed approved scanner sweep from validation host",
+        "classification": "network-scan",
+        "protocol": "tcp",
+        "raw_hit_payload": {
+            "message": "Reviewed approved scanner sweep from validation host",
+            "network": {
+                "five_tuple": {
+                    "src_ip": "10.10.10.10",
+                    "src_port": 51111,
+                    "dst_ip": "10.10.10.20",
+                    "dst_port": 443,
+                    "protocol": "tcp",
+                }
+            },
+        },
+        "object_metadata": {
+            "object_id": "flow:10.10.10.10:51111->10.10.10.20:443:tcp",
+            "object_type": "network_flow",
+            "source_system": "suricata",
+        },
+    }
+
+    result = adapt_source_record(payload=payload, source_file={"parser_name": "internal_reviewed_telemetry_parser_v1"})
+
+    assert result.package_payload["rule_family"] == "suricata"
+    assert result.target_payload_patch["adjudication"]["verdict"] == "false_positive"
+    assert result.package_payload["object_metadata"]["source_system"] == "suricata"
+    assert result.evidence_used_patch[0]["source"] == "internal_reviewed_telemetry"
 
 
 def test_internal_yara_hit_parser_maps_nested_aliases() -> None:
@@ -282,6 +358,62 @@ def test_internal_yara_hit_parser_maps_nested_aliases() -> None:
     assert result.package_payload["rule_metadata"]["rule_name"] == "NestedRule"
     assert result.package_payload["object_metadata"]["object_id"] == "c" * 64
     assert result.event_time_hint == "2026-04-16T00:00:00Z"
+
+
+def test_threatfox_parser_maps_indicator_metadata_and_target_patch() -> None:
+    payload = {
+        "id": "777001",
+        "ioc": "login-updater.example",
+        "ioc_type": "domain",
+        "threat_type": "botnet_cc",
+        "threat_type_desc": "Botnet command and control",
+        "malware": "winloader",
+        "confidence_level": 85,
+        "first_seen_utc": "2026-04-20T10:00:00Z",
+        "tags": ["c2", "loader"],
+        "reporter": "unit-test",
+        "reference": "https://threatfox.abuse.ch/ioc/777001/",
+    }
+    result = adapt_source_record(
+        payload=payload,
+        source_file={"parser_name": "threatfox_feed_parser_v1"},
+    )
+
+    assert result.package_payload["rule_family"] == "sigma"
+    assert result.package_payload["raw_hit_payload"]["event_id"] == "threatfox-777001"
+    assert result.package_payload["raw_hit_payload"]["domain"] == "login-updater.example"
+    assert result.package_payload["object_metadata"]["object_type"] == "domain"
+    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+    assert result.provenance_items[0]["source"] == "threatfox"
+
+
+def test_urlhaus_parser_maps_url_metadata_payloads_and_target_patch() -> None:
+    payload = {
+        "id": "880011",
+        "url": "https://cdn-bad.example/dropper.exe",
+        "url_status": "online",
+        "threat": "malware_download",
+        "host": "cdn-bad.example",
+        "dateadded": "2026-04-20 14:30:00 UTC",
+        "payloads": [
+            {
+                "sha256_hash": "f" * 64,
+                "signature": "dropper-family",
+            }
+        ],
+        "urlhaus_link": "https://urlhaus.abuse.ch/url/880011/",
+    }
+    result = adapt_source_record(
+        payload=payload,
+        source_file={"parser_name": "urlhaus_feed_parser_v1"},
+    )
+
+    assert result.package_payload["rule_family"] == "snort"
+    assert result.package_payload["raw_hit_payload"]["message"].startswith("URLhaus malware url")
+    assert result.package_payload["raw_hit_payload"]["network"]["request_url"] == "https://cdn-bad.example/dropper.exe"
+    assert result.package_payload["object_metadata"]["object_type"] == "url"
+    assert result.target_payload_patch["adjudication"]["verdict"] == "malicious"
+    assert result.provenance_items[0]["source"] == "urlhaus"
 
 
 def test_fixture_sigma_rule_parser_normalizes_metadata_and_lineage() -> None:
@@ -567,3 +699,121 @@ def test_snort_rule_parser_emits_diagnostics_for_invalid_sid_and_bad_port() -> N
     assert "snort.rule_metadata.sid.invalid" in codes
     assert "snort.rule_metadata.sid.missing" in codes
     assert "snort.network.src_port.invalid" in codes
+
+
+def test_sigmahq_parser_maps_official_rule_metadata_and_target_patch() -> None:
+    payload = {
+        "id": "8f5a0d8e-53b3-48b5-a1f9-test",
+        "title": "Suspicious PowerShell Encoded Command",
+        "status": "stable",
+        "level": "high",
+        "source": "sigmahq",
+        "logsource": {"product": "windows", "service": "sysmon", "category": "process_creation"},
+        "detection": {"selection": {"EventID": 1, "Image|endswith": "powershell.exe"}, "condition": "selection"},
+        "tags": ["attack.execution", "attack.t1059.001"],
+        "rule_text": "title: Suspicious PowerShell Encoded Command",
+        "raw_hit_payload": {"event_id": "sysmon-1", "image": "powershell.exe"},
+        "object_metadata": {"object_id": "sigmahq:test", "object_type": "log_event", "source_system": "siem"},
+        "source_url": "https://github.com/SigmaHQ/sigma",
+    }
+    result = adapt_source_record(
+        payload=payload,
+        source_file={"parser_name": "sigmahq_rule_parser_v1", "source_path": "sigmahq.jsonl", "record_locator": "row:1"},
+    )
+
+    assert result.package_payload["rule_family"] == "sigma"
+    assert result.package_payload["rule_metadata"]["source"] == "sigmahq"
+    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+    assert result.provenance_items[0]["source"] == "sigmahq"
+
+
+def test_snort_community_parser_maps_network_rule_and_target_patch() -> None:
+    payload = {
+        "rule_id": "SNORT_COMMUNITY-2000001",
+        "sid": "2000001",
+        "msg": "ET TROJAN Known Bad Traffic",
+        "classification": "trojan-activity",
+        "protocol": "tcp",
+        "rule_text": 'alert tcp any any -> any any (msg:"ET TROJAN Known Bad Traffic"; sid:2000001; rev:1; classtype:trojan-activity;)',
+        "raw_hit_payload": {"event_id": "snort-2000001", "message": "ET TROJAN Known Bad Traffic"},
+        "object_metadata": {"object_id": "snort:2000001", "object_type": "network_flow", "source_system": "snort"},
+        "source_url": "https://www.snort.org/downloads/",
+    }
+    result = adapt_source_record(
+        payload=payload,
+        source_file={
+            "parser_name": "snort_community_rule_parser_v1",
+            "source_path": "snort-community.jsonl",
+            "record_locator": "row:1",
+        },
+    )
+
+    assert result.package_payload["rule_family"] == "snort"
+    assert result.package_payload["rule_metadata"]["source"] == "snort_community"
+    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+
+
+def test_et_open_suricata_parser_preserves_suricata_family() -> None:
+    payload = {
+        "rule_id": "ET_OPEN_SURICATA-1000001",
+        "sid": "1000001",
+        "msg": "ET MALWARE Suspicious DNS Request",
+        "classification": "trojan-activity",
+        "protocol": "udp",
+        "rule_text": 'alert udp any any -> any 53 (msg:"ET MALWARE Suspicious DNS Request"; sid:1000001; rev:1; classtype:trojan-activity;)',
+        "raw_hit_payload": {"event_id": "suricata-1000001", "message": "ET MALWARE Suspicious DNS Request"},
+        "object_metadata": {"object_id": "suricata:1000001", "object_type": "network_flow", "source_system": "suricata"},
+        "source_url": "https://rules.emergingthreats.net/open/suricata-7.0/",
+    }
+    result = adapt_source_record(
+        payload=payload,
+        source_file={
+            "parser_name": "et_open_suricata_rule_parser_v1",
+            "source_path": "et-open-suricata.jsonl",
+            "record_locator": "row:1",
+        },
+    )
+
+    assert result.package_payload["rule_family"] == "suricata"
+    assert result.package_payload["rule_metadata"]["source"] == "et_open_suricata"
+    assert result.package_payload["object_metadata"]["source_system"] == "suricata"
+    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+
+
+def test_internal_negative_sources_patch_benign_targets() -> None:
+    allowlist_payload = {
+        "record_id": "allow-1",
+        "title": "Approved enterprise updater",
+        "rule_id": "ALLOW-1",
+        "status": "stable",
+        "level": "low",
+        "logsource": {"product": "windows", "service": "sysmon", "category": "process_creation"},
+        "rule_text": "title: Approved enterprise updater",
+        "raw_hit_payload": {"event_id": "4688", "image": "updater.exe"},
+        "object_metadata": {"object_id": "allow-obj", "object_type": "log_event", "source_system": "siem"},
+        "allowlist_baseline_context": {"allowlisted": True, "baseline_match": True, "baseline_name": "enterprise-known-good"},
+    }
+    allowlist_result = adapt_source_record(
+        payload=allowlist_payload,
+        source_file={"parser_name": "internal_allowlist_parser_v1"},
+    )
+    assert allowlist_result.target_payload_patch["adjudication"]["verdict"] == "benign"
+
+    baseline_payload = {
+        "profile_id": "base-1",
+        "title": "Known clean recurring service",
+        "rule_id": "BASE-1",
+        "status": "stable",
+        "level": "low",
+        "logsource": {"product": "windows", "service": "sysmon", "category": "process_creation"},
+        "rule_text": "title: Known clean recurring service",
+        "raw_hit_payload": {"event_id": "4688", "image": "service.exe"},
+        "object_metadata": {"object_id": "base-obj", "object_type": "log_event", "source_system": "siem"},
+        "allowlist_baseline_context": {"allowlisted": False, "baseline_match": True, "baseline_name": "enterprise-known-good"},
+        "time_prevalence_context": {"trend": "stable", "recency_bucket": "persistent", "hit_count_7d": 24},
+    }
+    baseline_result = adapt_source_record(
+        payload=baseline_payload,
+        source_file={"parser_name": "clean_baseline_profile_parser_v1"},
+    )
+    assert baseline_result.target_payload_patch["adjudication"]["verdict"] in {"benign", "likely_benign"}

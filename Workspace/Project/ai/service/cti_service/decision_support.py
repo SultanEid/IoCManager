@@ -298,6 +298,15 @@ def _build_sigma_grounded_decision(
     )
     confidence = sigma_adjudication.confidence
     false_positive_risk = sigma_adjudication.false_positive_risk
+    confidence, false_positive_risk = _blend_family_confidence_and_risk(
+        score=score,
+        verdict=verdict,
+        family_confidence=confidence,
+        family_false_positive_risk=false_positive_risk,
+        lexical_only_gate_triggered=sigma_adjudication.lexical_only_gate_triggered,
+        non_lexical_corroborated=sigma_adjudication.non_lexical_corroborated,
+        missing_score=sigma_adjudication.bucket_scores.missing_score,
+    )
     review_priority = _review_priority(
         verdict=verdict,
         confidence=confidence,
@@ -372,6 +381,15 @@ def _build_snort_grounded_decision(
     )
     confidence = snort_adjudication.confidence
     false_positive_risk = snort_adjudication.false_positive_risk
+    confidence, false_positive_risk = _blend_family_confidence_and_risk(
+        score=score,
+        verdict=verdict,
+        family_confidence=confidence,
+        family_false_positive_risk=false_positive_risk,
+        lexical_only_gate_triggered=snort_adjudication.lexical_only_gate_triggered,
+        non_lexical_corroborated=snort_adjudication.non_lexical_corroborated,
+        missing_score=snort_adjudication.bucket_scores.missing_score,
+    )
     review_priority = _review_priority(
         verdict=verdict,
         confidence=confidence,
@@ -446,6 +464,15 @@ def _build_yara_grounded_decision(
     )
     confidence = yara_adjudication.confidence
     false_positive_risk = yara_adjudication.false_positive_risk
+    confidence, false_positive_risk = _blend_family_confidence_and_risk(
+        score=score,
+        verdict=verdict,
+        family_confidence=confidence,
+        family_false_positive_risk=false_positive_risk,
+        lexical_only_gate_triggered=yara_adjudication.lexical_only_gate_triggered,
+        non_lexical_corroborated=yara_adjudication.non_lexical_corroborated,
+        missing_score=yara_adjudication.bucket_scores.missing_score,
+    )
     review_priority = _review_priority(
         verdict=verdict,
         confidence=confidence,
@@ -603,6 +630,46 @@ def _finalize_grounded_decision(
     )
 
 
+def _blend_family_confidence_and_risk(
+    *,
+    score: CaseScoreVectorResponse,
+    verdict: DecisionVerdict,
+    family_confidence: float,
+    family_false_positive_risk: float,
+    lexical_only_gate_triggered: bool,
+    non_lexical_corroborated: bool,
+    missing_score: float,
+) -> tuple[float, float]:
+    blended_confidence = _clip01(family_confidence)
+    blended_false_positive_risk = _clip01(family_false_positive_risk)
+    if verdict != "insufficient_evidence" or lexical_only_gate_triggered:
+        return blended_confidence, blended_false_positive_risk
+
+    source_trust = _clip01(float(score.feature_groups.get("source_trust_signal", 0.5)))
+    sightings = _clip01(float(score.feature_groups.get("sightings_signal", 0.0)))
+    score_signal = _clip01(score.maliciousness_score)
+    uncertainty = _clip01(score.uncertainty_score)
+    contextual_support = _clip01(
+        0.42 * score_signal
+        + 0.18 * (1.0 - uncertainty)
+        + 0.16 * source_trust
+        + 0.12 * sightings
+        + 0.12 * (1.0 - _clip01(missing_score))
+    )
+
+    confidence_floor = 0.08 + (0.26 * contextual_support)
+    if non_lexical_corroborated:
+        confidence_floor += 0.08
+    else:
+        confidence_floor += 0.03
+    confidence_floor = max(0.08, min(0.38, confidence_floor))
+    blended_confidence = max(blended_confidence, confidence_floor)
+
+    score_risk = _clip01((1.0 - score_signal) + (0.10 * uncertainty))
+    blended_false_positive_risk = _clip01((0.72 * blended_false_positive_risk) + (0.28 * score_risk))
+    return blended_confidence, blended_false_positive_risk
+
+
 def _collect_safety_inputs(
     *,
     request: ScoreCaseRequest,
@@ -735,11 +802,17 @@ def _missing_critical_fields(*, request: ScoreCaseRequest, family: str) -> list[
     object_metadata = _coerce_dict(package.get("object_metadata"))
     rule_metadata = _coerce_dict(package.get("rule_metadata"))
     raw_hit_payload = _coerce_dict(package.get("raw_hit_payload"))
+    if family.strip().lower() in {"snort", "suricata"} and not raw_hit_payload:
+        raw_hit_payload = _snort_flat_payload_from_package(package)
+    if family.strip().lower() in {"snort", "suricata"} and not rule_metadata:
+        alert = _coerce_dict(package.get("alert"))
+        rule_metadata = _coerce_dict(alert.get("rule"))
     network = _coerce_dict(raw_hit_payload.get("network"))
     five_tuple = _coerce_dict(network.get("five_tuple"))
+    resolved_family = family.strip().lower()
 
     missing: list[str] = []
-    if not _has_text(package.get("rule_family")):
+    if not (_has_text(package.get("rule_family")) or resolved_family in {"sigma", "snort", "suricata", "yara"}):
         missing.append("rule_family")
     if not _has_text(object_metadata.get("object_id")):
         missing.append("object_metadata.object_id")
@@ -748,7 +821,6 @@ def _missing_critical_fields(*, request: ScoreCaseRequest, family: str) -> list[
     if not _has_text(object_metadata.get("source_system")):
         missing.append("object_metadata.source_system")
 
-    resolved_family = family.strip().lower()
     if resolved_family == "sigma":
         if not (_has_text(rule_metadata.get("rule_id")) or _has_text(rule_metadata.get("title"))):
             missing.append("rule_metadata.rule_id_or_title")
@@ -758,14 +830,24 @@ def _missing_critical_fields(*, request: ScoreCaseRequest, family: str) -> list[
             or _has_text(raw_hit_payload.get("event_id"))
         ):
             missing.append("raw_hit_payload.command_line_or_image_or_event_id")
-    elif resolved_family == "snort":
+    elif resolved_family in {"snort", "suricata"}:
         if not (
             _has_text(rule_metadata.get("rule_id"))
             or rule_metadata.get("sid") is not None
             or _has_text(rule_metadata.get("msg"))
         ):
             missing.append("rule_metadata.rule_id_or_sid_or_msg")
-        if not (five_tuple or _has_text(raw_hit_payload.get("message")) or _has_text(raw_hit_payload.get("event_id"))):
+        if not (
+            five_tuple
+            or _snort_has_flat_replayable_network_evidence(
+                package=package,
+                raw_hit_payload=raw_hit_payload,
+                rule_metadata=rule_metadata,
+                object_metadata=object_metadata,
+            )
+            or _has_text(raw_hit_payload.get("message"))
+            or _has_text(raw_hit_payload.get("event_id"))
+        ):
             missing.append("raw_hit_payload.network.five_tuple_or_message_or_event_id")
     elif resolved_family == "yara":
         matched_strings = raw_hit_payload.get("matched_strings")
@@ -894,10 +976,10 @@ def _is_snort_package(request: ScoreCaseRequest) -> bool:
     if not isinstance(request.detection_package, dict):
         return False
     family = request.detection_package.get("rule_family")
-    if isinstance(family, str) and family.strip().lower() == "snort":
+    if isinstance(family, str) and family.strip().lower() in {"snort", "suricata"}:
         return True
     rule_family = request.rule_context.get("rule_family") or request.rule_context.get("ruleFamily")
-    if isinstance(rule_family, str) and rule_family.strip().lower() == "snort":
+    if isinstance(rule_family, str) and rule_family.strip().lower() in {"snort", "suricata"}:
         return True
     return False
 
@@ -1656,6 +1738,128 @@ def _coerce_dict(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _snort_has_flat_replayable_network_evidence(
+    *,
+    package: dict[str, object] | None,
+    raw_hit_payload: dict[str, object],
+    rule_metadata: dict[str, object],
+    object_metadata: dict[str, object],
+) -> bool:
+    if not raw_hit_payload and package:
+        raw_hit_payload = _snort_flat_payload_from_package(package)
+    src_ip = _first_text(
+        raw_hit_payload.get("src_ip"),
+        raw_hit_payload.get("source_ip"),
+        raw_hit_payload.get("src"),
+    )
+    dst_ip = _first_text(
+        raw_hit_payload.get("dst_ip"),
+        raw_hit_payload.get("destination_ip"),
+        raw_hit_payload.get("dst"),
+    )
+    src_port = _first_text(
+        raw_hit_payload.get("src_port"),
+        raw_hit_payload.get("source_port"),
+        raw_hit_payload.get("sport"),
+    )
+    dst_port = _first_scalar_text(
+        raw_hit_payload.get("dst_port"),
+        raw_hit_payload.get("destination_port"),
+        raw_hit_payload.get("dport"),
+    )
+    protocol = _first_text(
+        raw_hit_payload.get("protocol"),
+        raw_hit_payload.get("proto"),
+        rule_metadata.get("protocol"),
+    )
+    custom_attributes = _coerce_dict(object_metadata.get("custom_attributes"))
+    flow_id = _first_text(
+        raw_hit_payload.get("flow_id"),
+        custom_attributes.get("flow_id"),
+    )
+    replayable_context = (
+        _coerce_dict(raw_hit_payload.get("http_headers"))
+        or _coerce_dict(raw_hit_payload.get("tls"))
+        or _has_text(raw_hit_payload.get("query_name"))
+        or _has_text(raw_hit_payload.get("uri"))
+        or _has_text(raw_hit_payload.get("http_uri"))
+        or _has_text(raw_hit_payload.get("uri_path"))
+    )
+
+    has_tuple_anchor = _has_text(src_ip) and _has_text(dst_ip)
+    has_replayable_detail = any(
+        (
+            _has_text(src_port),
+            _has_text(dst_port),
+            _has_text(protocol),
+            _has_text(flow_id),
+            bool(replayable_context),
+        )
+    )
+    return has_tuple_anchor and has_replayable_detail
+
+
+def _snort_flat_payload_from_package(package: dict[str, object]) -> dict[str, object]:
+    alert = _coerce_dict(package.get("alert"))
+    alert_rule = _coerce_dict(alert.get("rule"))
+    flow = _coerce_dict(package.get("flow"))
+    pcap = _coerce_dict(package.get("pcap"))
+
+    payload: dict[str, object] = {}
+    if alert:
+        payload.update(
+            {
+                "event_id": alert.get("event_id"),
+                "timestamp": alert.get("timestamp"),
+                "sensor": alert.get("sensor"),
+                "src_ip": alert.get("src_ip"),
+                "src_port": alert.get("src_port"),
+                "dst_ip": alert.get("dst_ip"),
+                "dst_port": alert.get("dst_port"),
+                "flow": alert.get("flow"),
+                "threshold": alert.get("threshold"),
+                "message": alert_rule.get("msg"),
+                "protocol": alert.get("protocol") or alert_rule.get("protocol"),
+            }
+        )
+    if flow:
+        payload.update(
+            {
+                "flow_id": flow.get("flow_id"),
+                "src_ip": flow.get("src_ip") or payload.get("src_ip"),
+                "src_port": flow.get("src_port") or payload.get("src_port"),
+                "dst_ip": flow.get("dst_ip") or payload.get("dst_ip"),
+                "dst_port": flow.get("dst_port") or payload.get("dst_port"),
+                "protocol": flow.get("protocol") or payload.get("protocol"),
+                "direction": flow.get("directionality"),
+                "observed_at": flow.get("observed_at"),
+            }
+        )
+    if pcap:
+        payload["pcap_metadata"] = pcap
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+def _first_text(*values: object) -> str | None:
+    for value in values:
+        if _has_text(value):
+            return str(value).strip()
+    return None
+
+
+def _first_scalar_text(*values: object) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if value.strip():
+                return value.strip()
+            continue
+        if isinstance(value, (int, float)):
+            return str(value)
+    return None
 
 
 def _has_text(value: object) -> bool:

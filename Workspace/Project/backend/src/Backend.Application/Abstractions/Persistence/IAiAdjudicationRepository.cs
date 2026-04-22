@@ -6,6 +6,9 @@ public interface IAiAdjudicationRepository
 {
     Task AddRequestAsync(AiAdjudicationRequest request, CancellationToken cancellationToken);
     Task<AiAdjudicationRequest?> GetRequestAsync(Guid adjudicationId, bool asTracking, CancellationToken cancellationToken);
+    Task<AiAdjudicationRequest?> GetLatestRequestByDetectionAsync(string detectionId, CancellationToken cancellationToken);
+    Task<AiLatestDecisionReference?> GetLatestDecisionReferenceByIocAsync(Guid iocId, CancellationToken cancellationToken);
+    Task<AiLatestDecisionReference?> GetLatestDecisionReferenceByLegacyIocAsync(Guid iocId, CancellationToken cancellationToken);
     Task<IReadOnlyList<AiAdjudicationRequest>> ListDueRequestsAsync(DateTimeOffset asOfUtc, int take, CancellationToken cancellationToken);
 
     Task AddJobAsync(AiAdjudicationJob job, CancellationToken cancellationToken);
@@ -34,3 +37,8 @@ public interface IAiAdjudicationRepository
 public sealed record AiPagedSlice<T>(
     IReadOnlyList<T> Items,
     bool HasMore);
+
+public sealed record AiLatestDecisionReference(
+    Guid IocId,
+    Guid? DetectionId,
+    Guid AdjudicationRequestId);

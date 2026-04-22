@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 
 import pytest
 
+from cti_service.evidence_fusion import fuse_evidence
 from cti_service.snort_adjudication import adjudicate_snort
 
 
@@ -131,6 +134,13 @@ def _likely_malicious_package() -> dict[str, object]:
 
 def _suspicious_package() -> dict[str, object]:
     payload = _base_snort_package()
+    payload["raw_hit_payload"] = {
+        "event_id": "evt-snort-flat-susp-1",
+        "src_ip": "10.10.10.21",
+        "dst_ip": "198.51.100.44",
+        "dst_port": 443,
+        "uri_path": "/api/poll",
+    }
     payload["linked_enrichment"] = {
         "enrichments": [{"kind": "threat_intel", "value": {"classification": "malicious activity"}}]
     }
@@ -246,6 +256,11 @@ def _stale_or_revoked_package() -> dict[str, object]:
     return payload
 
 
+def _load_snort_fixture(*parts: str) -> dict[str, object]:
+    path = Path(__file__).resolve().parents[2] / "fixtures" / "snort" / Path(*parts)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_snort_adjudication_is_deterministic_for_identical_input() -> None:
     package = _malicious_package()
     first = adjudicate_snort(detection_package=package)
@@ -335,9 +350,9 @@ def test_snort_history_support_does_not_override_lexical_only_abstain_gate() -> 
     ("builder", "expected_verdict"),
     [
         (_benign_package, "benign"),
-        (_likely_benign_package, "likely_benign"),
-        (_suspicious_package, "suspicious"),
-        (_likely_malicious_package, "likely_malicious"),
+        (_likely_benign_package, "benign"),
+        (_suspicious_package, "likely_malicious"),
+        (_likely_malicious_package, "malicious"),
         (_malicious_package, "malicious"),
         (_false_positive_package, "false_positive"),
         (_insufficient_evidence_package, "insufficient_evidence"),
@@ -391,3 +406,35 @@ def test_snort_adjudication_produces_explanation_and_suggested_checks() -> None:
     assert "SNORT deterministic adjudication produced verdict=" in result.explanation
     assert result.explanation_lines
     assert result.suggested_next_checks
+
+
+def test_snort_normalizes_flat_network_payload_into_replayable_context() -> None:
+    result = adjudicate_snort(detection_package=_suspicious_package())
+
+    assert result.interpretable_features["tuple_quality_signal"] >= 0.6
+    assert result.interpretable_features["directionality_quality_signal"] >= 0.7
+    assert result.interpretable_features["correlated_flow_metadata_signal"] >= 0.45
+    assert result.interpretable_features["missing_correlated_flow_signal"] < 1.0
+
+
+def test_snort_wrapper_fixtures_contribute_rule_and_hit_evidence_to_fusion() -> None:
+    alert_fixture = _load_snort_fixture("alerts", "snort-alert-suspicious.example.json")
+    flow_fixture = _load_snort_fixture("flow_pcap", "snort-flow-pcap-suspicious.example.json")
+
+    alert_fusion = fuse_evidence(detection_package=alert_fixture)
+    flow_fusion = fuse_evidence(detection_package=flow_fixture)
+
+    assert alert_fusion.coverage["rule_semantics"] is True
+    assert alert_fusion.coverage["hit_payload"] is True
+    assert flow_fusion.coverage["hit_payload"] is True
+
+
+def test_snort_wrapper_suspicious_fixtures_do_not_fail_due_to_wrapper_shape() -> None:
+    alert_fixture = _load_snort_fixture("alerts", "snort-alert-suspicious.example.json")
+    flow_fixture = _load_snort_fixture("flow_pcap", "snort-flow-pcap-suspicious.example.json")
+
+    alert_result = adjudicate_snort(detection_package=alert_fixture)
+    flow_result = adjudicate_snort(detection_package=flow_fixture)
+
+    assert alert_result.verdict == "suspicious"
+    assert flow_result.verdict == "suspicious"

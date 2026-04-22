@@ -418,8 +418,8 @@ export const permissionResponseSchema = z.object({
 })
 
 export const rolePermissionResponseSchema = z.object({
-  roleId: z.string().uuid(),
-  permissionId: z.string().uuid(),
+  roleId: z.string().min(1),
+  permissionId: z.string().min(1),
   grantedByUserId: z.string(),
   grantedAtUtc: z.string(),
 })
@@ -984,6 +984,12 @@ export const aiAdjudicationResultResponseSchema = z.object({
   evidenceSourcesAvailable: z.boolean(),
 })
 
+export const iocLatestAiDecisionResponseSchema = z.object({
+  iocId: z.string().uuid(),
+  detectionId: z.string().uuid().nullable(),
+  result: aiAdjudicationResultResponseSchema,
+})
+
 export const aiExplanationCitationResponseSchema = z.object({
   sourceId: z.string(),
   sourceType: z.string(),
@@ -1326,6 +1332,7 @@ export type AiDecisionProvenanceResponse = z.infer<typeof aiDecisionProvenanceRe
 export type AiSafetyDiagnosticsResponse = z.infer<typeof aiSafetyDiagnosticsResponseSchema>
 export type AiAdjudicationDecisionResponse = z.infer<typeof aiAdjudicationDecisionResponseSchema>
 export type AiAdjudicationResultResponse = z.infer<typeof aiAdjudicationResultResponseSchema>
+export type IocLatestAiDecisionResponse = z.infer<typeof iocLatestAiDecisionResponseSchema>
 export type AiExplanationCitationResponse = z.infer<typeof aiExplanationCitationResponseSchema>
 export type AiPhrasingDiagnosticsResponse = z.infer<typeof aiPhrasingDiagnosticsResponseSchema>
 export type AiAdjudicationExplanationResponse = z.infer<typeof aiAdjudicationExplanationResponseSchema>

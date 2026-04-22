@@ -32,6 +32,7 @@ public sealed class AiAdjudicationRequest : AuditableEntity
 
     public string CaseId { get; private set; } = string.Empty;
     public string DetectionId { get; private set; } = string.Empty;
+    public Guid? DetectionRecordId { get; private set; }
     public string IocType { get; private set; } = string.Empty;
     public string IocValue { get; private set; } = string.Empty;
     public DateTimeOffset ObservedAtUtc { get; private set; }
@@ -51,6 +52,7 @@ public sealed class AiAdjudicationRequest : AuditableEntity
     public static AiAdjudicationRequest Queue(
         string caseId,
         string detectionId,
+        Guid? detectionRecordId,
         string iocType,
         string iocValue,
         DateTimeOffset observedAtUtc,
@@ -70,6 +72,7 @@ public sealed class AiAdjudicationRequest : AuditableEntity
         {
             CaseId = caseId.Trim(),
             DetectionId = detectionId.Trim(),
+            DetectionRecordId = detectionRecordId == Guid.Empty ? null : detectionRecordId,
             IocType = iocType.Trim().ToLowerInvariant(),
             IocValue = iocValue.Trim(),
             ObservedAtUtc = observedAtUtc,

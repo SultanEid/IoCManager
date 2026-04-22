@@ -3,16 +3,16 @@
 FastAPI sidecar used by IoC Manager for:
 
 - report extraction
-- adjudication support
+- decision support
 - manual-only action-plan recommendation
 - offline evaluation utilities
 
-This sidecar is part of the IoC Manager adjudication workflow. It is not an autonomous response engine and it is not the product's core backend.
+This sidecar is part of the IoC Manager decision workflow. It is not an autonomous response engine and it is not the product's core backend.
 
 ## Documentation
 Subsystem documentation lives under `docs`:
 
-- [AI Adjudication Overview](../../docs/ai-adjudication-overview.md)
+- [AI Decision Overview](../../docs/ai-adjudication-overview.md)
 - [Verdict Taxonomy](../../docs/verdict-taxonomy.md)
 - [Action Plan Policy](../../docs/action-plan-policy.md)
 - [Dataset Sources](../../docs/dataset-sources.md)
@@ -21,8 +21,8 @@ Subsystem documentation lives under `docs`:
 - `POST /extract_report`
 - `POST /ingest_report` as an alias for `POST /extract_report`
 
-## Adjudication And Evaluation Endpoints
-These endpoints support adjudication, explanation, feedback, and offline evaluation flows:
+## Decision And Evaluation Endpoints
+These endpoints support decision, explanation, feedback, and offline evaluation flows:
 
 - `POST /score_case`
 - `POST /score_batch`
@@ -80,7 +80,7 @@ uvicorn cti_service.main:app --host 0.0.0.0 --port 8100
 Offline jobs live under `ai/jobs`:
 
 - `build_dataset.py`
-- `build_adjudication_dataset.py`
+- dataset builder job
 - `evaluate_model.py`
 - `run_evaluation_harness.py`
 - `train_baseline.py`

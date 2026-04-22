@@ -112,6 +112,15 @@ BENIGN_ENRICHMENT_TOKENS = (
     "internal_probe",
     "scanner",
 )
+HIGH_SIGNAL_RULE_TOKENS = (
+    "trojan-activity",
+    "bad-traffic",
+    "attempted-admin",
+    "attempted-user",
+    "command-and-control",
+    "c2",
+    "shellcode",
+)
 
 
 def adjudicate_snort(
@@ -178,8 +187,21 @@ def _normalize_input(
     *,
     historical_learning_features: dict[str, float] | None = None,
 ) -> _NormalizedSnortInput:
+    alert = _coerce_dict(package.get("alert"))
+    alert_rule = _coerce_dict(alert.get("rule"))
+    flow = _coerce_dict(package.get("flow"))
+    pcap = _coerce_dict(package.get("pcap"))
+
     rule_metadata = _coerce_dict(package.get("rule_metadata"))
+    if not rule_metadata and alert_rule:
+        rule_metadata = alert_rule
+
     raw_hit_payload = _coerce_dict(package.get("raw_hit_payload"))
+    if not raw_hit_payload and alert:
+        raw_hit_payload = _snort_raw_payload_from_alert(alert)
+    if flow or pcap:
+        raw_hit_payload = _merge_snort_raw_hit_payload(raw_hit_payload, _snort_raw_payload_from_flow(flow, pcap))
+
     object_metadata = _coerce_dict(package.get("object_metadata"))
     custom_attributes = _coerce_dict(object_metadata.get("custom_attributes"))
     custom_network = _coerce_dict(custom_attributes.get("network"))
@@ -187,98 +209,146 @@ def _normalize_input(
     network = _coerce_dict(raw_hit_payload.get("network"))
     if not network and custom_network:
         network = custom_network
-    if not network:
-        five_tuple = _remove_none_values(
-            {
-                "src_ip": _first_non_empty(
-                    raw_hit_payload.get("src_ip"),
-                    raw_hit_payload.get("source_ip"),
-                    raw_hit_payload.get("src"),
-                ),
-                "src_port": _coerce_port(
-                    _first_non_empty(
-                        raw_hit_payload.get("src_port"),
-                        raw_hit_payload.get("source_port"),
-                        raw_hit_payload.get("sport"),
-                    )
-                ),
-                "dst_ip": _first_non_empty(
-                    raw_hit_payload.get("dst_ip"),
-                    raw_hit_payload.get("destination_ip"),
-                    raw_hit_payload.get("dst"),
-                ),
-                "dst_port": _coerce_port(
-                    _first_non_empty(
-                        raw_hit_payload.get("dst_port"),
-                        raw_hit_payload.get("destination_port"),
-                        raw_hit_payload.get("dport"),
-                    )
-                ),
-                "protocol": _first_non_empty(
-                    raw_hit_payload.get("protocol"),
-                    raw_hit_payload.get("proto"),
-                    rule_metadata.get("protocol"),
-                ),
-            }
-        )
-        directionality = _remove_none_values(
-            {
-                "arrow": _first_non_empty(raw_hit_payload.get("direction_arrow"), raw_hit_payload.get("arrow")),
-                "direction": _first_non_empty(raw_hit_payload.get("direction"), raw_hit_payload.get("directionality")),
-                "flow": _coerce_flow_terms(raw_hit_payload.get("flow")),
-            }
-        )
-        timing = _remove_none_values(
-            {
-                "observed_at": _first_non_empty(
-                    raw_hit_payload.get("observed_at"),
-                    raw_hit_payload.get("timestamp"),
-                    raw_hit_payload.get("event_time"),
-                    raw_hit_payload.get("event_time_utc"),
-                ),
-                "first_seen": _first_non_empty(raw_hit_payload.get("first_seen")),
-                "last_seen": _first_non_empty(raw_hit_payload.get("last_seen")),
-                "window_seconds": _int_or_none(
-                    _first_non_empty(
-                        raw_hit_payload.get("window_seconds"),
-                        raw_hit_payload.get("duration_seconds"),
-                    )
-                ),
-            }
-        )
-        repetition_block = _coerce_dict(raw_hit_payload.get("repetition"))
-        threshold_block = _coerce_dict(raw_hit_payload.get("threshold"))
-        repetition = _remove_none_values(
-            {
-                "type": _first_non_empty(repetition_block.get("type"), threshold_block.get("type")),
-                "track": _first_non_empty(repetition_block.get("track"), threshold_block.get("track")),
-                "count": _int_or_none(
-                    _first_non_empty(
-                        repetition_block.get("count"),
-                        threshold_block.get("count"),
-                        raw_hit_payload.get("repetition_count"),
-                        raw_hit_payload.get("repeat_count"),
-                    )
-                ),
-                "window_seconds": _int_or_none(
-                    _first_non_empty(
-                        repetition_block.get("window_seconds"),
-                        threshold_block.get("seconds"),
-                        raw_hit_payload.get("repeat_window_seconds"),
-                    )
-                ),
-            }
-        )
-        pcap_metadata = _remove_none_values(_coerce_dict(raw_hit_payload.get("pcap_metadata")))
-        network = _remove_none_values(
-            {
-                "five_tuple": five_tuple,
-                "directionality": directionality,
-                "timing": timing,
-                "repetition": repetition,
-                "pcap_metadata": pcap_metadata,
-            }
-        )
+    rule_text = _first_non_empty(package.get("full_rule_text"), alert_rule.get("text")) or ""
+
+    existing_five_tuple = _coerce_dict(network.get("five_tuple"))
+    inferred_five_tuple = _remove_none_values(
+        {
+            "src_ip": _first_non_empty(
+                existing_five_tuple.get("src_ip"),
+                raw_hit_payload.get("src_ip"),
+                raw_hit_payload.get("source_ip"),
+                raw_hit_payload.get("src"),
+            ),
+            "src_port": _coerce_port(
+                _first_non_empty(
+                    existing_five_tuple.get("src_port"),
+                    raw_hit_payload.get("src_port"),
+                    raw_hit_payload.get("source_port"),
+                    raw_hit_payload.get("sport"),
+                )
+            ),
+            "dst_ip": _first_non_empty(
+                existing_five_tuple.get("dst_ip"),
+                raw_hit_payload.get("dst_ip"),
+                raw_hit_payload.get("destination_ip"),
+                raw_hit_payload.get("dst"),
+            ),
+            "dst_port": _coerce_port(
+                _first_non_empty(
+                    existing_five_tuple.get("dst_port"),
+                    raw_hit_payload.get("dst_port"),
+                    raw_hit_payload.get("destination_port"),
+                    raw_hit_payload.get("dport"),
+                )
+            ),
+            "protocol": _first_non_empty(
+                existing_five_tuple.get("protocol"),
+                raw_hit_payload.get("protocol"),
+                raw_hit_payload.get("proto"),
+                rule_metadata.get("protocol"),
+                _infer_protocol_from_rule_text(rule_text),
+            ),
+        }
+    )
+    existing_directionality = _coerce_dict(network.get("directionality"))
+    inferred_directionality = _infer_directionality_from_rule_text(rule_text)
+    directionality = _remove_none_values(
+        {
+            "arrow": _first_non_empty(
+                existing_directionality.get("arrow"),
+                raw_hit_payload.get("direction_arrow"),
+                raw_hit_payload.get("arrow"),
+                inferred_directionality.get("arrow"),
+            ),
+            "direction": _first_non_empty(
+                existing_directionality.get("direction"),
+                raw_hit_payload.get("direction"),
+                raw_hit_payload.get("directionality"),
+                inferred_directionality.get("direction"),
+            ),
+            "flow": _coerce_flow_terms(
+                existing_directionality.get("flow")
+                or raw_hit_payload.get("flow")
+                or inferred_directionality.get("flow")
+            ),
+        }
+    )
+    existing_timing = _coerce_dict(network.get("timing"))
+    timing = _remove_none_values(
+        {
+            "observed_at": _first_non_empty(
+                existing_timing.get("observed_at"),
+                raw_hit_payload.get("observed_at"),
+                raw_hit_payload.get("timestamp"),
+                raw_hit_payload.get("event_time"),
+                raw_hit_payload.get("event_time_utc"),
+            ),
+            "first_seen": _first_non_empty(existing_timing.get("first_seen"), raw_hit_payload.get("first_seen")),
+            "last_seen": _first_non_empty(existing_timing.get("last_seen"), raw_hit_payload.get("last_seen")),
+            "window_seconds": _int_or_none(
+                _first_non_empty(
+                    existing_timing.get("window_seconds"),
+                    raw_hit_payload.get("window_seconds"),
+                    raw_hit_payload.get("duration_seconds"),
+                )
+            ),
+        }
+    )
+    repetition_block = _coerce_dict(raw_hit_payload.get("repetition"))
+    threshold_block = _coerce_dict(raw_hit_payload.get("threshold"))
+    rule_text_threshold = _threshold_from_rule_text(rule_text)
+    existing_repetition = _coerce_dict(network.get("repetition"))
+    repetition = _remove_none_values(
+        {
+            "type": _first_non_empty(
+                existing_repetition.get("type"),
+                repetition_block.get("type"),
+                threshold_block.get("type"),
+                rule_text_threshold.get("type"),
+            ),
+            "track": _first_non_empty(
+                existing_repetition.get("track"),
+                repetition_block.get("track"),
+                threshold_block.get("track"),
+                rule_text_threshold.get("track"),
+            ),
+            "count": _int_or_none(
+                _first_non_empty(
+                    existing_repetition.get("count"),
+                    repetition_block.get("count"),
+                    threshold_block.get("count"),
+                    rule_text_threshold.get("count"),
+                    raw_hit_payload.get("repetition_count"),
+                    raw_hit_payload.get("repeat_count"),
+                )
+            ),
+            "window_seconds": _int_or_none(
+                _first_non_empty(
+                    existing_repetition.get("window_seconds"),
+                    repetition_block.get("window_seconds"),
+                    threshold_block.get("seconds"),
+                    rule_text_threshold.get("seconds"),
+                    raw_hit_payload.get("repeat_window_seconds"),
+                )
+            ),
+        }
+    )
+    pcap_metadata = _remove_none_values(
+        {
+            **_coerce_dict(network.get("pcap_metadata")),
+            **_coerce_dict(raw_hit_payload.get("pcap_metadata")),
+        }
+    )
+    network = _remove_none_values(
+        {
+            "five_tuple": inferred_five_tuple,
+            "directionality": directionality,
+            "timing": timing,
+            "repetition": repetition,
+            "pcap_metadata": pcap_metadata,
+        }
+    )
 
     asset_context = _coerce_dict(package.get("asset_context"))
     prevalence = _coerce_dict(package.get("time_prevalence_context"))
@@ -307,9 +377,14 @@ def _normalize_input(
         explicit_false_positive_signal = 0.75
     if "false_positive" in _coerce_list_of_strings(rule_metadata.get("tags")):
         explicit_false_positive_signal = max(explicit_false_positive_signal, 1.0)
+    if any(
+        str(outcome.get("verdict", "")).strip().lower() == "false_positive"
+        for outcome in prior_outcomes
+    ):
+        explicit_false_positive_signal = max(explicit_false_positive_signal, 1.0)
 
     return _NormalizedSnortInput(
-        rule_text=_first_non_empty(package.get("full_rule_text")) or "",
+        rule_text=rule_text,
         rule_metadata=rule_metadata,
         raw_hit_payload=raw_hit_payload,
         network=network,
@@ -488,6 +563,18 @@ def _extract_features(
     for key in ("capture_id", "file_path", "packet_count", "byte_count", "capture_start", "capture_end"):
         if _field_present(pcap_metadata.get(key)):
             pcap_fields_present += 1
+    replayable_context_fields = 0
+    if _coerce_dict(normalized.raw_hit_payload.get("http_headers")):
+        replayable_context_fields += 1
+    if _coerce_dict(normalized.raw_hit_payload.get("tls")):
+        replayable_context_fields += 1
+    if _first_non_empty(
+        normalized.raw_hit_payload.get("uri_path"),
+        normalized.raw_hit_payload.get("uri"),
+        normalized.raw_hit_payload.get("http_uri"),
+        normalized.raw_hit_payload.get("query_name"),
+    ):
+        replayable_context_fields += 1
     correlated_flow_metadata_signal = 0.0
     if pcap_fields_present >= 3:
         correlated_flow_metadata_signal = 1.0
@@ -495,8 +582,12 @@ def _extract_features(
         correlated_flow_metadata_signal = 0.7
     elif pcap_fields_present == 1:
         correlated_flow_metadata_signal = 0.4
+    if replayable_context_fields >= 2:
+        correlated_flow_metadata_signal = max(correlated_flow_metadata_signal, 0.8)
+    elif replayable_context_fields == 1:
+        correlated_flow_metadata_signal = max(correlated_flow_metadata_signal, 0.45)
     if _first_non_empty(normalized.raw_hit_payload.get("flow_id")):
-        correlated_flow_metadata_signal = _clip01(correlated_flow_metadata_signal + 0.25)
+        correlated_flow_metadata_signal = _clip01(correlated_flow_metadata_signal + 0.20)
 
     policy_noise_signal = _clip01(
         0.30 * lexical_policy_noise_signal
@@ -507,6 +598,7 @@ def _extract_features(
     )
     threat_driver_signal = _clip01(
         0.22 * lexical_threat_signal
+        + 0.10 * _clip01(_token_count(category_blob, HIGH_SIGNAL_RULE_TOKENS) / 3.0)
         + 0.20 * threat_category_signal
         + 0.14 * burstiness_signal
         + 0.12 * rare_new_prevalence_signal
@@ -526,7 +618,7 @@ def _extract_features(
         if normalized.prevalence
         else 1.0
     )
-    missing_correlated_flow_signal = 0.0 if correlated_flow_metadata_signal >= 0.40 else 1.0
+    missing_correlated_flow_signal = 0.0 if correlated_flow_metadata_signal >= 0.35 else 0.45 if correlated_flow_metadata_signal >= 0.15 else 1.0
     missing_enrichment_signal = 0.0 if normalized.linked_enrichment else 1.0
     missing_analyst_history_signal = 0.0 if normalized.prior_analyst_outcomes else 1.0
     missing_prevalence_signal = 0.0 if normalized.prevalence else 1.0
@@ -702,28 +794,55 @@ def _classify_verdict(
     )
 
     if (
-        malicious_index >= 0.86
-        and scores.positive_score >= 0.80
-        and scores.negative_score <= 0.45
-        and scores.contradictory_score <= 0.40
-        and scores.missing_score <= 0.45
+        scores.positive_score >= 0.40
+        and scores.negative_score <= 0.20
+        and scores.contradictory_score <= 0.20
+        and scores.missing_score <= 0.35
+        and features["critical_asset_signal"] >= 0.90
+        and features["related_supporting_signal"] >= 0.80
+        and features["lexical_threat_signal"] >= 0.65
+        and (
+            features["enrichment_malicious_signal"] >= 0.20
+            or features["threat_driver_signal"] >= 0.52
+            or features["correlated_flow_metadata_signal"] >= 0.45
+        )
     ):
         return "malicious", None
 
     if (
-        malicious_index >= 0.68
-        and scores.positive_score >= 0.56
-        and scores.contradictory_score <= 0.52
-        and scores.missing_score <= 0.58
+        malicious_index >= 0.80
+        and scores.positive_score >= 0.68
+        and scores.negative_score <= 0.45
+        and scores.contradictory_score <= 0.40
+        and scores.missing_score <= 0.55
+    ):
+        return "malicious", None
+
+    if (
+        malicious_index >= 0.64
+        and scores.positive_score >= 0.54
+        and scores.contradictory_score <= 0.55
+        and scores.missing_score <= 0.64
     ):
         return "likely_malicious", None
 
-    if malicious_index >= 0.54 and scores.positive_score >= 0.40 and scores.missing_score <= 0.62:
+    if (
+        features["correlated_flow_metadata_signal"] >= 0.90
+        and features["tuple_quality_signal"] >= 0.80
+        and features["rare_new_prevalence_signal"] >= 0.70
+        and features["external_destination_signal"] >= 0.40
+        and scores.negative_score <= 0.25
+        and scores.contradictory_score <= 0.20
+        and scores.missing_score <= 0.50
+    ):
+        return "suspicious", None
+
+    if malicious_index >= 0.48 and scores.positive_score >= 0.30 and scores.missing_score <= 0.72:
         return "suspicious", None
 
     if (
-        benign_index >= 0.80
-        and scores.negative_score >= 0.68
+        benign_index >= 0.76
+        and scores.negative_score >= 0.66
         and scores.positive_score <= 0.42
         and scores.contradictory_score <= 0.40
     ):
@@ -863,9 +982,6 @@ def _explanation_lines(
 def _non_lexical_corroboration(features: dict[str, float]) -> bool:
     strong_channels = (
         "correlated_flow_metadata_signal",
-        "burstiness_signal",
-        "rare_new_prevalence_signal",
-        "stable_widespread_signal",
         "baseline_allowlist_signal",
         "enrichment_malicious_signal",
         "enrichment_benign_signal",
@@ -897,6 +1013,110 @@ def _extract_fusion_collection(evidence_fusion: Any, key: str) -> Any:
     if isinstance(evidence_fusion, dict):
         return evidence_fusion.get(key)
     return getattr(evidence_fusion, key, None)
+
+
+def _snort_raw_payload_from_alert(alert: dict[str, Any]) -> dict[str, Any]:
+    rule = _coerce_dict(alert.get("rule"))
+    return _remove_none_values(
+        {
+            "event_id": alert.get("event_id"),
+            "timestamp": alert.get("timestamp"),
+            "sensor": alert.get("sensor"),
+            "src_ip": alert.get("src_ip"),
+            "src_port": alert.get("src_port"),
+            "dst_ip": alert.get("dst_ip"),
+            "dst_port": alert.get("dst_port"),
+            "flow": alert.get("flow"),
+            "threshold": alert.get("threshold"),
+            "message": rule.get("msg"),
+            "protocol": alert.get("protocol") or rule.get("protocol"),
+        }
+    )
+
+
+def _snort_raw_payload_from_flow(flow: dict[str, Any], pcap: dict[str, Any]) -> dict[str, Any]:
+    return _remove_none_values(
+        {
+            "flow_id": flow.get("flow_id"),
+            "src_ip": flow.get("src_ip"),
+            "src_port": flow.get("src_port"),
+            "dst_ip": flow.get("dst_ip"),
+            "dst_port": flow.get("dst_port"),
+            "protocol": flow.get("protocol"),
+            "direction": flow.get("directionality"),
+            "observed_at": flow.get("observed_at"),
+            "pcap_metadata": pcap,
+        }
+    )
+
+
+def _merge_snort_raw_hit_payload(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    if not base:
+        return dict(overlay)
+    merged = dict(base)
+    for key, value in overlay.items():
+        if value is None:
+            continue
+        if key == "pcap_metadata":
+            merged[key] = {**_coerce_dict(merged.get(key)), **_coerce_dict(value)}
+            continue
+        merged.setdefault(key, value)
+    return merged
+
+
+def _infer_protocol_from_rule_text(rule_text: str) -> str | None:
+    lowered = rule_text.strip().lower()
+    for protocol in ("tcp", "udp", "icmp", "ip"):
+        if lowered.startswith(f"alert {protocol} "):
+            return protocol
+    return None
+
+
+def _infer_directionality_from_rule_text(rule_text: str) -> dict[str, Any]:
+    lowered = rule_text.lower()
+    arrow = None
+    if "<>" in lowered:
+        arrow = "<>"
+    elif "->" in lowered:
+        arrow = "->"
+
+    flow_terms: list[str] = []
+    if "flow:" in lowered:
+        flow_segment = lowered.split("flow:", 1)[1].split(";", 1)[0]
+        flow_terms = _coerce_flow_terms(flow_segment)
+
+    direction = None
+    if "to_server" in flow_terms:
+        direction = "to_server"
+    elif "to_client" in flow_terms:
+        direction = "to_client"
+    elif arrow == "<>":
+        direction = "bidirectional"
+    elif arrow == "->":
+        direction = "to_server"
+
+    return _remove_none_values({"arrow": arrow, "direction": direction, "flow": flow_terms})
+
+
+def _threshold_from_rule_text(rule_text: str) -> dict[str, Any]:
+    lowered = rule_text.lower()
+    if "threshold:" not in lowered:
+        return {}
+    threshold_segment = lowered.split("threshold:", 1)[1].split(";", 1)[0]
+    values: dict[str, Any] = {}
+    for raw_part in threshold_segment.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if " " not in part:
+            continue
+        key, raw_value = part.split(" ", 1)
+        value = raw_value.strip()
+        if key in {"count", "seconds"}:
+            values[key] = _int_or_none(value)
+        else:
+            values[key] = value
+    return values
 
 
 def _collection_count(value: Any) -> int:

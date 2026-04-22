@@ -379,6 +379,18 @@ export class AugmentedGateway implements Gateway {
     return this.source.getDetectionDetail(detectionId, signal)
   }
 
+  getLatestAiDecisionForIoc(iocId: string, signal?: AbortSignal) {
+    return this.source.getLatestAiDecisionForIoc(iocId, signal)
+  }
+
+  generateAiDecisionForIoc(iocId: string, input: { submittedByUserId: string }) {
+    return this.source.generateAiDecisionForIoc(iocId, input)
+  }
+
+  getLatestAiDecisionForDetection(detectionId: string, signal?: AbortSignal) {
+    return this.source.getLatestAiDecisionForDetection(detectionId, signal)
+  }
+
   submitAiAdjudication(input: SubmitAiAdjudicationInput) {
     return this.source.submitAiAdjudication(input)
   }

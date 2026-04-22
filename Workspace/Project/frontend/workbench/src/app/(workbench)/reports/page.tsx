@@ -137,7 +137,7 @@ function BuilderMetric({
           <p className="wb-kicker">{label}</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
         </div>
-        <span className="grid h-10 w-10 place-items-center rounded-xl border border-border/60 bg-surface-1/70 text-primary shadow-[0_14px_28px_rgba(0,0,0,0.18)]">
+        <span className="grid h-10 w-10 place-items-center rounded-xl border border-border/60 bg-surface-1/70 text-primary shadow-[var(--shadow-soft)]">
           <Icon className="h-4.5 w-4.5" />
         </span>
       </div>
@@ -311,7 +311,7 @@ export default function ReportsPage() {
           <div className="max-w-3xl">
             <p className="wb-kicker">Reports</p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[0_18px_36px_rgba(0,0,0,0.22)]">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[var(--shadow-soft)]">
                 <FileText className="h-5 w-5" />
               </span>
               <div>
@@ -357,7 +357,7 @@ export default function ReportsPage() {
                 onClick={() => setForm((current) => ({ ...current, reportType: template.value }))}
                 className={`rounded-2xl border px-4 py-4 text-left transition ${
                   active
-                    ? "border-sky-300/60 bg-[linear-gradient(135deg,rgba(56,189,248,0.16),rgba(17,24,39,0.68))] shadow-[0_0_0_1px_rgba(125,211,252,0.2),0_24px_50px_rgba(0,0,0,0.22)]"
+                    ? "border-sky-300/60 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--primary)_18%,transparent),color-mix(in_srgb,var(--surface-2)_84%,transparent))] shadow-[var(--shadow-emphasis)]"
                     : "border-border/70 bg-surface-2/45 hover:border-border hover:bg-surface-2/60"
                 }`}
               >
@@ -477,8 +477,8 @@ export default function ReportsPage() {
           <Button type="button" variant="outline" onClick={resetLastSevenDays}>
             Reset to last 7 days
           </Button>
-          {message ? <p className="text-sm text-emerald-300">{message}</p> : null}
-          {errorText ? <p className="text-sm text-rose-300">{errorText}</p> : null}
+          {message ? <p className="text-sm text-emerald-700 dark:text-emerald-300">{message}</p> : null}
+          {errorText ? <p className="text-sm text-rose-700 dark:text-rose-300">{errorText}</p> : null}
         </div>
       </article>
 
@@ -520,7 +520,7 @@ export default function ReportsPage() {
           <EmptyState title="No preview yet" description="Generate a report or open a saved snapshot to inspect the report sections and export links." />
         ) : (
           <div className="space-y-4">
-            <div className="relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--primary)_10%,transparent),color-mix(in_srgb,var(--surface-2)_88%,transparent)_30%,color-mix(in_srgb,var(--surface-1)_86%,transparent))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
+            <div className="relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--primary)_10%,transparent),color-mix(in_srgb,var(--surface-2)_88%,transparent)_30%,color-mix(in_srgb,var(--surface-1)_86%,transparent))] p-5 shadow-[var(--shadow-panel)]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <span className="wb-chip">
@@ -550,7 +550,7 @@ export default function ReportsPage() {
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   {section.metrics.map((metric) => (
-                    <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[0_16px_32px_rgba(0,0,0,0.16)]">
+                    <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
                       <p className="wb-kicker">{metric.label}</p>
                       <p className="mt-1 text-lg font-semibold">{metric.value}</p>
                       <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>

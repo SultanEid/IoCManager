@@ -613,13 +613,13 @@ export function resolveWorkbenchRoute(pathname: string): ResolvedWorkbenchRoute 
   }
 
   if (parseDistributionPath(normalized)) {
-    const route = ROUTE_BY_HREF.get("/distribution") ?? null
+    const route = ROUTE_BY_HREF.get("/rules") ?? null
     return {
       pathname: normalized,
-      canonicalPath: "/distribution",
+      canonicalPath: "/rules",
       module: "Operations",
-      title: route?.title ?? "Rule Distribution",
-      subtitle: route?.subtitle ?? "Controlled distribution and staged promotion of rules.",
+      title: route?.title ?? "Rules Management",
+      subtitle: route?.subtitle ?? "Rule authoring, review, and controlled distribution.",
       breadcrumbs: buildRouteBreadcrumbs(route ?? WORKBENCH_ROUTES[0]),
       route,
       caseRoute: null,
@@ -713,10 +713,6 @@ export function isWorkbenchNavActive(pathname: string, href: string) {
   }
 
   if (href === "/servers" && resolved.canonicalPath.startsWith("/servers")) {
-    return true
-  }
-
-  if (href === "/distribution" && resolved.canonicalPath.startsWith("/distribution")) {
     return true
   }
 

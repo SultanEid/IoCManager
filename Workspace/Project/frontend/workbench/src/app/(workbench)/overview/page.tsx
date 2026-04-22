@@ -65,7 +65,7 @@ function MetricCard({
           <p className="wb-kicker">{label}</p>
           <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
         </div>
-        <span className="grid h-10 w-10 place-items-center rounded-xl border border-border/60 bg-surface-1/70 text-primary shadow-[0_14px_28px_rgba(0,0,0,0.18)]">
+        <span className="grid h-10 w-10 place-items-center rounded-xl border border-border/60 bg-surface-1/70 text-primary shadow-[var(--shadow-soft)]">
           <Icon className="h-4.5 w-4.5" />
         </span>
       </div>
@@ -103,7 +103,7 @@ export default function OverviewPage() {
           <div className="max-w-3xl">
             <p className="wb-kicker">Overview</p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[0_18px_36px_rgba(0,0,0,0.22)]">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[var(--shadow-soft)]">
                 <Radar className="h-5 w-5" />
               </span>
               <div>

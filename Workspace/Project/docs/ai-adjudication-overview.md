@@ -1,9 +1,9 @@
-# AI Adjudication Overview
+# AI Decision Overview
 
 ## What It Is
-The adjudication and action-plan subsystem is the IoC Manager component that turns a detection package plus supporting context into:
+The decision and action-plan subsystem is the IoC Manager component that turns a detection package plus supporting context into:
 
-- a grounded adjudication verdict
+- a grounded decision verdict
 - an operator-facing confidence and false-positive-risk estimate
 - explicit abstention guidance when evidence is not sufficient
 - a manual-only, policy-constrained action plan
@@ -31,7 +31,7 @@ This subsystem is not:
 - a replacement for analyst review, override, or closure workflow
 - a license to auto-remediate endpoints, block infrastructure, or suppress detections without human approval
 
-IoC Manager remains an operational IoC and detection-management product. The AI subsystem is a bounded adjudication aid inside that product.
+IoC Manager remains an operational IoC and detection-management product. The AI subsystem is a bounded decision aid inside that product.
 
 ## Supported Families
 The current deterministic family-specific adjudicators are:
@@ -43,14 +43,14 @@ The current deterministic family-specific adjudicators are:
 There is also a generic fallback path for cases that do not map to one of those families, but the primary supported family-specific behavior is the three deterministic adjudicators above.
 
 ## Input Package Format
-The sidecar consumes `ScoreCaseRequest`. The adjudication-specific payload is `detection_package`.
+The sidecar consumes `ScoreCaseRequest`. The decision-specific payload is `detection_package`.
 
 Minimum common fields:
 
 | Field | Required | Notes |
 |---|---|---|
 | `detection_package.rule_family` | yes | `sigma`, `snort`, `yara`, or generic fallback |
-| `detection_package.object_metadata.object_id` | yes | required for safe adjudication |
+| `detection_package.object_metadata.object_id` | yes | required for safe decisioning |
 | `detection_package.object_metadata.object_type` | yes | affects evidence interpretation and action gating |
 | `detection_package.object_metadata.source_system` | yes | required for provenance and confidence context |
 
@@ -77,7 +77,7 @@ Common optional evidence channels:
 If critical fields are missing, the safety layer forces `insufficient_evidence` and records the missing field names in `safetyDiagnostics.missingCriticalFields`.
 
 ## Output Shape
-The adjudication response includes:
+The decision response includes:
 
 - `verdict`
 - `action`
@@ -135,7 +135,7 @@ Runtime provenance may include:
 - score outputs
 - top evidence features
 - evidence fusion counts
-- family adjudication bucket scores
+- family decision bucket scores
 - family interpretable features
 - historical learning features and quality summary
 
@@ -191,13 +191,13 @@ The `safety_diagnostics` block currently includes:
 - `degradationReasons`
 
 ## Analyst Override Flow
-The adjudication output is advisory inside the operator workflow.
+The decision output is advisory inside the operator workflow.
 
 Expected control flow:
 
-1. IoC Manager submits a detection package and receives grounded adjudication plus action plan.
+1. IoC Manager submits a detection package and receives a grounded decision plus an action plan.
 2. An analyst reviews the evidence, safety diagnostics, and policy-constrained actions.
-3. The analyst may accept, reject, or override the recommendation in the backend adjudication flow.
+3. The analyst may accept, reject, or override the recommendation in the backend decision flow.
 4. Final closure and override events feed back into historical learning and offline evaluation datasets.
 
 The subsystem is designed to support override, not to resist it. Analyst closure remains the authoritative operational outcome.
@@ -207,13 +207,13 @@ Offline evaluation is part of the subsystem, not an afterthought.
 
 Primary jobs:
 
-- `ai/jobs/build_adjudication_dataset.py`
+- dataset builder job in `ai/jobs`
 - `ai/jobs/evaluate_model.py`
 - `ai/jobs/run_evaluation_harness.py`
 
 Current evaluation coverage includes:
 
-- adjudication precision, recall, F1, confusion matrix
+- decision precision, recall, F1, confusion matrix
 - abstention rate
 - false-positive and false-negative rates
 - calibration quality, including calibration bins and Brier score

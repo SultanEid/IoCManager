@@ -15,7 +15,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ApiError } from "@/shared/api/error"
 import { classifyUiError } from "@/shared/api/error-classification"
+import { useAuth } from "@/shared/auth/auth-provider"
+import { gateway } from "@/shared/gateway"
 import {
   exportLegacyIocFindingsCsv,
   exportLegacyIocFindingsJson,
@@ -41,6 +44,8 @@ type IocExplorerFilters = {
 
 const DEFAULT_PAGE_SIZE = 100
 const PAGE_SIZE_OPTIONS = [50, 100, 250]
+const IOC_DECISION_POLL_INTERVAL_MS = 2500
+const IOC_DECISION_POLL_MAX_ATTEMPTS = 12
 
 function toLocalDateTimeInput(value: string) {
   if (!value) {
@@ -71,6 +76,35 @@ function toUtcQueryValue(value: string) {
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString()
+}
+
+function readErrorMessage(error: unknown) {
+  const failure = classifyUiError(error)
+  return failure.message || "Request failed."
+}
+
+function InlineState({
+  title,
+  description,
+  tone = "default",
+}: {
+  title: string
+  description: string
+  tone?: "default" | "warning" | "danger"
+}) {
+  const className =
+    tone === "warning"
+      ? "border-amber-300/30 bg-amber-500/10 text-amber-100"
+      : tone === "danger"
+        ? "border-destructive/35 bg-destructive/10 text-destructive"
+        : "border-border/70 bg-surface-2/65 text-muted-foreground"
+
+  return (
+    <div className={`rounded-lg border p-3 ${className}`}>
+      <p className="text-sm font-medium">{title}</p>
+      <p className="mt-1 text-xs leading-5">{description}</p>
+    </div>
+  )
 }
 
 function parseFilters(searchParams: URLSearchParams): IocExplorerFilters {
@@ -118,14 +152,49 @@ function formatPainLevelLabel(value: string) {
   return value
 }
 
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`
+}
+
+function isDecisionTelemetryReason(reason: string) {
+  return /(verdict=|calibrated_signal=|uncertainty=|conflict=)/i.test(reason)
+}
+
+function formatDecisionSummary(verdict: string) {
+  switch (verdict) {
+    case "malicious":
+      return "The model sees enough corroboration to treat this IOC as malicious."
+    case "likely_malicious":
+      return "The model leans malicious, but some uncertainty remains."
+    case "suspicious":
+      return "The IOC looks suspicious, but the evidence is not strong enough for a stronger call."
+    case "benign":
+      return "The model sees enough context to treat this IOC as benign."
+    case "likely_benign":
+      return "The model leans benign, but the signal is still directional."
+    case "stale_or_revoked":
+      return "The IOC appears stale or revoked."
+    case "false_positive":
+      return "The model sees enough context to treat this IOC as a false positive."
+    case "insufficient_evidence":
+      return "The model could not support a stronger decision from the current evidence."
+    default:
+      return "The model returned a decision for this IOC."
+  }
+}
+
 export default function IocsExplorerPage() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { session } = useAuth()
   const parsedFilters = useMemo(() => parseFilters(new URLSearchParams(searchParams.toString())), [searchParams])
   const [filters, setFilters] = useState(parsedFilters)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedIocId, setSelectedIocId] = useState<string | null>(null)
+  const [isGeneratingDecision, setIsGeneratingDecision] = useState(false)
+  const [generateDecisionError, setGenerateDecisionError] = useState<string | null>(null)
+  const [generateDecisionStatus, setGenerateDecisionStatus] = useState<string | null>(null)
 
   useEffect(() => {
     setFilters(parsedFilters)
@@ -155,6 +224,45 @@ export default function IocsExplorerPage() {
     (signal) => getLegacyIocFindingDetail(selectedIocId as string, signal),
     { enabled: selectedIocId !== null },
   )
+  const relatedDetectionsQuery = useWorkbenchQuery(
+    ["scanning", "detections", "ioc", selectedIocId],
+    (signal) =>
+      gateway.listDetections(
+        {
+          iocId: selectedIocId as string,
+          pageSize: 5,
+          sort: "observedAtUtc_desc",
+        },
+        signal,
+      ),
+    { enabled: selectedIocId !== null },
+  )
+  const latestRelatedDetection = relatedDetectionsQuery.data?.items[0] ?? null
+  const latestIocDecisionQuery = useWorkbenchQuery(
+    ["ai", "decision", "latest", "ioc", selectedIocId],
+    async (signal) => {
+      try {
+        return await gateway.getLatestAiDecisionForIoc(selectedIocId as string, signal)
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return null
+        }
+
+        throw error
+      }
+    },
+    { enabled: selectedIocId !== null },
+  )
+  const actorUserId = session?.userId ?? session?.username ?? "analyst-1"
+  const latestIocDecisionData = latestIocDecisionQuery.data ?? null
+  const latestIocDecision = latestIocDecisionQuery.data?.result.decision ?? null
+  const latestIocDecisionResult = latestIocDecisionQuery.data?.result ?? null
+  const latestIocTelemetryReason =
+    latestIocDecision?.reasons.find((reason) => isDecisionTelemetryReason(reason)) ?? null
+  const latestIocNarrativeReasons =
+    latestIocDecision?.reasons.filter((reason) => !isDecisionTelemetryReason(reason)) ?? []
+  const latestIocLeadReason = latestIocNarrativeReasons[0] ?? null
+  const latestIocSupportingReasons = latestIocNarrativeReasons.slice(1, 3)
 
   const targets = targetsQuery.data ?? []
   const findingsPage = findingsQuery.data
@@ -177,6 +285,12 @@ export default function IocsExplorerPage() {
       setSelectedIocId(null)
     }
   }, [findings, selectedIocId])
+
+  useEffect(() => {
+    setGenerateDecisionError(null)
+    setGenerateDecisionStatus(null)
+    setIsGeneratingDecision(false)
+  }, [selectedIocId])
 
   const severityOptions = useMemo(() => {
     const values = findingsPage?.availableSeverities ?? []
@@ -253,6 +367,61 @@ export default function IocsExplorerPage() {
     }
 
     router.push(`/servers?targetId=${encodeURIComponent(targetId)}`)
+  }
+
+  const openDecisionPage = (detectionId: string) => {
+    router.push(`/scans/${encodeURIComponent(detectionId)}`)
+    setSelectedIocId(null)
+  }
+
+  const generateAiDecisionForSelectedIoc = async () => {
+    if (!selectedIocId) {
+      return
+    }
+
+    setIsGeneratingDecision(true)
+    setGenerateDecisionError(null)
+    setGenerateDecisionStatus("Submitting AI decision request")
+
+    try {
+      const submitted = await gateway.generateAiDecisionForIoc(selectedIocId, {
+        submittedByUserId: actorUserId,
+      })
+
+      for (let attempt = 1; attempt <= IOC_DECISION_POLL_MAX_ATTEMPTS; attempt += 1) {
+        setGenerateDecisionStatus(
+          attempt === 1
+            ? "Decision analysis in progress"
+            : `Decision analysis in progress (${attempt}/${IOC_DECISION_POLL_MAX_ATTEMPTS})`,
+        )
+
+        const result = await gateway.getAiAdjudicationResult(submitted.adjudicationId)
+        const normalizedStatus = result.status.trim().toLowerCase()
+        if (
+          normalizedStatus === "completed"
+          || normalizedStatus === "failed"
+          || normalizedStatus === "closed"
+          || normalizedStatus === "overridden"
+          || normalizedStatus === "cancelled"
+          || normalizedStatus === "canceled"
+          || normalizedStatus === "error"
+        ) {
+          break
+        }
+
+        if (attempt < IOC_DECISION_POLL_MAX_ATTEMPTS) {
+          await new Promise((resolve) => window.setTimeout(resolve, IOC_DECISION_POLL_INTERVAL_MS))
+        }
+      }
+
+      await Promise.all([latestIocDecisionQuery.refetch(), relatedDetectionsQuery.refetch()])
+      setGenerateDecisionStatus("Latest AI decision loaded for this IOC.")
+    } catch (error) {
+      setGenerateDecisionError(readErrorMessage(error))
+      setGenerateDecisionStatus(null)
+    } finally {
+      setIsGeneratingDecision(false)
+    }
   }
 
   if (targetsQuery.isError || findingsQuery.isError) {
@@ -666,6 +835,198 @@ export default function IocsExplorerPage() {
                       </div>
                     ) : (
                       <p className="mt-2 text-sm text-muted-foreground">No related scan metadata is available for this finding.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="wb-kicker">AI Decision</p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Generate or review the latest AI decision recorded for this IOC.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={generateAiDecisionForSelectedIoc}
+                        disabled={isGeneratingDecision}
+                      >
+                        {isGeneratingDecision
+                          ? "Generating..."
+                          : latestIocDecisionQuery.data?.result.decision
+                            ? "Regenerate AI decision"
+                            : "Generate AI decision"}
+                      </Button>
+                      {latestIocDecisionQuery.data?.detectionId ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openDecisionPage(latestIocDecisionQuery.data!.detectionId!)}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Open full decision
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    {generateDecisionError ? (
+                      <InlineState
+                        title="AI decision request failed"
+                        description={generateDecisionError}
+                        tone="danger"
+                      />
+                    ) : null}
+                    {generateDecisionStatus ? (
+                      <div className={generateDecisionError ? "mt-3" : undefined}>
+                        <InlineState
+                          title={isGeneratingDecision ? "AI decision in progress" : "AI decision updated"}
+                          description={generateDecisionStatus}
+                        />
+                      </div>
+                    ) : null}
+                    {latestIocDecisionQuery.isLoading ? (
+                      <LoadingState label="Loading latest AI decision" />
+                    ) : latestIocDecisionQuery.isError ? (
+                      <ClassifiedFailureState
+                        failure={classifyUiError(latestIocDecisionQuery.error)}
+                        fallbackTitle="AI decision unavailable"
+                      />
+                    ) : !latestIocDecision ? (
+                      <SearchEmptyState
+                        title="No AI decision recorded yet"
+                        description={
+                          latestRelatedDetection
+                            ? "A related detection exists, but no AI decision has been recorded for this IOC yet."
+                            : "This IOC does not have a stored AI decision yet. Generate one directly from this drawer."
+                        }
+                        action={
+                          latestRelatedDetection ? (
+                            <Button type="button" size="sm" variant="outline" onClick={() => openDecisionPage(latestRelatedDetection.id)}>
+                              Open latest related detection
+                            </Button>
+                          ) : undefined
+                        }
+                      />
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-border/70 bg-surface-1/70 p-4">
+                          <div className="flex flex-col gap-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="space-y-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <StatusBadge value={latestIocDecision.verdict} />
+                                  <StatusBadge value={latestIocDecisionResult?.status ?? "unknown"} />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <p className="text-base font-semibold tracking-tight">
+                                    {formatDecisionSummary(latestIocDecision.verdict)}
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {latestIocLeadReason ?? "No operator-facing explanation was stored for this decision."}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <dl className="grid min-w-[16rem] gap-x-6 gap-y-3 sm:grid-cols-2">
+                                <div>
+                                  <dt className="wb-kicker">Confidence</dt>
+                                  <dd className="mt-1 text-lg font-semibold">{formatPercent(latestIocDecision.confidence)}</dd>
+                                </div>
+                                <div>
+                                  <dt className="wb-kicker">False Positive Risk</dt>
+                                  <dd className="mt-1 text-lg font-semibold">{formatPercent(latestIocDecision.falsePositiveRisk)}</dd>
+                                </div>
+                              </dl>
+                            </div>
+
+                            <div className="rounded-lg border border-border/60 bg-surface-2/45 px-3 py-2.5 text-sm text-muted-foreground">
+                              {latestIocDecisionData?.detectionId
+                                ? latestRelatedDetection?.ruleName
+                                  ? `Linked to detection ${latestRelatedDetection.ruleName}. Open full decision to review the full detection context.`
+                                  : "A full detection view is available for this AI decision."
+                                : "This decision was generated directly from IOC context. No full detection page has been materialized for this IOC yet."}
+                            </div>
+
+                            <dl className="grid gap-x-4 gap-y-3 rounded-lg border border-border/60 bg-surface-2/35 px-3 py-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                              <div>
+                                <dt className="wb-kicker">Source</dt>
+                                <dd className="mt-1 font-medium">
+                                  {latestRelatedDetection?.source ?? "IOC-native generation"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="wb-kicker">Scanner Family</dt>
+                                <dd className="mt-1 font-medium">
+                                  {latestRelatedDetection?.scannerFamily ?? detailQuery.data.scannerFamily}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="wb-kicker">Model Version</dt>
+                                <dd className="mt-1 font-medium">
+                                  {latestIocDecisionResult?.modelVersion ?? "Not reported"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="wb-kicker">Scored</dt>
+                                <dd className="mt-1 font-medium">
+                                  {formatTimestamp(latestIocDecision.scoredAtUtc)}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="wb-kicker">Detection View</dt>
+                                <dd className="mt-1 font-medium">
+                                  {latestIocDecisionData?.detectionId ? "Available" : "IOC-only"}
+                                </dd>
+                              </div>
+                              {latestIocDecisionResult?.datasetVersion && latestIocDecisionResult.datasetVersion !== "unknown" ? (
+                                <div>
+                                  <dt className="wb-kicker">Dataset Version</dt>
+                                  <dd className="mt-1 font-medium">
+                                    {latestIocDecisionResult.datasetVersion}
+                                  </dd>
+                                </div>
+                              ) : null}
+                            </dl>
+                          </div>
+                        </div>
+
+                        {latestIocSupportingReasons.length > 0 || latestIocTelemetryReason ? (
+                          <div className="rounded-lg border border-border/70 bg-surface-1/70 p-4">
+                            <p className="wb-kicker">Decision notes</p>
+                            <div className="mt-3 space-y-3">
+                              {latestIocSupportingReasons.length > 0 ? (
+                                <ul className="space-y-2 text-sm text-muted-foreground">
+                                  {latestIocSupportingReasons.map((reason) => (
+                                    <li key={reason} className="flex gap-2">
+                                      <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+                                      <span>{reason}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                              {latestIocTelemetryReason ? (
+                                <details className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
+                                  <summary className="cursor-pointer list-none text-xs font-semibold tracking-tight text-muted-foreground">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span>Technical details</span>
+                                      <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/80">Expand</span>
+                                    </div>
+                                  </summary>
+                                  <div className="mt-3 rounded-md border border-dashed border-border/60 bg-surface-2/35 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                                    <span className="font-medium text-foreground">Scoring note:</span> {latestIocTelemetryReason}
+                                  </div>
+                                </details>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 </section>

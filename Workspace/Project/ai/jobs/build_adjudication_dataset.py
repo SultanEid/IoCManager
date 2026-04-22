@@ -19,12 +19,17 @@ except ModuleNotFoundError:
 
 bootstrap_service_path()
 
-from cti_service.adjudication_dataset_builder import DatasetBuildConfig, build_adjudication_dataset
+from cti_service.adjudication_dataset_builder import (
+    DatasetBuildConfig,
+    build_adjudication_dataset,
+    register_dataset_build,
+)
 
 
 def parse_args() -> argparse.Namespace:
     ai_root = Path(__file__).resolve().parents[1]
     project_root = ai_root.parent
+    artifacts_root = ai_root / "service" / "artifacts"
 
     parser = argparse.ArgumentParser(
         description=(
@@ -37,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixtures-dir", type=Path, default=ai_root / "fixtures")
     parser.add_argument("--imports-root", type=Path, default=project_root)
     parser.add_argument("--output-root", type=Path, default=ai_root / "datasets" / "processed")
+    parser.add_argument("--dataset-registry-path", type=Path, default=artifacts_root / "dataset_registry.json")
     parser.add_argument("--split-train", type=float, default=0.80)
     parser.add_argument("--split-validation", type=float, default=0.10)
     parser.add_argument("--split-test", type=float, default=0.10)
@@ -61,6 +67,14 @@ def main() -> None:
             include_disabled_manifests=args.include_disabled_manifests,
         )
     )
+    registry_result = register_dataset_build(
+        dataset_registry_path=args.dataset_registry_path,
+        dataset_version=args.dataset_version,
+        snapshot_manifest_path=Path(result["snapshotManifestPath"]),
+        source_files=result["snapshotFiles"],
+        notes="Persisted by build_adjudication_dataset job.",
+    )
+    result["registry"] = registry_result
     print(json.dumps(result, indent=2))
 
 

@@ -10,7 +10,7 @@ namespace Backend.Infrastructure.Security;
 
 public sealed class IdentityBootstrapper
 {
-    private static readonly string[] DefaultRoles = { "Analyst", "Lead", "Admin" };
+    private static readonly string[] DefaultRoles = { "IT", "Analyst", "Lead", "Admin", "DEV" };
     private static readonly string[] PermissionCatalog =
     [
         "identity.users.read",
@@ -167,8 +167,6 @@ public sealed class IdentityBootstrapper
         {
             ["Analyst"] =
             [
-                "identity.users.read",
-                "identity.roles.read",
                 "infrastructure.networks.manage",
                 "infrastructure.subnets.manage",
                 "infrastructure.target-servers.manage",
@@ -188,9 +186,6 @@ public sealed class IdentityBootstrapper
             ],
             ["Lead"] =
             [
-                "identity.users.read",
-                "identity.roles.read",
-                "identity.permissions.manage",
                 "infrastructure.networks.manage",
                 "infrastructure.subnets.manage",
                 "infrastructure.target-servers.manage",
@@ -207,9 +202,21 @@ public sealed class IdentityBootstrapper
                 "alerts.manage",
                 "reports.manage",
                 "audit.read",
+            ],
+            ["IT"] =
+            [
+                "alerts.manage",
+            ],
+            ["Admin"] =
+            [
+                "identity.users.read",
+                "identity.roles.read",
+                "identity.permissions.manage",
+                "infrastructure.scanners.manage",
+                "audit.read",
                 "retention.manage",
             ],
-            ["Admin"] = PermissionCatalog,
+            ["DEV"] = PermissionCatalog,
         };
 
         var existingRolePermissions = await _dbContext.RolePermissions

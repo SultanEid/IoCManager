@@ -1,11 +1,11 @@
 # Dataset Sources
 
 ## Purpose
-Define the approved source classes, provenance expectations, and evaluation inputs for the adjudication and action-plan subsystem.
+Define the approved source classes, provenance expectations, and evaluation inputs for the decision and action-plan subsystem.
 
 Related documents:
 
-- [AI Adjudication Overview](./ai-adjudication-overview.md)
+- [AI Decision Overview](./ai-adjudication-overview.md)
 - [Verdict Taxonomy](./verdict-taxonomy.md)
 - [Action Plan Policy](./action-plan-policy.md)
 
@@ -14,10 +14,19 @@ Related documents:
 - internal detection telemetry and scanner outputs
 - trusted partner or vendor feeds with documented reliability
 - analyst-reviewed incident artifacts with traceable references
-- backend adjudication feedback, overrides, and closures when the event history is explicit and attributable
+- backend decision feedback, overrides, and closures when the event history is explicit and attributable
+
+Current manual external staging support:
+- MalwareBazaar via `malwarebazaar_feed_parser_v1`
+- YARAify via `yaraify_feed_parser_v1`
+- ThreatFox via `threatfox_feed_parser_v1`
+- URLhaus via `urlhaus_feed_parser_v1`
+
+Deferred until parser support exists:
+- VX-Underground
 
 ## Provenance Requirements
-Every adjudication dataset row and runtime decision should preserve:
+Every decision dataset row and runtime decision should preserve:
 
 - source identity
 - collection or observation timestamp
@@ -43,7 +52,7 @@ Minimum provenance fields for decision output:
 ## Evaluation Pipeline Inputs
 The offline evaluation pipeline currently draws from:
 
-- adjudication datasets built by `ai/jobs/build_adjudication_dataset.py`
+- decision datasets built by the dataset builder job in `ai/jobs`
 - scored snapshots used by `ai/jobs/evaluate_model.py`
 - canonical JSONL or dataset inputs consumed by `ai/jobs/run_evaluation_harness.py`
 
@@ -55,10 +64,15 @@ Evaluation artifacts should retain:
 - slice configuration
 - threshold configuration
 
+For decision scoring on built datasets, export scored rows from canonical JSONL with:
+
+- `ai/jobs/export_scored_decision_rows.py`
+
 ## Change Control
 - document any new source class before using it in runtime or dataset generation
 - re-run evaluation when source distributions or labeling rules change
-- update this document together with the adjudication overview and action-plan policy docs
+- update this document together with the decision overview and action-plan policy docs
+- keep external-feed staging manual and local until connector and provenance controls are approved
 
 ## Exclusions
 - do not treat raw LLM narration as an authoritative evidence source

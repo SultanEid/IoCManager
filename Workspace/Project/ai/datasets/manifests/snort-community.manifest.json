@@ -1,0 +1,31 @@
+{
+  "source_name": "snort-community",
+  "source_type": "official_rule_repository",
+  "location": {
+    "local_path": "ai/datasets/raw/snort-community/",
+    "remote_reference": {
+      "uri": "https://www.snort.org/downloads/",
+      "format_hint": "tar_gz_ruleset",
+      "retrieval_hint": "official_remote_stage"
+    }
+  },
+  "access_notes": [
+    "Stage only the public Snort community rules published by Snort.",
+    "Preserve original rule text, sid, classtype, and archive provenance.",
+    "Do not mix subscriber-only rules into this source."
+  ],
+  "ingestion_mode": "official_remote_stage",
+  "parser_name": "snort_community_rule_parser_v1",
+  "normalization_target": "network_rule_package_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": true
+}

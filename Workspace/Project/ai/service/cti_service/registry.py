@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,7 +35,7 @@ class ModelRegistryEntry(RegistryModel):
     thresholds: dict[str, float] = Field(
         default_factory=lambda: {"recommend": 0.55, "escalate": 0.80, "abstain": 0.35}
     )
-    calibration: dict[str, float] = Field(default_factory=lambda: LogisticCalibrator().to_dict())
+    calibration: dict[str, Any] = Field(default_factory=lambda: LogisticCalibrator().to_dict())
     calibration_metadata: dict[str, str] = Field(default_factory=dict)
     artifact_paths: dict[str, str] = Field(default_factory=dict)
     artifact_hashes: dict[str, str] = Field(default_factory=dict)

@@ -1,5 +1,6 @@
 using Backend.Contracts.V2;
 using Backend.Infrastructure.Configuration;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 
@@ -89,11 +90,14 @@ public sealed class PowerBiVisualizationCatalogService : IPowerBiVisualizationCa
     {
         var workspaceName = string.IsNullOrWhiteSpace(workspace.DisplayName) ? workspace.Key : workspace.DisplayName;
         var title = string.IsNullOrWhiteSpace(report.Title) ? report.Key : report.Title;
+        var workspaceId = workspace.WorkspaceId?.Trim() ?? string.Empty;
+        var reportId = report.ReportId?.Trim() ?? string.Empty;
+        var embedUrl = ResolveEmbedUrl(workspaceId, reportId, report.EmbedUrl);
         var isConfigured =
             embedsEnabled
-            && !string.IsNullOrWhiteSpace(workspace.WorkspaceId)
-            && !string.IsNullOrWhiteSpace(report.ReportId)
-            && !string.IsNullOrWhiteSpace(report.EmbedUrl);
+            && !string.IsNullOrWhiteSpace(workspaceId)
+            && !string.IsNullOrWhiteSpace(reportId)
+            && !string.IsNullOrWhiteSpace(embedUrl);
 
         return new PowerBiVisualizationResponse(
             report.Key,
@@ -101,15 +105,94 @@ public sealed class PowerBiVisualizationCatalogService : IPowerBiVisualizationCa
             report.Description,
             workspace.Key,
             workspaceName,
-            workspace.WorkspaceId,
-            report.ReportId,
-            report.EmbedUrl,
+            workspaceId,
+            reportId,
+            embedUrl,
             isConfigured ? "ready" : "placeholder",
             workspace.RequiresUserSignIn,
             isConfigured,
             report.IsDefault,
             Math.Max(480, report.EmbedHeightPx),
             report.Tags);
+    }
+
+    private static string ResolveEmbedUrl(string workspaceId, string reportId, string? configuredEmbedUrl)
+    {
+        var trimmedConfigured = configuredEmbedUrl?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(reportId))
+        {
+            return trimmedConfigured;
+        }
+
+        if (string.IsNullOrWhiteSpace(trimmedConfigured))
+        {
+            return BuildCanonicalEmbedUrl(workspaceId, reportId);
+        }
+
+        if (!Uri.TryCreate(trimmedConfigured, UriKind.Absolute, out var parsed))
+        {
+            return trimmedConfigured;
+        }
+
+        if (!string.Equals(parsed.Host, "app.powerbi.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmedConfigured;
+        }
+
+        var query = QueryHelpers.ParseQuery(parsed.Query);
+        var hasReportId = HasQueryKey(query, "reportId");
+        var hasGroupId = HasQueryKey(query, "groupId");
+
+        var updated = trimmedConfigured;
+        if (!hasReportId)
+        {
+            updated = QueryHelpers.AddQueryString(updated, "reportId", reportId);
+        }
+
+        if (!hasGroupId)
+        {
+            updated = QueryHelpers.AddQueryString(updated, "groupId", workspaceId);
+        }
+
+        updated = EnsureDefaultPresentationParams(updated);
+        return updated;
+    }
+
+    private static string BuildCanonicalEmbedUrl(string workspaceId, string reportId)
+    {
+        const string basePath = "https://app.powerbi.com/reportEmbed";
+        var withReportId = QueryHelpers.AddQueryString(basePath, "reportId", reportId);
+        var withGroupId = QueryHelpers.AddQueryString(withReportId, "groupId", workspaceId);
+        return EnsureDefaultPresentationParams(withGroupId);
+    }
+
+    private static bool HasQueryKey(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query, string key)
+    {
+        return query.Keys.Any(existing => string.Equals(existing, key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string EnsureDefaultPresentationParams(string url)
+    {
+        var withAutoAuth = EnsureQueryParam(url, "autoAuth", "true");
+        var withFilterHidden = EnsureQueryParam(withAutoAuth, "filterPaneEnabled", "false");
+        var withNavHidden = EnsureQueryParam(withFilterHidden, "navContentPaneEnabled", "false");
+        return EnsureQueryParam(withNavHidden, "pageView", "fitToWidth");
+    }
+
+    private static string EnsureQueryParam(string url, string key, string value)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed))
+        {
+            return url;
+        }
+
+        var query = QueryHelpers.ParseQuery(parsed.Query);
+        if (HasQueryKey(query, key))
+        {
+            return url;
+        }
+
+        return QueryHelpers.AddQueryString(url, key, value);
     }
 
     private static bool IsAuthorized(IEnumerable<string> allowedRoles, ISet<string> callerRoles)

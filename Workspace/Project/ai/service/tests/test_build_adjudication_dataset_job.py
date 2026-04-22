@@ -26,6 +26,7 @@ def test_job_main_creates_expected_artifacts(tmp_path: Path) -> None:
     fixtures_dir = tmp_path / "fixtures"
     imports_dir = tmp_path / "imports" / "feed"
     output_root = tmp_path / "processed"
+    dataset_registry_path = tmp_path / "artifacts" / "dataset_registry.json"
 
     for family in ("yara", "sigma", "snort"):
         (fixtures_dir / family / "scenarios").mkdir(parents=True, exist_ok=True)
@@ -94,6 +95,8 @@ def test_job_main_creates_expected_artifacts(tmp_path: Path) -> None:
         str(tmp_path),
         "--output-root",
         str(output_root),
+        "--dataset-registry-path",
+        str(dataset_registry_path),
     ]
     try:
         module.main()
@@ -103,4 +106,12 @@ def test_job_main_creates_expected_artifacts(tmp_path: Path) -> None:
     dataset_root = output_root / "cli-v1"
     assert (dataset_root / "canonical_rows.jsonl").exists()
     assert (dataset_root / "split_manifest.json").exists()
+    assert (dataset_root / "quality_report.json").exists()
+    assert (dataset_root / "manifest.json").exists()
+    assert (dataset_root / "observables.csv").exists()
+    assert (dataset_root / "detections.csv").exists()
+    assert (dataset_root / "outcomes.csv").exists()
+    assert (dataset_root / "source_trust.csv").exists()
     assert (dataset_root / "training_row_format.md").exists()
+    registry_payload = json.loads(dataset_registry_path.read_text(encoding="utf-8"))
+    assert registry_payload["entries"][0]["dataset_version"] == "cli-v1"

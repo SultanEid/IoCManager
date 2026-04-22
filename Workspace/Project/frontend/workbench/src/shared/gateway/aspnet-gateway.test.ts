@@ -4,9 +4,9 @@ import {
   aiAdjudicationExplanationOrPendingResponseSchema,
   aiAdjudicationResultResponseSchema,
   aiEvidenceSourcesResponseSchema,
+  iocLatestAiDecisionResponseSchema,
   aiOverrideOrClosureResponseSchema,
   aiSimilarDetectionsResponseSchema,
-  archiveRecordResponseSchema,
   detectionDetailResponseSchema,
   discoveryRunResponseSchema,
   healthReadySchema,
@@ -336,6 +336,11 @@ describe("AspNetGateway", () => {
 
     const gateway = new AspNetGateway()
     await gateway.getDetectionDetail("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.getLatestAiDecisionForIoc("17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a")
+    await gateway.generateAiDecisionForIoc("17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a", {
+      submittedByUserId: "lead-1",
+    })
+    await gateway.getLatestAiDecisionForDetection("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
     await gateway.submitAiAdjudication({
       caseId: "case-1",
       detectionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
@@ -360,23 +365,29 @@ describe("AspNetGateway", () => {
 
     expect(mockedRequestJson.mock.calls[0]?.[0]).toBe("/api/v2/scanning/results/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
     expect(mockedRequestJson.mock.calls[0]?.[1]).toBe(detectionDetailResponseSchema)
-    expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/ai/adjudications")
-    expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(submitAiAdjudicationAcceptedResponseSchema)
-    expect(mockedRequestJson.mock.calls[2]?.[1]).toBe(aiAdjudicationResultResponseSchema)
-    expect(mockedRequestJson.mock.calls[3]?.[1]).toBe(aiAdjudicationExplanationOrPendingResponseSchema)
-    expect(mockedRequestJson.mock.calls[4]?.[1]).toBe(aiAdjudicationActionPlanOrPendingResponseSchema)
-    expect(mockedRequestJson.mock.calls[5]?.[0]).toBe(
+    expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/ai/decisions/iocs/17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a/latest")
+    expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(iocLatestAiDecisionResponseSchema)
+    expect(mockedRequestJson.mock.calls[2]?.[0]).toBe("/api/v2/ai/decisions/iocs/17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a/generate")
+    expect(mockedRequestJson.mock.calls[2]?.[1]).toBe(submitAiAdjudicationAcceptedResponseSchema)
+    expect(mockedRequestJson.mock.calls[3]?.[0]).toBe("/api/v2/ai/decisions/detections/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/latest")
+    expect(mockedRequestJson.mock.calls[3]?.[1]).toBe(aiAdjudicationResultResponseSchema)
+    expect(mockedRequestJson.mock.calls[4]?.[0]).toBe("/api/v2/ai/adjudications")
+    expect(mockedRequestJson.mock.calls[4]?.[1]).toBe(submitAiAdjudicationAcceptedResponseSchema)
+    expect(mockedRequestJson.mock.calls[5]?.[1]).toBe(aiAdjudicationResultResponseSchema)
+    expect(mockedRequestJson.mock.calls[6]?.[1]).toBe(aiAdjudicationExplanationOrPendingResponseSchema)
+    expect(mockedRequestJson.mock.calls[7]?.[1]).toBe(aiAdjudicationActionPlanOrPendingResponseSchema)
+    expect(mockedRequestJson.mock.calls[8]?.[0]).toBe(
       "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/evidence-sources?limit=10&cursor=abc",
     )
-    expect(mockedRequestJson.mock.calls[5]?.[1]).toBe(aiEvidenceSourcesResponseSchema)
-    expect(mockedRequestJson.mock.calls[6]?.[0]).toBe(
+    expect(mockedRequestJson.mock.calls[8]?.[1]).toBe(aiEvidenceSourcesResponseSchema)
+    expect(mockedRequestJson.mock.calls[9]?.[0]).toBe(
       "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/similar-detections?limit=10&cursor=abc",
     )
-    expect(mockedRequestJson.mock.calls[6]?.[1]).toBe(aiSimilarDetectionsResponseSchema)
-    expect(mockedRequestJson.mock.calls[7]?.[0]).toBe(
+    expect(mockedRequestJson.mock.calls[9]?.[1]).toBe(aiSimilarDetectionsResponseSchema)
+    expect(mockedRequestJson.mock.calls[10]?.[0]).toBe(
       "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/override-closure",
     )
-    expect(mockedRequestJson.mock.calls[7]?.[1]).toBe(aiOverrideOrClosureResponseSchema)
+    expect(mockedRequestJson.mock.calls[10]?.[1]).toBe(aiOverrideOrClosureResponseSchema)
   })
 
   it("routes retention and identity admin contracts through typed schemas", async () => {
@@ -506,5 +517,28 @@ describe("AspNetGateway", () => {
     await expect(gateway.listAuditLogs()).rejects.toBe(compatibilityError)
     await expect(gateway.listManagedServers()).rejects.toBe(compatibilityError)
     await expect(gateway.listDetections()).rejects.toBe(compatibilityError)
+  })
+
+  it("does not hide compatibility failures on admin and infrastructure reads", async () => {
+    const compatibilityError = new ApiError(
+      "Compatibility failure",
+      500,
+      null,
+      { detail: "Invalid object name 'dbo.role_permissions'" },
+    )
+    mockedRequestJson.mockRejectedValue(compatibilityError)
+
+    const gateway = new AspNetGateway()
+
+    await expect(gateway.listJobRuns()).rejects.toBe(compatibilityError)
+    await expect(gateway.listUsers()).rejects.toBe(compatibilityError)
+    await expect(gateway.listRoles()).rejects.toBe(compatibilityError)
+    await expect(gateway.listPermissions()).rejects.toBe(compatibilityError)
+    await expect(gateway.listRolePermissions()).rejects.toBe(compatibilityError)
+    await expect(gateway.listRetentionPolicies()).rejects.toBe(compatibilityError)
+    await expect(gateway.listSubnets()).rejects.toBe(compatibilityError)
+    await expect(gateway.listTargetServers()).rejects.toBe(compatibilityError)
+    await expect(gateway.listTargetGroups()).rejects.toBe(compatibilityError)
+    await expect(gateway.listScanners()).rejects.toBe(compatibilityError)
   })
 })

@@ -5,6 +5,8 @@ namespace Backend.Application.Abstractions.Services;
 public interface IAiAdjudicationService
 {
     Task<SubmitAdjudicationAcceptedDto> SubmitAsync(SubmitAdjudicationRequestDto request, CancellationToken cancellationToken);
+    Task<IocLatestDecisionDto?> GetLatestResultByIocAsync(Guid iocId, CancellationToken cancellationToken);
+    Task<AdjudicationResultDto?> GetLatestResultByDetectionAsync(Guid detectionId, CancellationToken cancellationToken);
     Task<AdjudicationResultDto?> GetResultAsync(Guid adjudicationId, CancellationToken cancellationToken);
     Task<ExplanationDetailDto?> GetExplanationAsync(Guid adjudicationId, CancellationToken cancellationToken);
     Task<RecommendedActionPlanDto?> GetActionPlanAsync(Guid adjudicationId, CancellationToken cancellationToken);

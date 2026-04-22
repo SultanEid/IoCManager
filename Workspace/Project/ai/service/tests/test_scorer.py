@@ -199,3 +199,320 @@ def test_graph_signal_is_context_only_for_score_diagnostics() -> None:
     )
     assert high_graph.blast_radius_score == low_graph.blast_radius_score
     assert high_graph.feature_groups["graph_signal"] > low_graph.feature_groups["graph_signal"]
+
+
+def test_high_confidence_threatfox_row_moves_out_of_abstain() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="threatfox-strong",
+            as_of_time=fixed_now,
+            source_system="threatfox",
+            ioc_type="domain",
+            ioc_value="api-winupdate.example",
+            host_context={"criticality": 0.6, "assetExposure": 0.4},
+            rule_context={
+                "severityScore": 0.8,
+                "scannerAgreement": 0.72,
+                "sourceTrust": 0.72,
+                "externalSourceSignal": 0.84,
+                "providerConfidence": 0.88,
+                "indicatorStrength": 0.72,
+                "enrichmentStrength": 0.84,
+                "activitySignal": 0.70,
+                "sightingsCount": 4,
+                "sightingsDistinctSources": 2,
+            },
+        )
+    )
+
+    assert scored.decision_state != "abstain"
+    assert scored.maliciousness_score >= 0.55
+
+
+def test_online_urlhaus_row_is_not_treated_as_generic_low_context() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="urlhaus-online",
+            as_of_time=fixed_now,
+            source_system="urlhaus",
+            ioc_type="url",
+            ioc_value="https://bad.example/dropper.exe",
+            host_context={"criticality": 0.5, "assetExposure": 0.5},
+            rule_context={
+                "severityScore": 0.78,
+                "scannerAgreement": 0.65,
+                "sourceTrust": 0.72,
+                "externalSourceSignal": 0.82,
+                "providerConfidence": 0.88,
+                "indicatorStrength": 0.82,
+                "enrichmentStrength": 0.78,
+                "activitySignal": 0.90,
+                "sightingsCount": 3,
+                "sightingsDistinctSources": 2,
+            },
+        )
+    )
+
+    assert scored.decision_state != "abstain"
+    assert scored.maliciousness_score >= 0.55
+
+
+def test_medium_trust_reviewed_internal_signal_moves_out_of_abstain() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="reviewed-medium-trust-positive",
+            as_of_time=fixed_now,
+            source_system="siem",
+            ioc_type="domain",
+            ioc_value="relay-check.example.internal",
+            host_context={"criticality": 0.55, "assetExposure": 0.40},
+            rule_context={
+                "sourceName": "internal-reviewed-telemetry",
+                "severityScore": 0.62,
+                "scannerAgreement": 0.66,
+                "sourceTrust": 0.71,
+                "externalSourceSignal": 0.60,
+                "providerConfidence": 0.66,
+                "indicatorStrength": 0.58,
+                "enrichmentStrength": 0.54,
+                "activitySignal": 0.46,
+                "sightingsCount": 2,
+                "sightingsDistinctSources": 1,
+                "sourceThreatSignal": 0.60,
+            },
+        )
+    )
+
+    assert scored.decision_state != "abstain"
+    assert scored.maliciousness_score >= 0.5
+
+
+def test_medium_trust_reviewed_internal_benign_signal_stays_conservative() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="reviewed-medium-trust-benign",
+            as_of_time=fixed_now,
+            source_system="siem",
+            ioc_type="domain",
+            ioc_value="approved-helpdesk.internal",
+            host_context={"criticality": 0.40, "assetExposure": 0.25},
+            rule_context={
+                "sourceName": "internal-reviewed-telemetry",
+                "severityScore": 0.28,
+                "scannerAgreement": 0.58,
+                "sourceTrust": 0.71,
+                "externalSourceSignal": 0.34,
+                "providerConfidence": 0.34,
+                "indicatorStrength": 0.48,
+                "enrichmentStrength": 0.52,
+                "activitySignal": 0.42,
+                "sightingsCount": 4,
+                "sightingsDistinctSources": 1,
+                "benignContext": 0.76,
+                "heuristicNoise": 0.20,
+            },
+        )
+    )
+
+    assert scored.maliciousness_score < 0.55
+
+
+def test_low_confidence_external_row_can_still_abstain() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="external-weak",
+            as_of_time=fixed_now,
+            source_system="urlhaus",
+            ioc_type="url",
+            ioc_value="https://example.org/landing",
+            host_context={"criticality": 0.3, "assetExposure": 0.2},
+            rule_context={
+                "severityScore": 0.38,
+                "scannerAgreement": 0.35,
+                "sourceTrust": 0.30,
+                "externalSourceSignal": 0.20,
+                "providerConfidence": 0.18,
+                "indicatorStrength": 0.42,
+                "enrichmentStrength": 0.15,
+                "activitySignal": 0.20,
+                "benignContext": 0.20,
+                "heuristicNoise": 0.45,
+            },
+        )
+    )
+
+    assert scored.decision_state == "abstain"
+
+
+def test_known_good_and_heuristic_pressure_prevent_external_false_positive_promotion() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="malwarebazaar-false-positive",
+            as_of_time=fixed_now,
+            source_system="malwarebazaar",
+            ioc_type="hash_sha256",
+            ioc_value="a" * 64,
+            host_context={"criticality": 0.4, "assetExposure": 0.2},
+            rule_context={
+                "severityScore": 0.52,
+                "scannerAgreement": 0.55,
+                "sourceTrust": 0.72,
+                "externalSourceSignal": 0.56,
+                "providerConfidence": 0.58,
+                "indicatorStrength": 0.88,
+                "enrichmentStrength": 0.60,
+                "activitySignal": 0.50,
+                "benignContext": 0.15,
+                "heuristicNoise": 0.85,
+                "sightingsCount": 2,
+            },
+        )
+    )
+
+    assert scored.maliciousness_score < 0.55
+
+
+def test_sigmahq_official_rule_row_moves_into_positive_state() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="sigmahq-official",
+            as_of_time=fixed_now,
+            source_system="siem",
+            ioc_type="domain",
+            ioc_value="cobalt-control.example",
+            host_context={"criticality": 0.8, "assetExposure": 0.6},
+            rule_context={
+                "severityScore": 0.86,
+                "scannerAgreement": 0.80,
+                "sourceTrust": 0.86,
+                "sourceName": "sigmahq",
+                "providerConfidence": 0.86,
+                "indicatorStrength": 0.66,
+                "enrichmentStrength": 0.74,
+                "activitySignal": 0.48,
+                "externalSourceSignal": 0.76,
+                "sourceThreatSignal": 0.82,
+                "sightingsCount": 3,
+                "sightingsDistinctSources": 2,
+            },
+        )
+    )
+
+    assert scored.decision_state in {"recommend", "escalate"}
+    assert scored.maliciousness_score >= 0.55
+
+
+def test_official_network_rule_source_is_not_treated_as_generic_medium_trust() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="suricata-official",
+            as_of_time=fixed_now,
+            source_system="suricata",
+            ioc_type="ip",
+            ioc_value="203.0.113.80",
+            host_context={"criticality": 0.7, "assetExposure": 0.5},
+            rule_context={
+                "severityScore": 0.86,
+                "scannerAgreement": 0.82,
+                "sourceTrust": 0.84,
+                "sourceName": "et-open-suricata",
+                "providerConfidence": 0.88,
+                "indicatorStrength": 0.78,
+                "enrichmentStrength": 0.70,
+                "activitySignal": 0.62,
+                "externalSourceSignal": 0.82,
+                "sourceThreatSignal": 0.84,
+                "sightingsCount": 2,
+                "sightingsDistinctSources": 1,
+            },
+        )
+    )
+
+    assert scored.decision_state in {"recommend", "escalate", "defer"}
+    assert scored.maliciousness_score >= 0.50
+
+
+def test_internal_allowlist_row_stays_non_positive_despite_high_trust() -> None:
+    fixed_now = datetime(2026, 4, 22, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    scored = scorer.score_case(
+        ScoreCaseRequest(
+            case_id="allowlist-known-good",
+            as_of_time=fixed_now,
+            source_system="siem",
+            ioc_type="domain",
+            ioc_value="agent-control.example.internal",
+            host_context={"criticality": 0.4, "assetExposure": 0.2},
+            rule_context={
+                "severityScore": 0.22,
+                "scannerAgreement": 0.60,
+                "sourceTrust": 0.94,
+                "sourceName": "internal-allowlists",
+                "providerConfidence": 0.93,
+                "indicatorStrength": 0.58,
+                "enrichmentStrength": 0.76,
+                "activitySignal": 0.50,
+                "externalSourceSignal": 0.32,
+                "benignContext": 0.92,
+                "heuristicNoise": 0.05,
+                "sourceThreatSignal": 0.02,
+                "sightingsCount": 4,
+                "sightingsDistinctSources": 2,
+            },
+        )
+    )
+
+    assert scored.decision_state in {"abstain", "defer"}
+    assert scored.maliciousness_score < 0.45

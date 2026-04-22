@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
-import { canAccessAdminActions, roleLabel, roleLabels } from "@/shared/auth/session"
+import { canAccessAdminActions, canAccessWorkflowSettingsActions, roleLabel, roleLabels } from "@/shared/auth/session"
 import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
@@ -52,6 +52,7 @@ function InlineFailure({ title, error }: { title: string; error: unknown }) {
 export default function SettingsPage() {
   const { session } = useAuth()
   const canAdmin = canAccessAdminActions(session)
+  const canWorkflowSettings = canAccessWorkflowSettingsActions(session)
   const actorUserId = session?.userId ?? session?.username ?? ""
 
   const [overviewMessage, setOverviewMessage] = useState<string | null>(null)
@@ -84,11 +85,12 @@ export default function SettingsPage() {
   const rolesQuery = useWorkbenchQuery(["settings", "roles"], (signal) => gateway.listRoles(signal), { enabled: canAdmin })
   const permissionsQuery = useWorkbenchQuery(["settings", "permissions"], (signal) => gateway.listPermissions(signal), { enabled: canAdmin })
   const rolePermissionsQuery = useWorkbenchQuery(["settings", "role-permissions"], (signal) => gateway.listRolePermissions(undefined, signal), { enabled: canAdmin })
-  const scannersQuery = useWorkbenchQuery(["settings", "scanners"], (signal) => gateway.listScanners(signal), { enabled: canAdmin })
+  const scannersQuery = useWorkbenchQuery(["settings", "scanners"], (signal) => gateway.listScanners(signal), { enabled: canWorkflowSettings })
 
   const retentionPolicies = retentionPoliciesQuery.data ?? []
   const archiveRecords = archiveRecordsQuery.data ?? []
   const roles = rolesQuery.data ?? []
+  const users = usersQuery.data ?? []
   const permissions = permissionsQuery.data ?? []
   const rolePermissions = rolePermissionsQuery.data ?? []
   const scanners = scannersQuery.data ?? []
@@ -687,33 +689,45 @@ export default function SettingsPage() {
 
                 <div className="grid gap-4 xl:grid-cols-3">
                   <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                    <p className="text-xs font-semibold tracking-tight">Users</p>
-                    <div className="mt-3 space-y-2">
-                      {(usersQuery.data ?? []).length === 0 ? (
-                        <CompactEmptyState label="No users were returned by the backend." />
-                      ) : (
-                        (usersQuery.data ?? []).map((user) => (
-                          <div key={user.id} className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2 text-xs">
-                            <p className="font-medium">{user.displayName || user.userName}</p>
-                            <p className="mt-1 text-muted-foreground">{user.userName}{user.email ? ` | ${user.email}` : ""}</p>
-                            <p className="mt-1 text-muted-foreground">Role: {roleLabel(user.role)}</p>
-                          </div>
-                        ))
-                      )}
+                    <p className="text-xs font-semibold tracking-tight">Access Summary</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Current identity inventory and assignment coverage.</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2">
+                        <p className="wb-kicker">Users</p>
+                        <p className="mt-1 text-sm font-semibold">{users.length}</p>
+                      </div>
+                      <div className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2">
+                        <p className="wb-kicker">Roles</p>
+                        <p className="mt-1 text-sm font-semibold">{roles.length}</p>
+                      </div>
+                      <div className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2">
+                        <p className="wb-kicker">Permissions</p>
+                        <p className="mt-1 text-sm font-semibold">{permissions.length}</p>
+                      </div>
+                      <div className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2">
+                        <p className="wb-kicker">Role Assignments</p>
+                        <p className="mt-1 text-sm font-semibold">{rolePermissions.length}</p>
+                      </div>
                     </div>
                   </div>
+                </div>
 
+                <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
                   <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                    <p className="text-xs font-semibold tracking-tight">Roles and Permissions</p>
+                    <p className="text-xs font-semibold tracking-tight">Role Access Matrix</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Focused view of each role and its effective permission keys.</p>
                     <div className="mt-3 space-y-2">
                       {groupedRolePermissions.map(({ role, assignments }) => (
                         <div key={role.id} className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2 text-xs">
-                          <p className="font-medium">{roleLabel(role.name)}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium">{roleLabel(role.name)}</p>
+                            <StatusPill label={`${assignments.length} permission${assignments.length === 1 ? "" : "s"}`} />
+                          </div>
                           {assignments.length === 0 ? (
                             <p className="mt-1 text-muted-foreground">No permissions assigned.</p>
                           ) : (
                             <div className="mt-2 flex flex-wrap gap-1.5">
-                              {assignments.map((assignment) => {
+                              {assignments.slice(0, 8).map((assignment) => {
                                 const permission = permissions.find((item) => item.id === assignment.permissionId)
                                 return (
                                   <span key={`${assignment.roleId}:${assignment.permissionId}`} className="rounded-full border border-border/70 bg-surface-2/65 px-2 py-1 text-[11px] text-muted-foreground">
@@ -721,6 +735,11 @@ export default function SettingsPage() {
                                   </span>
                                 )
                               })}
+                              {assignments.length > 8 ? (
+                                <span className="rounded-full border border-border/70 bg-surface-2/65 px-2 py-1 text-[11px] text-muted-foreground">
+                                  +{assignments.length - 8} more
+                                </span>
+                              ) : null}
                             </div>
                           )}
                         </div>
@@ -728,114 +747,146 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                    <p className="text-xs font-semibold tracking-tight">Permissions</p>
-                    <div className="mt-3 space-y-2">
-                      {permissions.length === 0 ? (
-                        <CompactEmptyState label="No permissions are currently available." />
-                      ) : (
-                        permissions.map((permission) => (
-                          <div key={permission.id} className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2 text-xs">
-                            <p className="font-medium">{permission.key}</p>
-                            <p className="mt-1 text-muted-foreground">{permission.description}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                  <div className="space-y-3">
+                    <details className="rounded-lg border border-border/70 bg-surface-2/65 p-3" open>
+                      <summary className="cursor-pointer list-none text-xs font-semibold tracking-tight">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Users Directory</span>
+                          <StatusPill label={`${users.length} users`} />
+                        </div>
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        {users.length === 0 ? (
+                          <CompactEmptyState label="No users were returned by the backend." />
+                        ) : (
+                          users.map((user) => (
+                            <div key={user.id} className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2 text-xs">
+                              <p className="font-medium">{user.displayName || user.userName}</p>
+                              <p className="mt-1 text-muted-foreground">{user.userName}</p>
+                              <p className="mt-1 text-muted-foreground">Role: {roleLabel(user.role)}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </details>
+
+                    <details className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+                      <summary className="cursor-pointer list-none text-xs font-semibold tracking-tight">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Permission Catalog</span>
+                          <StatusPill label={`${permissions.length} keys`} />
+                        </div>
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        {permissions.length === 0 ? (
+                          <CompactEmptyState label="No permissions are currently available." />
+                        ) : (
+                          permissions.map((permission) => (
+                            <div key={permission.id} className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2 text-xs">
+                              <p className="font-medium">{permission.key}</p>
+                              <p className="mt-1 text-muted-foreground">{permission.description}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </details>
                   </div>
                 </div>
               </>
             )}
           </motion.article>
 
-          <motion.article className="wb-panel space-y-4" variants={panelMotion}>
-            <div>
-              <h3 className="text-sm font-semibold tracking-tight">Scanners</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Register scanners and maintain the capability set each scanner advertises to the platform.</p>
-            </div>
+        </>
+      ) : null}
 
-            {scannersQuery.isLoading ? (
-              <p className="text-xs text-muted-foreground">Loading scanners...</p>
-            ) : scannersQuery.isError ? (
-              <InlineFailure title="Scanner settings unavailable" error={scannersQuery.error} />
-            ) : (
-              <>
-                <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-                  <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                    <p className="text-xs font-semibold tracking-tight">Create Scanner</p>
-                    <div className="mt-3 grid gap-2 md:grid-cols-3">
-                      <Input value={newScanner.name} onChange={(event) => setNewScanner((current) => ({ ...current, name: event.target.value }))} placeholder="Scanner name" />
-                      <select value={newScanner.engineType} onChange={(event) => setNewScanner((current) => ({ ...current, engineType: event.target.value, capabilities: [event.target.value] }))} className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm">
-                        {SCANNER_ENGINES.map((engine) => <option key={engine} value={engine}>{engine}</option>)}
-                      </select>
-                      <Input value={newScanner.version} onChange={(event) => setNewScanner((current) => ({ ...current, version: event.target.value }))} placeholder="Version" />
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {SCANNER_CAPABILITIES.map((capability) => {
-                        const selected = newScanner.capabilities.includes(capability)
-                        return (
-                          <button key={capability} type="button" onClick={() => setNewScanner((current) => ({ ...current, capabilities: toggleCapabilities(current.capabilities, capability) }))} className={`rounded-full border px-2 py-1 text-[11px] ${selected ? "border-primary/45 bg-primary/12 text-foreground" : "border-border/70 bg-surface-1/85 text-muted-foreground"}`}>
-                            {capability}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <div className="mt-3"><Button size="sm" onClick={createScanner} disabled={busyAction === "create-scanner"}>{busyAction === "create-scanner" ? "Creating..." : "Create Scanner"}</Button></div>
-                  </div>
+      {canWorkflowSettings ? (
+        <motion.article className="wb-panel space-y-4" variants={panelMotion}>
+          <div>
+            <h3 className="text-sm font-semibold tracking-tight">Scanners</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Register scanners and maintain the capability set each scanner advertises to the platform.</p>
+          </div>
 
-                  <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                    <p className="text-xs font-semibold tracking-tight">Update Capabilities</p>
-                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
-                      <select value={selectedScannerId} onChange={(event) => setSelectedScannerId(event.target.value)} className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm">
-                        <option value="">Select scanner</option>
-                        {scanners.map((scanner) => <option key={scanner.id} value={scanner.id}>{scanner.name}</option>)}
-                      </select>
-                      <Button size="sm" variant="outline" onClick={saveScannerCapabilities} disabled={busyAction === "update-scanner-capabilities"}>{busyAction === "update-scanner-capabilities" ? "Saving..." : "Save"}</Button>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {SCANNER_CAPABILITIES.map((capability) => {
-                        const selected = scannerCapabilitiesDraft.includes(capability)
-                        return (
-                          <button key={capability} type="button" onClick={() => setScannerCapabilitiesDraft((current) => toggleCapabilities(current, capability))} className={`rounded-full border px-2 py-1 text-[11px] ${selected ? "border-primary/45 bg-primary/12 text-foreground" : "border-border/70 bg-surface-1/85 text-muted-foreground"}`}>
-                            {capability}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {selectedScanner ? <p className="mt-3 text-xs text-muted-foreground">Current scanner: {selectedScanner.name} | {selectedScanner.engineType} | {formatTimestamp(selectedScanner.lastHeartbeatUtc)}</p> : null}
-                    {scannerMessage ? <p className="mt-2 text-xs text-muted-foreground">{scannerMessage}</p> : null}
+          {scannersQuery.isLoading ? (
+            <p className="text-xs text-muted-foreground">Loading scanners...</p>
+          ) : scannersQuery.isError ? (
+            <InlineFailure title="Scanner settings unavailable" error={scannersQuery.error} />
+          ) : (
+            <>
+              <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+                <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+                  <p className="text-xs font-semibold tracking-tight">Create Scanner</p>
+                  <div className="mt-3 grid gap-2 md:grid-cols-3">
+                    <Input value={newScanner.name} onChange={(event) => setNewScanner((current) => ({ ...current, name: event.target.value }))} placeholder="Scanner name" />
+                    <select value={newScanner.engineType} onChange={(event) => setNewScanner((current) => ({ ...current, engineType: event.target.value, capabilities: [event.target.value] }))} className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm">
+                      {SCANNER_ENGINES.map((engine) => <option key={engine} value={engine}>{engine}</option>)}
+                    </select>
+                    <Input value={newScanner.version} onChange={(event) => setNewScanner((current) => ({ ...current, version: event.target.value }))} placeholder="Version" />
                   </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {SCANNER_CAPABILITIES.map((capability) => {
+                      const selected = newScanner.capabilities.includes(capability)
+                      return (
+                        <button key={capability} type="button" onClick={() => setNewScanner((current) => ({ ...current, capabilities: toggleCapabilities(current.capabilities, capability) }))} className={`rounded-full border px-2 py-1 text-[11px] ${selected ? "border-primary/45 bg-primary/12 text-foreground" : "border-border/70 bg-surface-1/85 text-muted-foreground"}`}>
+                          {capability}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-3"><Button size="sm" onClick={createScanner} disabled={busyAction === "create-scanner"}>{busyAction === "create-scanner" ? "Creating..." : "Create Scanner"}</Button></div>
                 </div>
 
                 <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-                  <p className="text-xs font-semibold tracking-tight">Registered Scanners</p>
-                  <div className="mt-3 space-y-2">
-                    {scanners.length === 0 ? (
-                      <CompactEmptyState label="No scanners are registered." />
-                    ) : (
-                      scanners.map((scanner) => (
-                        <div key={scanner.id} className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2 text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <p className="font-medium">{scanner.name}</p>
-                              <p className="mt-1 text-muted-foreground">{scanner.engineType} | v{scanner.version} | {formatTimestamp(scanner.lastHeartbeatUtc)}</p>
-                            </div>
-                            <StatusPill label={scanner.healthStatus} />
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {scanner.capabilities.map((capability) => (
-                              <span key={`${scanner.id}:${capability}`} className="rounded-full border border-border/70 bg-surface-2/65 px-2 py-1 text-[11px] text-muted-foreground">{capability}</span>
-                            ))}
-                          </div>
-                        </div>
-                      ))
-                    )}
+                  <p className="text-xs font-semibold tracking-tight">Update Capabilities</p>
+                  <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
+                    <select value={selectedScannerId} onChange={(event) => setSelectedScannerId(event.target.value)} className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm">
+                      <option value="">Select scanner</option>
+                      {scanners.map((scanner) => <option key={scanner.id} value={scanner.id}>{scanner.name}</option>)}
+                    </select>
+                    <Button size="sm" variant="outline" onClick={saveScannerCapabilities} disabled={busyAction === "update-scanner-capabilities"}>{busyAction === "update-scanner-capabilities" ? "Saving..." : "Save"}</Button>
                   </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {SCANNER_CAPABILITIES.map((capability) => {
+                      const selected = scannerCapabilitiesDraft.includes(capability)
+                      return (
+                        <button key={capability} type="button" onClick={() => setScannerCapabilitiesDraft((current) => toggleCapabilities(current, capability))} className={`rounded-full border px-2 py-1 text-[11px] ${selected ? "border-primary/45 bg-primary/12 text-foreground" : "border-border/70 bg-surface-1/85 text-muted-foreground"}`}>
+                          {capability}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {selectedScanner ? <p className="mt-3 text-xs text-muted-foreground">Current scanner: {selectedScanner.name} | {selectedScanner.engineType} | {formatTimestamp(selectedScanner.lastHeartbeatUtc)}</p> : null}
+                  {scannerMessage ? <p className="mt-2 text-xs text-muted-foreground">{scannerMessage}</p> : null}
                 </div>
-              </>
-            )}
-          </motion.article>
-        </>
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+                <p className="text-xs font-semibold tracking-tight">Registered Scanners</p>
+                <div className="mt-3 space-y-2">
+                  {scanners.length === 0 ? (
+                    <CompactEmptyState label="No scanners are registered." />
+                  ) : (
+                    scanners.map((scanner) => (
+                      <div key={scanner.id} className="rounded-lg border border-border/70 bg-surface-1/85 px-3 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="font-medium">{scanner.name}</p>
+                            <p className="mt-1 text-muted-foreground">{scanner.engineType} | v{scanner.version} | {formatTimestamp(scanner.lastHeartbeatUtc)}</p>
+                          </div>
+                          <StatusPill label={scanner.healthStatus} />
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {scanner.capabilities.map((capability) => (
+                            <span key={`${scanner.id}:${capability}`} className="rounded-full border border-border/70 bg-surface-2/65 px-2 py-1 text-[11px] text-muted-foreground">{capability}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </motion.article>
       ) : null}
     </motion.section>
   )

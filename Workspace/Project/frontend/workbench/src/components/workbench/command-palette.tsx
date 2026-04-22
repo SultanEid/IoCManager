@@ -15,7 +15,9 @@ import {
   CommandShortcut,
 } from "@/components/ui/command"
 import { QUEUE_FOCUS_ITEMS } from "@/components/workbench/nav"
-import { WORKBENCH_ROUTES } from "@/components/workbench/workbench-route-meta"
+import { resolveWorkbenchRoute, WORKBENCH_ROUTES } from "@/components/workbench/workbench-route-meta"
+import { canAccessCanonicalRoute } from "@/shared/auth/role-access"
+import type { UserRole } from "@/shared/auth/session"
 import { gateway } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 
@@ -24,12 +26,16 @@ const alertIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]
 type WorkbenchCommandPaletteProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  roles: readonly UserRole[]
 }
 
-export function WorkbenchCommandPalette({ open, onOpenChange }: WorkbenchCommandPaletteProps) {
+export function WorkbenchCommandPalette({ open, onOpenChange, roles }: WorkbenchCommandPaletteProps) {
   const router = useRouter()
   const [query, setQuery] = useState("")
-  const alertsQuery = useWorkbenchQuery(["shell", "command-palette", "alerts"], (signal) => gateway.listAlerts(signal))
+  const canOpenAlerts = canAccessCanonicalRoute(roles, "/alerts")
+  const alertsQuery = useWorkbenchQuery(["shell", "command-palette", "alerts"], (signal) => gateway.listAlerts(signal), {
+    enabled: canOpenAlerts,
+  })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -55,13 +61,26 @@ export function WorkbenchCommandPalette({ open, onOpenChange }: WorkbenchCommand
   const routeItems = useMemo(() => {
     const search = normalizedQuery.toLowerCase()
     return WORKBENCH_ROUTES.filter((item) => {
+      if (!canAccessCanonicalRoute(roles, item.href)) {
+        return false
+      }
+
       if (!search) {
         return true
       }
 
       return [item.label, ...item.commandAliases, ...item.aliases].some((token) => token.toLowerCase().includes(search))
     })
-  }, [normalizedQuery])
+  }, [normalizedQuery, roles])
+
+  const queueItems = useMemo(
+    () =>
+      QUEUE_FOCUS_ITEMS.filter((item) => {
+        const canonicalPath = resolveWorkbenchRoute(item.href).canonicalPath
+        return canAccessCanonicalRoute(roles, canonicalPath)
+      }),
+    [roles],
+  )
 
   const alertItems = useMemo(() => {
     if (!alertsQuery.data || normalizedQuery.length === 0) {
@@ -125,21 +144,24 @@ export function WorkbenchCommandPalette({ open, onOpenChange }: WorkbenchCommand
             ))}
           </CommandGroup>
 
-          <CommandSeparator />
+          {queueItems.length > 0 ? (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading="Queue Focus">
+                {queueItems.map((item) => (
+                  <CommandItem key={item.key} onSelect={() => navigate(item.href)}>
+                    <Filter className="h-4 w-4" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm">{item.label}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </>
+          ) : null}
 
-          <CommandGroup heading="Queue Focus">
-            {QUEUE_FOCUS_ITEMS.map((item) => (
-              <CommandItem key={item.key} onSelect={() => navigate(item.href)}>
-                <Filter className="h-4 w-4" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm">{item.label}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
-                </div>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-
-          {alertItems.length > 0 ? (
+          {canOpenAlerts && alertItems.length > 0 ? (
             <>
               <CommandSeparator />
               <CommandGroup heading="Alerts">
@@ -158,7 +180,7 @@ export function WorkbenchCommandPalette({ open, onOpenChange }: WorkbenchCommand
             </>
           ) : null}
 
-          {commandLabel ? (
+          {canOpenAlerts && commandLabel ? (
             <>
               <CommandSeparator />
               <CommandGroup heading="Open Alert">
@@ -173,7 +195,7 @@ export function WorkbenchCommandPalette({ open, onOpenChange }: WorkbenchCommand
             </>
           ) : null}
 
-          {normalizedQuery.length > 0 ? (
+          {canOpenAlerts && normalizedQuery.length > 0 ? (
             <>
               <CommandSeparator />
               <CommandGroup heading="Search Queue">

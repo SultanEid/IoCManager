@@ -41,7 +41,7 @@ function getPaletteInput() {
 describe("WorkbenchCommandPalette", () => {
   it("matches route search terms", async () => {
     const user = userEvent.setup()
-    render(<WorkbenchCommandPalette open onOpenChange={() => undefined} />)
+    render(<WorkbenchCommandPalette open onOpenChange={() => undefined} roles={["Analyst"]} />)
 
     await user.type(getPaletteInput(), "alerts")
 
@@ -51,7 +51,7 @@ describe("WorkbenchCommandPalette", () => {
   it("opens matching alert results", async () => {
     const user = userEvent.setup()
     push.mockReset()
-    render(<WorkbenchCommandPalette open onOpenChange={() => undefined} />)
+    render(<WorkbenchCommandPalette open onOpenChange={() => undefined} roles={["Analyst"]} />)
 
     await user.type(getPaletteInput(), "command and control")
 
@@ -62,7 +62,7 @@ describe("WorkbenchCommandPalette", () => {
   it("supports free-text fallback to queue search", async () => {
     const user = userEvent.setup()
     push.mockReset()
-    render(<WorkbenchCommandPalette open onOpenChange={() => undefined} />)
+    render(<WorkbenchCommandPalette open onOpenChange={() => undefined} roles={["Analyst"]} />)
 
     await user.type(getPaletteInput(), "dns beacon")
 

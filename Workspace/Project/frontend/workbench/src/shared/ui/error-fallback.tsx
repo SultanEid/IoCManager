@@ -23,7 +23,7 @@ export function ClassifiedFailureState({
         title="Dependency down"
         description={
           failure.isContractMismatch
-            ? "This surface is not mapped to the current backend shape yet. An empty or reduced view is expected until that module is integrated."
+            ? "This section is temporarily unavailable because the backend response does not match the expected contract."
             : "A required backend dependency is currently unavailable."
         }
       />

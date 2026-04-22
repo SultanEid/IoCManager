@@ -60,7 +60,11 @@ def main() -> None:
     )
     train_raw = [raw_scorer.raw_score(example.request) for example in train_examples]
     train_labels = [example.label for example in train_examples]
-    calibrator = train_logistic_calibrator(train_raw, train_labels)
+    train_weights = [
+        _calibration_sample_weight(example=example, raw_score=score)
+        for example, score in zip(train_examples, train_raw)
+    ]
+    calibrator = train_logistic_calibrator(train_raw, train_labels, sample_weights=train_weights)
 
     val_scores = [calibrator.calibrate(raw_scorer.raw_score(example.request)) for example in val_examples]
     val_labels = [example.label for example in val_examples]
@@ -174,6 +178,37 @@ def _fit_thresholds(scores: list[float], labels: list[int], target_recall: float
     escalate = float(np.clip(recommend + 0.18, recommend, 0.99))
     abstain = float(np.clip(recommend - 0.20, 0.05, recommend))
     return {"recommend": recommend, "escalate": escalate, "abstain": abstain}
+
+
+def _calibration_sample_weight(*, example, raw_score: float) -> float:
+    source_system = str(example.request.source_system or "").strip().lower()
+    rule_family = str(example.request.rule_context.get("ruleFamily", "") or "").strip().lower()
+    severity_score = _coerce_float(example.request.rule_context.get("severityScore"), default=0.5)
+
+    weight = 1.0
+    if source_system in {"siem", "sigma", "snort", "suricata", "yara"} or rule_family in {
+        "sigma",
+        "snort",
+        "suricata",
+        "yara",
+    }:
+        weight += 0.30
+    if 0.25 <= raw_score <= 0.75:
+        weight += 0.60
+    if 0.35 <= raw_score <= 0.65:
+        weight += 0.70
+    if 0.55 <= example.source_trust <= 0.80:
+        weight += 0.30
+    if 0.50 <= severity_score <= 0.80:
+        weight += 0.15
+    return float(round(weight, 6))
+
+
+def _coerce_float(value: object, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _sha256_file(path: Path) -> str:

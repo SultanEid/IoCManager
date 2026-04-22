@@ -648,13 +648,26 @@ def test_end_to_end_build_writes_canonical_task_split_and_report_files(tmp_path:
 
     canonical_path = Path(result["canonicalPath"])
     split_manifest_path = Path(result["splitManifestPath"])
+    quality_report_path = Path(result["qualityReportPath"])
+    snapshot_manifest_path = Path(result["snapshotManifestPath"])
     row_format_path = Path(result["trainingRowFormatPath"])
     assert canonical_path.exists()
     assert split_manifest_path.exists()
+    assert quality_report_path.exists()
+    assert snapshot_manifest_path.exists()
     assert row_format_path.exists()
+    assert (output_root / "integration-v1" / "observables.csv").exists()
+    assert (output_root / "integration-v1" / "detections.csv").exists()
+    assert (output_root / "integration-v1" / "outcomes.csv").exists()
+    assert (output_root / "integration-v1" / "source_trust.csv").exists()
 
     split_manifest = _read_json(split_manifest_path)
+    quality_report = _read_json(quality_report_path)
+    snapshot_manifest = _read_json(snapshot_manifest_path)
     assert split_manifest["rows"]["canonical"] > 0
+    assert "activeUseEligibility" in quality_report
+    assert snapshot_manifest["datasetVersion"] == "integration-v1"
+    assert snapshot_manifest["files"]["observables"] == "observables.csv"
     for task_name, task_report in split_manifest["tasks"].items():
         assert "splitRowCounts" in task_report
         assert task_report["leakageAssertions"]["passed"] is True

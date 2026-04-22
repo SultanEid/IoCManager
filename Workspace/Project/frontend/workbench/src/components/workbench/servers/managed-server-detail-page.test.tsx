@@ -134,10 +134,10 @@ describe("ManagedServerDetailPage", () => {
     vi.clearAllMocks()
   })
 
-  it("deep-links recent detections into adjudication detail", () => {
+  it("deep-links recent detections into decision detail", () => {
     render(<ManagedServerDetailPage serverId="85c86630-4876-4f03-bc30-1ec5f77d2d22" />)
 
-    const link = screen.getByText("Open adjudication").closest("a")
+    const link = screen.getByText("Open decision").closest("a")
     expect(link).not.toBeNull()
     expect(link).toHaveAttribute("href", "/scans/95fef7ff-c894-4d2d-9f95-b6de6e68b2e0")
   })

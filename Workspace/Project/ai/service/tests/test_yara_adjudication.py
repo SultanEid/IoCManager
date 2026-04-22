@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 
 import pytest
 
@@ -219,6 +221,11 @@ def _stale_or_revoked_package() -> dict[str, object]:
     return payload
 
 
+def _load_yara_fixture(name: str) -> dict[str, object]:
+    path = Path(__file__).resolve().parents[2] / "fixtures" / "yara" / "scenarios" / name
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_yara_adjudication_is_deterministic_for_identical_input() -> None:
     package = _malicious_package()
     first = adjudicate_yara(detection_package=package)
@@ -309,8 +316,8 @@ def test_yara_history_support_does_not_override_lexical_only_abstain_gate() -> N
     [
         (_benign_package, "benign"),
         (_likely_benign_package, "likely_benign"),
-        (_suspicious_package, "suspicious"),
-        (_likely_malicious_package, "likely_malicious"),
+        (_suspicious_package, "likely_malicious"),
+        (_likely_malicious_package, "malicious"),
         (_malicious_package, "malicious"),
         (_false_positive_package, "false_positive"),
         (_insufficient_evidence_package, "insufficient_evidence"),
@@ -368,3 +375,29 @@ def test_yara_explanation_discloses_lexical_signals_as_heuristic_context() -> No
     result = adjudicate_yara(detection_package=_malicious_package())
 
     assert any("Lexical indicators remained heuristic-only context" in line for line in result.explanation_lines)
+
+
+def test_yara_asset_context_strengthens_positive_signal() -> None:
+    with_asset = _likely_malicious_package()
+    with_asset["asset_context"] = {"asset_id": "asset-critical-1", "criticality": "critical"}
+    without_asset = deepcopy(with_asset)
+    without_asset.pop("asset_context", None)
+
+    without_result = adjudicate_yara(detection_package=without_asset)
+    with_result = adjudicate_yara(detection_package=with_asset)
+
+    assert without_result.interpretable_features["critical_asset_signal"] == 0.0
+    assert with_result.interpretable_features["critical_asset_signal"] == 1.0
+    assert with_result.bucket_scores.positive_score > without_result.bucket_scores.positive_score
+
+
+def test_yara_false_positive_fixture_stays_separate_from_benign() -> None:
+    result = adjudicate_yara(detection_package=_load_yara_fixture("yara-false_positive.example.json"))
+
+    assert result.verdict == "false_positive"
+
+
+def test_yara_malicious_fixture_promotes_to_malicious_when_high_confidence_stack_exists() -> None:
+    result = adjudicate_yara(detection_package=_load_yara_fixture("yara-malicious.example.json"))
+
+    assert result.verdict == "malicious"

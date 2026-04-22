@@ -1,4 +1,5 @@
 using Backend.Domain.AiAdjudication;
+using Backend.Domain.IocManager;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -12,6 +13,7 @@ public sealed class AiAdjudicationRequestConfiguration : IEntityTypeConfiguratio
         builder.HasKey(x => x.Id);
         builder.Property(x => x.CaseId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.DetectionId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.DetectionRecordId);
         builder.Property(x => x.IocType).HasMaxLength(64).IsRequired();
         builder.Property(x => x.IocValue).HasMaxLength(1024).IsRequired();
         builder.Property(x => x.DetectionPackageJson).HasColumnType("nvarchar(max)").IsRequired();
@@ -26,8 +28,15 @@ public sealed class AiAdjudicationRequestConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.UpdatedByUserId).HasMaxLength(128).IsRequired();
         builder.Property<byte[]>("RowVersion").IsRowVersion().IsConcurrencyToken();
 
+        builder.HasOne<ScanResult>()
+            .WithMany()
+            .HasForeignKey(x => x.DetectionRecordId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(x => new { x.Status, x.SubmittedAtUtc });
         builder.HasIndex(x => x.CaseId);
+        builder.HasIndex(x => new { x.DetectionRecordId, x.SubmittedAtUtc });
+        builder.HasIndex(x => new { x.DetectionId, x.SubmittedAtUtc });
         builder.HasIndex(x => x.CompletedAtUtc);
         builder.HasIndex(x => x.NextAttemptAtUtc);
     }

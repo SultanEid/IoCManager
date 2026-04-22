@@ -1,10 +1,12 @@
 ﻿from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 
 Diagnostic = dict[str, str]
@@ -141,6 +143,10 @@ class SourceAdapterResult:
 
 
 SourceAdapter = Callable[[dict[str, Any], dict[str, Any]], SourceAdapterResult]
+
+
+def _clip01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 def adapt_source_record(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
@@ -791,8 +797,20 @@ def internal_allowlist_parser_v1(payload: dict[str, Any], source_file: dict[str,
             )
         )
 
+    verdict, confidence, false_positive_risk = _derive_allowlist_target(package_payload=package_payload)
+    target_payload_patch = {
+        "adjudication": {
+            "verdict": verdict,
+            "confidence": confidence,
+            "false_positive_risk": false_positive_risk,
+            "derived_from": "internal_allowlist_parser_v1",
+            "explanation": "Approved enterprise allowlist context marks this activity as expected unless contradictory evidence appears.",
+        }
+    }
+
     return SourceAdapterResult(
         package_payload=package_payload,
+        target_payload_patch=target_payload_patch,
         provenance_items=[
             _build_adapter_provenance(
                 source="internal_allowlist",
@@ -876,8 +894,20 @@ def clean_baseline_profile_parser_v1(payload: dict[str, Any], source_file: dict[
             )
         )
 
+    verdict, confidence, false_positive_risk = _derive_clean_baseline_target(package_payload=package_payload)
+    target_payload_patch = {
+        "adjudication": {
+            "verdict": verdict,
+            "confidence": confidence,
+            "false_positive_risk": false_positive_risk,
+            "derived_from": "clean_baseline_profile_parser_v1",
+            "explanation": "Known-clean baseline prevalence and asset context indicate routine expected behavior for this row.",
+        }
+    }
+
     return SourceAdapterResult(
         package_payload=package_payload,
+        target_payload_patch=target_payload_patch,
         provenance_items=[
             _build_adapter_provenance(
                 source="clean_baseline",
@@ -895,6 +925,153 @@ def clean_baseline_profile_parser_v1(payload: dict[str, Any], source_file: dict[
             payload.get("timestamp"),
             payload.get("updated_at"),
             payload.get("created_at"),
+            _nested_get(payload, "time_prevalence_context.hit_time"),
+        ),
+    )
+
+
+def internal_reviewed_telemetry_parser_v1(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
+    diagnostics: list[Diagnostic] = []
+    family = (_normalize_string(payload.get("rule_family")) or "sigma").lower()
+    source_system = _normalize_string(payload.get("source_system")) or ("siem" if family == "sigma" else family)
+
+    if family in {"snort", "suricata"}:
+        package_payload = _build_snort_detection_package(
+            payload=payload,
+            adapter="internal_reviewed_telemetry_parser_v1",
+            diagnostics=diagnostics,
+            source_default="internal_reviewed_telemetry",
+            source_system_default="suricata" if family == "suricata" else "snort",
+            prefer_alert_shape=False,
+            require_rule_fields=False,
+        )
+        package_payload["rule_family"] = family
+        rule_metadata = _coerce_dict(package_payload.get("rule_metadata"))
+        rule_metadata["source"] = "internal_reviewed_telemetry"
+        package_payload["rule_metadata"] = rule_metadata
+        object_metadata = _coerce_dict(package_payload.get("object_metadata"))
+        object_metadata["source_system"] = source_system
+        package_payload["object_metadata"] = object_metadata
+    else:
+        package_payload = _build_sigma_detection_package(
+            payload=payload,
+            adapter="internal_reviewed_telemetry_parser_v1",
+            diagnostics=diagnostics,
+            source_default="internal_reviewed_telemetry",
+            source_system_default=source_system,
+            prefer_alert_shape=False,
+            require_sigma_fields=False,
+        )
+
+    verdict = _normalize_string(
+        _first_non_empty(
+            payload.get("review_outcome"),
+            _nested_get(payload, "review.outcome"),
+            _nested_get(payload, "target.verdict"),
+        )
+    )
+    allowed_verdicts = {
+        "benign",
+        "likely_benign",
+        "suspicious",
+        "likely_malicious",
+        "malicious",
+        "false_positive",
+        "insufficient_evidence",
+        "stale_or_revoked",
+    }
+    if verdict not in allowed_verdicts:
+        diagnostics.append(
+            _diagnostic(
+                adapter="internal_reviewed_telemetry_parser_v1",
+                code="internal_reviewed_telemetry.review_outcome.invalid",
+                severity="warning",
+                message="Reviewed telemetry row is missing a valid review outcome; defaulting to insufficient evidence.",
+                field_path="review_outcome",
+            )
+        )
+        verdict = "insufficient_evidence"
+
+    confidence = _float_or_none(
+        _first_non_empty(
+            payload.get("review_confidence"),
+            _nested_get(payload, "review.confidence"),
+        )
+    )
+    false_positive_risk = _float_or_none(
+        _first_non_empty(
+            payload.get("false_positive_risk"),
+            _nested_get(payload, "review.false_positive_risk"),
+        )
+    )
+    default_confidence = {
+        "malicious": 0.84,
+        "likely_malicious": 0.74,
+        "suspicious": 0.63,
+        "false_positive": 0.28,
+        "likely_benign": 0.24,
+        "benign": 0.18,
+        "stale_or_revoked": 0.22,
+        "insufficient_evidence": 0.42,
+    }
+    default_false_positive_risk = {
+        "malicious": 0.14,
+        "likely_malicious": 0.22,
+        "suspicious": 0.34,
+        "false_positive": 0.78,
+        "likely_benign": 0.60,
+        "benign": 0.72,
+        "stale_or_revoked": 0.64,
+        "insufficient_evidence": 0.48,
+    }
+    confidence = _clip01(confidence if confidence is not None else default_confidence[verdict])
+    false_positive_risk = _clip01(
+        false_positive_risk if false_positive_risk is not None else default_false_positive_risk[verdict]
+    )
+
+    review_summary = _first_non_empty(payload.get("review_summary"), payload.get("title")) or "Reviewed internal telemetry row."
+    target_payload_patch = {
+        "adjudication": {
+            "verdict": verdict,
+            "confidence": confidence,
+            "false_positive_risk": false_positive_risk,
+            "derived_from": "internal_reviewed_telemetry_parser_v1",
+            "explanation": f"{review_summary} Internal review kept this row in the medium-confidence telemetry queue.",
+        }
+    }
+
+    evidence_id = _first_non_empty(
+        _nested_get(package_payload, "object_metadata.object_id"),
+        payload.get("record_id"),
+        payload.get("id"),
+    ) or "internal-reviewed-telemetry"
+    return SourceAdapterResult(
+        package_payload=package_payload,
+        target_payload_patch=target_payload_patch,
+        evidence_used_patch=[
+            {
+                "evidence_id": str(evidence_id),
+                "source": "internal_reviewed_telemetry",
+                "summary": review_summary,
+            }
+        ],
+        provenance_items=[
+            _build_adapter_provenance(
+                source="internal_reviewed_telemetry",
+                key="record_id",
+                value=_first_non_empty(payload.get("record_id"), payload.get("id")) or "unknown",
+                adapter="internal_reviewed_telemetry_parser_v1",
+                source_file=source_file,
+                evidence_id=str(evidence_id),
+                citation_ref=_first_non_empty(payload.get("review_ticket"), payload.get("reference")),
+            )
+        ],
+        raw_payload=_safe_copy_payload(payload),
+        parser_diagnostics=diagnostics,
+        event_time_hint=_first_non_empty(
+            payload.get("event_time_utc"),
+            payload.get("event_time"),
+            payload.get("timestamp"),
             _nested_get(payload, "time_prevalence_context.hit_time"),
         ),
     )
@@ -1170,6 +1347,355 @@ def malwarebazaar_feed_parser_v1(payload: dict[str, Any], source_file: dict[str,
     )
 
 
+def threatfox_feed_parser_v1(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
+    del source_file
+    diagnostics: list[Diagnostic] = []
+    indicator_value = _first_non_empty(
+        payload.get("ioc"),
+        payload.get("ioc_value"),
+        payload.get("indicator"),
+        payload.get("indicator_value"),
+        payload.get("observable"),
+    )
+    indicator_type = (
+        _first_non_empty(
+            payload.get("ioc_type"),
+            payload.get("indicator_type"),
+            payload.get("type"),
+        )
+        or "indicator"
+    )
+    threat_type = _first_non_empty(payload.get("threat_type"), payload.get("threat_type_desc")) or "malware_ioc"
+    malware_family = _first_non_empty(
+        payload.get("malware"),
+        payload.get("malware_printable"),
+        payload.get("malware_alias"),
+    )
+    confidence_level = _int_or_none(payload.get("confidence_level"))
+    first_seen = _first_non_empty(
+        payload.get("first_seen_utc"),
+        payload.get("first_seen"),
+        payload.get("date_added"),
+    )
+    last_seen = _first_non_empty(payload.get("last_seen_utc"), payload.get("last_seen"))
+    record_id = _first_non_empty(payload.get("id"), payload.get("ioc_id"), indicator_value) or "threatfox-unknown"
+    tags = _coerce_list_of_strings(payload.get("tags"))
+    references = _coerce_list_of_strings(payload.get("references")) or _coerce_list_of_strings(payload.get("reference"))
+
+    if not indicator_value:
+        diagnostics.append(
+            _diagnostic(
+                adapter="threatfox_feed_parser_v1",
+                code="threatfox.ioc.missing",
+                severity="warning",
+                message="ThreatFox row is missing an IOC value.",
+                field_path="ioc",
+            )
+        )
+
+    normalized_indicator_type = str(indicator_type).strip().lower().replace("-", "_")
+    object_type = _threatfox_object_type(normalized_indicator_type)
+    title = malware_family or threat_type.replace("_", " ")
+    full_rule_text = (
+        f"ThreatFox IOC {normalized_indicator_type} observed as {threat_type}."
+        + (f" Malware family: {malware_family}." if malware_family else "")
+    )
+    raw_hit_payload: dict[str, Any] = {
+        "event_id": f"threatfox-{record_id}",
+        "ioc": indicator_value,
+        "ioc_type": normalized_indicator_type,
+        "threat_type": threat_type,
+        "threat_type_desc": payload.get("threat_type_desc"),
+        "malware": malware_family,
+        "confidence_level": confidence_level,
+        "reporter": payload.get("reporter"),
+        "tlp": payload.get("tlp"),
+        "tags": tags,
+        "references": references,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+    }
+    if normalized_indicator_type == "ip" and indicator_value:
+        raw_hit_payload["dst_ip"] = indicator_value
+    elif normalized_indicator_type == "domain" and indicator_value:
+        raw_hit_payload["domain"] = indicator_value
+    elif normalized_indicator_type == "url" and indicator_value:
+        raw_hit_payload["url"] = indicator_value
+
+    package_payload: dict[str, Any] = {
+        "rule_family": "sigma",
+        "full_rule_text": full_rule_text,
+        "rule_metadata": {
+            "source": "threatfox",
+            "rule_id": f"THREATFOX-{record_id}",
+            "title": f"ThreatFox {title}".strip(),
+            "id": f"threatfox-{record_id}",
+            "status": "stable",
+            "level": "high" if (confidence_level or 0) >= 75 else "medium",
+            "description": payload.get("threat_type_desc") or threat_type.replace("_", " "),
+            "author": payload.get("reporter"),
+            "tags": tags,
+            "logsource": {
+                "category": "threat_intel",
+                "product": "threatfox",
+            },
+        },
+        "raw_hit_payload": _remove_none_values(raw_hit_payload),
+        "object_metadata": {
+            "object_id": str(indicator_value or record_id),
+            "object_type": object_type,
+            "source_system": "threatfox",
+            "labels": ["source:threatfox"],
+            "custom_attributes": _remove_none_values(
+                {
+                    "ioc_type": normalized_indicator_type,
+                    "malware_family": malware_family,
+                    "confidence_level": confidence_level,
+                    "references": references,
+                }
+            ),
+        },
+        "linked_enrichment": {
+            "enrichments": [
+                {
+                    "kind": "threat_intel",
+                    "source": "threatfox",
+                    "value": _remove_none_values(
+                        {
+                            "threat_type": threat_type,
+                            "threat_type_desc": payload.get("threat_type_desc"),
+                            "malware_family": malware_family,
+                            "confidence_level": confidence_level,
+                            "tags": tags,
+                            "reporter": payload.get("reporter"),
+                        }
+                    ),
+                }
+            ]
+        },
+    }
+
+    verdict, confidence, false_positive_risk = _derive_threatfox_target(
+        indicator_type=normalized_indicator_type,
+        threat_type=threat_type,
+        malware_family=malware_family,
+        confidence_level=confidence_level,
+    )
+    target_payload_patch = {
+        "adjudication": {
+            "verdict": verdict,
+            "confidence": confidence,
+            "false_positive_risk": false_positive_risk,
+            "derived_from": "threatfox_feed_parser_v1",
+            "explanation": (
+                f"ThreatFox labeled this {normalized_indicator_type} as {threat_type.replace('_', ' ')}"
+                + (f" for malware family {malware_family}" if malware_family else "")
+                + "."
+            ),
+        }
+    }
+    evidence_used_patch = [
+        {
+            "evidence_id": str(record_id),
+            "source": "threatfox",
+            "summary": (
+                f"ThreatFox reported {indicator_value or 'indicator'} as {threat_type.replace('_', ' ')}"
+                + (f" with confidence {confidence_level}" if confidence_level is not None else "")
+                + "."
+            ),
+        }
+    ]
+
+    return SourceAdapterResult(
+        package_payload=package_payload,
+        target_payload_patch=target_payload_patch,
+        evidence_used_patch=evidence_used_patch,
+        provenance_items=[
+            _build_adapter_provenance(
+                source="threatfox",
+                key="ioc_id",
+                value=str(record_id),
+                adapter="threatfox_feed_parser_v1",
+                source_file={"record_locator": _normalize_string(payload.get("record_locator")) or str(record_id)},
+                evidence_id=_normalize_string(indicator_value),
+                citation_ref=references[0] if references else None,
+            )
+        ],
+        raw_payload=_safe_copy_payload(payload),
+        parser_diagnostics=diagnostics,
+        event_time_hint=first_seen or last_seen,
+    )
+
+
+def urlhaus_feed_parser_v1(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
+    del source_file
+    diagnostics: list[Diagnostic] = []
+    url_value = _first_non_empty(payload.get("url"), payload.get("uri"), payload.get("indicator"))
+    record_id = _first_non_empty(payload.get("id"), payload.get("url_id"), url_value) or "urlhaus-unknown"
+    url_status = (_first_non_empty(payload.get("url_status"), payload.get("status")) or "unknown").strip().lower()
+    threat = (_first_non_empty(payload.get("threat"), payload.get("threat_type")) or "malware_download").strip().lower()
+    host = _first_non_empty(payload.get("host"), payload.get("host_name"), payload.get("domain"))
+    reporter = _first_non_empty(payload.get("reporter"), payload.get("submitter"))
+    date_added = _first_non_empty(payload.get("dateadded"), payload.get("date_added"), payload.get("firstseen"))
+    last_online = _first_non_empty(payload.get("last_online"), payload.get("lastseen"))
+    tags = _coerce_list_of_strings(payload.get("tags"))
+    payloads = _coerce_list_of_dicts(payload.get("payloads"))
+
+    if not url_value:
+        diagnostics.append(
+            _diagnostic(
+                adapter="urlhaus_feed_parser_v1",
+                code="urlhaus.url.missing",
+                severity="warning",
+                message="URLhaus row is missing a URL.",
+                field_path="url",
+            )
+        )
+
+    parsed = urlparse(url_value or "")
+    scheme = (parsed.scheme or "http").lower()
+    hostname = parsed.hostname or host
+    message = f"URLhaus malware url {url_value or record_id}"
+    payload_hashes = [
+        value
+        for item in payloads
+        for value in (
+            _normalize_string(item.get("sha256_hash")),
+            _normalize_string(item.get("sha256")),
+        )
+        if value
+    ]
+    sid = _int_or_none(record_id)
+    if sid is None and url_value:
+        sid = int(hashlib.sha256(url_value.encode("utf-8")).hexdigest()[:8], 16)
+
+    raw_hit_payload: dict[str, Any] = {
+        "event_id": f"urlhaus-{record_id}",
+        "message": message,
+        "url": url_value,
+        "domain": hostname,
+        "host": host or hostname,
+        "url_status": url_status,
+        "threat": threat,
+        "tags": tags,
+        "reporter": reporter,
+        "payloads": payloads,
+        "last_online": last_online,
+        "date_added": date_added,
+    }
+    if hostname and re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", hostname):
+        raw_hit_payload["dst_ip"] = hostname
+    network = {
+        "request_url": url_value,
+        "domain": hostname,
+        "protocol": scheme,
+        "timing": {
+            "observed_at": date_added or last_online,
+        },
+    }
+    raw_hit_payload["network"] = _remove_none_values(network)
+
+    package_payload: dict[str, Any] = {
+        "rule_family": "snort",
+        "full_rule_text": (
+            f'alert {scheme} any any -> any any (msg:"{message}"; sid:{sid or 1}; rev:1; classtype:trojan-activity;)'
+        ),
+        "rule_metadata": {
+            "source": "urlhaus",
+            "rule_id": f"URLHAUS-{record_id}",
+            "sid": sid,
+            "msg": message,
+            "classification": "trojan-activity",
+            "protocol": scheme,
+            "metadata": _remove_none_values(
+                {
+                    "url_status": url_status,
+                    "threat": threat,
+                    "last_online": last_online,
+                }
+            ),
+        },
+        "raw_hit_payload": _remove_none_values(raw_hit_payload),
+        "object_metadata": {
+            "object_id": str(url_value or record_id),
+            "object_type": "url",
+            "source_system": "urlhaus",
+            "labels": ["source:urlhaus"],
+            "custom_attributes": _remove_none_values(
+                {
+                    "host": host or hostname,
+                    "payload_hashes": payload_hashes,
+                }
+            ),
+        },
+        "linked_enrichment": {
+            "enrichments": [
+                {
+                    "kind": "threat_intel",
+                    "source": "urlhaus",
+                    "value": _remove_none_values(
+                        {
+                            "url_status": url_status,
+                            "threat": threat,
+                            "reporter": reporter,
+                            "tags": tags,
+                            "payload_count": len(payloads),
+                        }
+                    ),
+                }
+            ]
+        },
+    }
+
+    verdict, confidence, false_positive_risk = _derive_urlhaus_target(
+        threat=threat,
+        url_status=url_status,
+        payload_count=len(payloads),
+    )
+    target_payload_patch = {
+        "adjudication": {
+            "verdict": verdict,
+            "confidence": confidence,
+            "false_positive_risk": false_positive_risk,
+            "derived_from": "urlhaus_feed_parser_v1",
+            "explanation": (
+                f"URLhaus reported {url_value or 'url'} with status {url_status} and threat {threat}."
+            ),
+        }
+    }
+    evidence_used_patch = [
+        {
+            "evidence_id": str(record_id),
+            "source": "urlhaus",
+            "summary": (
+                f"URLhaus observed {url_value or 'url'} as {threat.replace('_', ' ')}"
+                + (f" with {len(payloads)} payload sample(s)" if payloads else "")
+                + "."
+            ),
+        }
+    ]
+
+    return SourceAdapterResult(
+        package_payload=package_payload,
+        target_payload_patch=target_payload_patch,
+        evidence_used_patch=evidence_used_patch,
+        provenance_items=[
+            _build_adapter_provenance(
+                source="urlhaus",
+                key="url_id",
+                value=str(record_id),
+                adapter="urlhaus_feed_parser_v1",
+                source_file={"record_locator": _normalize_string(payload.get("record_locator")) or str(record_id)},
+                evidence_id=_normalize_string(url_value),
+                citation_ref=_normalize_string(payload.get("urlhaus_link")) or _normalize_string(payload.get("reference")),
+            )
+        ],
+        raw_payload=_safe_copy_payload(payload),
+        parser_diagnostics=diagnostics,
+        event_time_hint=date_added or last_online,
+    )
+
+
 def internal_yara_hit_json_parser_v1(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
     del source_file
     diagnostics: list[Diagnostic] = []
@@ -1280,6 +1806,125 @@ def internal_yara_hit_json_parser_v1(payload: dict[str, Any], source_file: dict[
     )
 
 
+def sigmahq_rule_parser_v1(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
+    diagnostics: list[Diagnostic] = []
+    package_payload = _build_sigma_detection_package(
+        payload=payload,
+        adapter="sigmahq_rule_parser_v1",
+        diagnostics=diagnostics,
+        source_default="sigmahq",
+        source_system_default="siem",
+        prefer_alert_shape=False,
+        require_sigma_fields=True,
+    )
+
+    verdict, confidence, false_positive_risk = _derive_sigmahq_target(
+        status=_normalize_string(_nested_get(package_payload, "rule_metadata.status")) or "",
+        level=_normalize_string(_nested_get(package_payload, "rule_metadata.level")) or "",
+        tags=_coerce_list_of_strings(_nested_get(package_payload, "rule_metadata.tags")),
+    )
+    rule_id = _first_non_empty(
+        _nested_get(package_payload, "rule_metadata.rule_id"),
+        payload.get("rule_id"),
+        payload.get("id"),
+    ) or "sigmahq-rule"
+    source_url = _first_non_empty(payload.get("source_url"), payload.get("reference"), payload.get("rule_url"))
+    evidence_id = _first_non_empty(_nested_get(package_payload, "object_metadata.object_id"), rule_id)
+    return SourceAdapterResult(
+        package_payload=package_payload,
+        target_payload_patch={
+            "adjudication": {
+                "verdict": verdict,
+                "confidence": confidence,
+                "false_positive_risk": false_positive_risk,
+                "derived_from": "sigmahq_rule_parser_v1",
+                "explanation": f"SigmaHQ rule {rule_id} is treated as {verdict.replace('_', ' ')} based on official rule severity and status.",
+            }
+        },
+        evidence_used_patch=[
+            {
+                "evidence_id": str(rule_id),
+                "source": "sigmahq",
+                "summary": f"Official SigmaHQ rule {rule_id} with level {_normalize_string(_nested_get(package_payload, 'rule_metadata.level')) or 'unknown'}.",
+            }
+        ],
+        provenance_items=[
+            _build_adapter_provenance(
+                source="sigmahq",
+                key="rule_id",
+                value=str(rule_id),
+                adapter="sigmahq_rule_parser_v1",
+                source_file=source_file,
+                evidence_id=str(evidence_id),
+                citation_ref=_normalize_string(source_url),
+            )
+        ],
+        raw_payload=_safe_copy_payload(payload),
+        parser_diagnostics=diagnostics,
+        event_time_hint=_first_non_empty(
+            payload.get("event_time_utc"),
+            payload.get("event_time"),
+            payload.get("timestamp"),
+            payload.get("date"),
+        ),
+    )
+
+
+def snort_community_rule_parser_v1(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
+    diagnostics: list[Diagnostic] = []
+    package_payload = _build_snort_detection_package(
+        payload=payload,
+        adapter="snort_community_rule_parser_v1",
+        diagnostics=diagnostics,
+        source_default="snort_community",
+        source_system_default="snort",
+        prefer_alert_shape=False,
+        require_rule_fields=True,
+    )
+    return _build_official_network_rule_result(
+        payload=payload,
+        source_file=source_file,
+        package_payload=package_payload,
+        diagnostics=diagnostics,
+        adapter="snort_community_rule_parser_v1",
+        source_name="snort_community",
+    )
+
+
+def et_open_suricata_rule_parser_v1(payload: dict[str, Any], source_file: dict[str, Any]) -> SourceAdapterResult:
+    diagnostics: list[Diagnostic] = []
+    package_payload = _build_snort_detection_package(
+        payload=payload,
+        adapter="et_open_suricata_rule_parser_v1",
+        diagnostics=diagnostics,
+        source_default="et_open_suricata",
+        source_system_default="suricata",
+        prefer_alert_shape=False,
+        require_rule_fields=True,
+    )
+    package_payload["rule_family"] = "suricata"
+    rule_metadata = _coerce_dict(package_payload.get("rule_metadata"))
+    if rule_metadata:
+        rule_metadata["source"] = "et_open_suricata"
+        package_payload["rule_metadata"] = rule_metadata
+    object_metadata = _coerce_dict(package_payload.get("object_metadata"))
+    if object_metadata:
+        object_metadata["source_system"] = "suricata"
+        labels = _coerce_list_of_strings(object_metadata.get("labels"))
+        if "source:et_open_suricata" not in labels:
+            labels.append("source:et_open_suricata")
+        object_metadata["labels"] = labels
+        package_payload["object_metadata"] = object_metadata
+    return _build_official_network_rule_result(
+        payload=payload,
+        source_file=source_file,
+        package_payload=package_payload,
+        diagnostics=diagnostics,
+        adapter="et_open_suricata_rule_parser_v1",
+        source_name="et_open_suricata",
+    )
+
+
 ADAPTER_REGISTRY: dict[str, SourceAdapter] = {
     "passthrough_source_adapter_v1": passthrough_source_adapter_v1,
     "behavior_report_bundle_parser_v1": behavior_report_bundle_parser_v1,
@@ -1293,10 +1938,195 @@ ADAPTER_REGISTRY: dict[str, SourceAdapter] = {
     "analyst_closure_parser_v1": analyst_closure_parser_v1,
     "internal_allowlist_parser_v1": internal_allowlist_parser_v1,
     "clean_baseline_profile_parser_v1": clean_baseline_profile_parser_v1,
+    "internal_reviewed_telemetry_parser_v1": internal_reviewed_telemetry_parser_v1,
     "yaraify_feed_parser_v1": yaraify_feed_parser_v1,
     "malwarebazaar_feed_parser_v1": malwarebazaar_feed_parser_v1,
+    "threatfox_feed_parser_v1": threatfox_feed_parser_v1,
+    "urlhaus_feed_parser_v1": urlhaus_feed_parser_v1,
+    "sigmahq_rule_parser_v1": sigmahq_rule_parser_v1,
+    "snort_community_rule_parser_v1": snort_community_rule_parser_v1,
+    "et_open_suricata_rule_parser_v1": et_open_suricata_rule_parser_v1,
     "internal_yara_hit_json_parser_v1": internal_yara_hit_json_parser_v1,
 }
+
+
+def _threatfox_object_type(indicator_type: str) -> str:
+    mapping = {
+        "ip": "ip",
+        "ipv4": "ip",
+        "ipv6": "ip",
+        "domain": "domain",
+        "hostname": "domain",
+        "url": "url",
+        "md5_hash": "hash_md5",
+        "sha1_hash": "hash_sha1",
+        "sha256_hash": "hash_sha256",
+        "sha512_hash": "hash_sha512",
+    }
+    return mapping.get(indicator_type, "indicator")
+
+
+def _derive_threatfox_target(
+    *,
+    indicator_type: str,
+    threat_type: str,
+    malware_family: str | None,
+    confidence_level: int | None,
+) -> tuple[str, float, float]:
+    confidence_signal = min(max((confidence_level or 35) / 100.0, 0.0), 1.0)
+    has_malware_family = bool(malware_family)
+    high_severity_types = {"botnet_cc", "payload_delivery", "malware_download", "payload_url", "c2"}
+    if confidence_signal >= 0.90 and has_malware_family and indicator_type.startswith("sha"):
+        return "malicious", 0.92, 0.08
+    if confidence_signal >= 0.70 or threat_type in high_severity_types:
+        return "likely_malicious", max(confidence_signal, 0.78), min(0.24, 1.0 - max(confidence_signal, 0.78))
+    if confidence_signal >= 0.40 or has_malware_family:
+        return "suspicious", max(confidence_signal, 0.58), 0.35
+    return "insufficient_evidence", 0.34, 0.48
+
+
+def _derive_urlhaus_target(*, threat: str, url_status: str, payload_count: int) -> tuple[str, float, float]:
+    active = url_status in {"online", "active"}
+    if active and payload_count > 0:
+        return "malicious", 0.93, 0.07
+    if active or threat in {"malware_download", "payload_delivery"}:
+        return "likely_malicious", 0.84, 0.16
+    if payload_count > 0:
+        return "suspicious", 0.63, 0.28
+    return "suspicious", 0.57, 0.32
+
+
+def _derive_sigmahq_target(*, status: str, level: str, tags: list[str]) -> tuple[str, float, float]:
+    normalized_status = status.strip().lower()
+    normalized_level = level.strip().lower()
+    normalized_tags = {tag.strip().lower() for tag in tags if isinstance(tag, str)}
+    if normalized_status == "deprecated":
+        return "stale_or_revoked", 0.91, 0.18
+    if normalized_level == "critical":
+        return "malicious", 0.90, 0.10
+    if normalized_level == "high":
+        return "likely_malicious", 0.82, 0.18
+    if normalized_level == "medium":
+        return "suspicious", 0.66, 0.28
+    if any(tag.startswith("attack.") for tag in normalized_tags):
+        return "suspicious", 0.61, 0.30
+    return "insufficient_evidence", 0.42, 0.36
+
+
+def _derive_network_rule_target(*, classification: str, source_name: str) -> tuple[str, float, float]:
+    normalized_classification = classification.strip().lower()
+    malicious_classes = {
+        "trojan-activity",
+        "malware-cnc",
+        "botnet-cnc",
+        "shellcode-detect",
+        "attempted-admin",
+        "web-application-attack",
+    }
+    suspicious_classes = {
+        "misc-attack",
+        "protocol-command-decode",
+        "bad-unknown",
+        "network-scan",
+        "policy-violation",
+        "attempted-recon",
+    }
+    if normalized_classification in malicious_classes:
+        return "likely_malicious", 0.81 if source_name == "et_open_suricata" else 0.78, 0.18
+    if normalized_classification in suspicious_classes:
+        return "suspicious", 0.63, 0.29
+    return "insufficient_evidence", 0.41, 0.37
+
+
+def _derive_allowlist_target(*, package_payload: dict[str, Any]) -> tuple[str, float, float]:
+    context = _coerce_dict(package_payload.get("allowlist_baseline_context"))
+    allowlisted = bool(context.get("allowlisted"))
+    baseline_match = bool(context.get("baseline_match"))
+    if allowlisted and baseline_match:
+        return "benign", 0.94, 0.90
+    if allowlisted or baseline_match:
+        return "likely_benign", 0.83, 0.82
+    return "insufficient_evidence", 0.39, 0.42
+
+
+def _derive_clean_baseline_target(*, package_payload: dict[str, Any]) -> tuple[str, float, float]:
+    allowlist_context = _coerce_dict(package_payload.get("allowlist_baseline_context"))
+    time_context = _coerce_dict(package_payload.get("time_prevalence_context"))
+    trend = _normalize_string(time_context.get("trend")) or ""
+    recency_bucket = _normalize_string(time_context.get("recency_bucket")) or ""
+    hit_count_7d = _int_or_none(time_context.get("hit_count_7d")) or 0
+    stable = trend.lower() in {"stable", "routine"} or recency_bucket.lower() in {"persistent", "recurring"}
+    if stable and hit_count_7d >= 20 and bool(allowlist_context.get("baseline_match")):
+        return "benign", 0.90, 0.86
+    if stable or hit_count_7d >= 10:
+        return "likely_benign", 0.79, 0.78
+    return "insufficient_evidence", 0.38, 0.44
+
+
+def _build_official_network_rule_result(
+    *,
+    payload: dict[str, Any],
+    source_file: dict[str, Any],
+    package_payload: dict[str, Any],
+    diagnostics: list[Diagnostic],
+    adapter: str,
+    source_name: str,
+) -> SourceAdapterResult:
+    rule_id = _first_non_empty(
+        _nested_get(package_payload, "rule_metadata.rule_id"),
+        _nested_get(package_payload, "rule_metadata.sid"),
+        payload.get("rule_id"),
+        payload.get("sid"),
+    ) or f"{source_name}-rule"
+    classification = _normalize_string(_nested_get(package_payload, "rule_metadata.classification")) or ""
+    verdict, confidence, false_positive_risk = _derive_network_rule_target(
+        classification=classification,
+        source_name=source_name,
+    )
+    source_url = _first_non_empty(payload.get("source_url"), payload.get("reference"), payload.get("rule_url"))
+    evidence_id = _first_non_empty(
+        _nested_get(package_payload, "object_metadata.object_id"),
+        _nested_get(package_payload, "rule_metadata.rule_id"),
+        _nested_get(package_payload, "rule_metadata.sid"),
+    )
+    return SourceAdapterResult(
+        package_payload=package_payload,
+        target_payload_patch={
+            "adjudication": {
+                "verdict": verdict,
+                "confidence": confidence,
+                "false_positive_risk": false_positive_risk,
+                "derived_from": adapter,
+                "explanation": f"Official {source_name.replace('_', ' ')} network rule {rule_id} maps to {verdict.replace('_', ' ')} from classtype {classification or 'unknown'}.",
+            }
+        },
+        evidence_used_patch=[
+            {
+                "evidence_id": str(rule_id),
+                "source": source_name,
+                "summary": f"Official {source_name.replace('_', ' ')} rule {rule_id} with classtype {classification or 'unknown'}.",
+            }
+        ],
+        provenance_items=[
+            _build_adapter_provenance(
+                source=source_name,
+                key="rule_id",
+                value=str(rule_id),
+                adapter=adapter,
+                source_file=source_file,
+                evidence_id=str(evidence_id or rule_id),
+                citation_ref=_normalize_string(source_url),
+            )
+        ],
+        raw_payload=_safe_copy_payload(payload),
+        parser_diagnostics=diagnostics,
+        event_time_hint=_first_non_empty(
+            payload.get("event_time_utc"),
+            payload.get("event_time"),
+            payload.get("timestamp"),
+            _nested_get(package_payload, "raw_hit_payload.network.timing.observed_at"),
+        ),
+    )
 
 def _extract_existing_package_payload(payload: dict[str, Any]) -> dict[str, Any]:
     direct = payload.get("package_payload")

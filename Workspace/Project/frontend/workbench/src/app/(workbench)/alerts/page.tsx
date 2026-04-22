@@ -13,7 +13,6 @@ import { classifyUiError } from "@/shared/api/error-classification"
 import type { V2AlertResponse } from "@/shared/api/schemas"
 import { gateway } from "@/shared/gateway"
 import type { AlertListQuery } from "@/shared/gateway/types"
-import { listLegacyTargets } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { DataGrid } from "@/shared/ui/data-grid"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
@@ -137,7 +136,6 @@ export default function AlertsPage() {
         signal,
       ),
   )
-  const targetsQuery = useWorkbenchQuery(["alerts", "targets"], (signal) => listLegacyTargets(undefined, signal))
 
   const applyFilters = () => {
     const next = buildQuery(filters)
@@ -165,16 +163,12 @@ export default function AlertsPage() {
     router.replace(next ? `${pathname}?${next}` : pathname)
   }
 
-  if (alertsQuery.isLoading || targetsQuery.isLoading) {
+  if (alertsQuery.isLoading) {
     return <LoadingState label="Loading alerts" />
   }
 
   if (alertsQuery.isError) {
     return <ClassifiedFailureState failure={classifyUiError(alertsQuery.error)} fallbackTitle="Alerts unavailable" />
-  }
-
-  if (targetsQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(targetsQuery.error)} fallbackTitle="Alerts unavailable" />
   }
 
   const list = alertsQuery.data
@@ -262,18 +256,11 @@ export default function AlertsPage() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-4">
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+          <Input
             value={filters.targetId}
-            onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value, page: 1 }))}
-          >
-            <option value="">All targets</option>
-            {(targetsQuery.data ?? []).map((target) => (
-              <option key={target.id} value={target.id}>
-                {target.displayName ?? target.hostname ?? target.ipAddress} ({target.ipAddress})
-              </option>
-            ))}
-          </select>
+            onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value.trim(), page: 1 }))}
+            placeholder="Target id"
+          />
           <Input
             type="date"
             value={filters.fromUtc}
