@@ -1,15 +1,15 @@
 # Action Plan Policy
 
 ## Purpose
-Define the manual-only response recommendation policy used after adjudication in IoC Manager.
+Define the manual-only response recommendation policy used after a decision in IoC Manager.
 
 Related documents:
 
-- [AI Adjudication Overview](./ai-adjudication-overview.md)
+- [AI Decision Overview](./ai-decision-overview.md)
 - [Verdict Taxonomy](./verdict-taxonomy.md)
 
 ## What The Action Plan Is
-The action plan is a deterministic, policy-constrained recommendation bundle produced after adjudication. It is intended to help operators decide what to do next with a detection.
+The action plan is a deterministic, policy-constrained recommendation bundle produced after a decision. It is intended to help operators decide what to do next with a detection.
 
 It is not an execution plan. It does not apply controls automatically.
 
@@ -160,3 +160,4 @@ These operator outcomes feed historical learning and offline evaluation. The act
 - stronger backend and UI rendering of `machine_readable.selection`
 - finer-grained safety-cap reasoning per action category
 - broader family-specific policy tuning if IoC Manager adds new supported families
+

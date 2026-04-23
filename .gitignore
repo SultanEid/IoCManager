@@ -373,6 +373,8 @@ FodyWeavers.xsd
 /SWEEPNETWORKV2_Results/
 /YARA_Results/
 /Workspace.local-backup-*/
+/AI_Project/
+/.playwright-cli/
 /docs/
 /scripts/
 /snort-validation/
@@ -381,3 +383,21 @@ FodyWeavers.xsd
 /tmp_script_validation/
 /IocManager.Web.sln
 /*.pdf
+
+# Local diagnostics, screenshots, and probe outputs
+/db_schema_*.txt
+/ioc_*.png
+/login_*.png
+/output_ioc_*.png
+/live_ioc_probe_*.json
+/backend_live*.log
+
+# AI local staging and generated evaluation bundles
+/Workspace/Project/ai/datasets/raw/**
+/Workspace/Project/ai/datasets/processed/**
+!/Workspace/Project/ai/datasets/raw/README.md
+!/Workspace/Project/ai/datasets/processed/README.md
+!/Workspace/Project/ai/datasets/processed/.gitkeep
+
+# AI local test scratch space
+/Workspace/Project/ai/service/tests/_tmp_*/

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Api.Controllers.V2;
 
 [ApiController]
-[Authorize(Policy = AuthorizationPolicies.AnalystAccess)]
+[Authorize(Policy = AuthorizationPolicies.AlertAccess)]
 [Route("api/v2/alerts")]
 public sealed class AlertsController : ControllerBase
 {
@@ -195,20 +195,42 @@ public sealed class AlertsController : ControllerBase
 
     [HttpPost("{alertId:guid}/scan-results")]
     [EnableRateLimiting(RateLimitPolicies.Write)]
-    [ProducesResponseType(StatusCodes.Status501NotImplemented)]
-    public IActionResult LinkScanResult(
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> LinkScanResult(
         Guid alertId,
         [FromBody] LinkAlertScanResultRequest request,
         CancellationToken cancellationToken)
     {
-        _ = alertId;
-        _ = request;
-        _ = cancellationToken;
+        var alertExists = await _dbContext.AlertsV2
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == alertId, cancellationToken);
+        if (!alertExists)
+        {
+            return NotFound();
+        }
 
-        return Problem(
-            title: "Manual scan-result linking is unavailable",
-            detail: "Legacy IOC-driven alerts derive related scan runs from linked IOC evidence and do not support direct V2 scan-result links on this surface yet.",
-            statusCode: StatusCodes.Status501NotImplemented);
+        var scanResultExists = await _dbContext.ScanResults
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == request.ScanResultId, cancellationToken);
+        if (!scanResultExists)
+        {
+            return NotFound();
+        }
+
+        var linkExists = await _dbContext.AlertScanResults
+            .AsNoTracking()
+            .AnyAsync(
+                x => x.AlertId == alertId && x.ScanResultId == request.ScanResultId,
+                cancellationToken);
+        if (!linkExists)
+        {
+            _dbContext.AlertScanResults.Add(
+                AlertScanResult.Create(alertId, request.ScanResultId, DateTimeOffset.UtcNow));
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return NoContent();
     }
 
     private async Task<AlertDetailResponse?> BuildAlertDetailAsync(Guid alertId, CancellationToken cancellationToken)

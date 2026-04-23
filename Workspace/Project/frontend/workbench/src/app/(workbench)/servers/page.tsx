@@ -323,8 +323,8 @@ export default function ServersPage() {
           </div>
           <div className="mt-3 flex items-center gap-3">
             <Button onClick={submitNetwork} disabled={submitting}>{submitting ? "Saving..." : "Save Subnet"}</Button>
-            {actionMessage ? <p className="text-sm text-emerald-300">{actionMessage}</p> : null}
-            {actionError ? <p className="text-sm text-rose-300">{actionError}</p> : null}
+            {actionMessage ? <p className="text-sm text-emerald-700 dark:text-emerald-300">{actionMessage}</p> : null}
+            {actionError ? <p className="text-sm text-rose-700 dark:text-rose-300">{actionError}</p> : null}
           </div>
         </div>
 
@@ -364,7 +364,7 @@ export default function ServersPage() {
                   </div>
                 </div>
                 {editingNetworkId === network.id ? (
-                  <div className="mt-4 space-y-3 rounded-xl border border-border/60 bg-black/10 p-3">
+                  <div className="mt-4 space-y-3 rounded-xl border border-border/60 bg-surface-2/45 p-3">
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,0.9fr)_minmax(240px,1fr)_minmax(180px,0.75fr)] 2xl:grid-cols-[minmax(220px,0.9fr)_minmax(240px,1fr)_minmax(180px,0.75fr)_minmax(280px,1fr)_minmax(220px,0.95fr)_minmax(220px,1fr)]">
                       <Input placeholder="Subnet name" value={networkForm.name} onChange={(event) => setNetworkForm((current) => ({ ...current, name: event.target.value }))} />
                       <Input placeholder="CIDR block" value={networkForm.cidrBlock} onChange={(event) => setNetworkForm((current) => ({ ...current, cidrBlock: event.target.value }))} />
@@ -427,10 +427,10 @@ export default function ServersPage() {
                   </>
                 )}
                 {deleteBlocked?.networkId === network.id ? (
-                  <div className="mt-4 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-sm text-rose-100">
+                  <div className="mt-4 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-sm text-rose-800 dark:text-rose-100">
                     <p className="font-medium">{deleteBlocked.title}</p>
-                    <p className="mt-1 text-xs text-rose-100/85">{deleteBlocked.detail}</p>
-                    <ul className="mt-2 space-y-1 text-xs text-rose-100/85">
+                    <p className="mt-1 text-xs text-rose-800/85 dark:text-rose-100/85">{deleteBlocked.detail}</p>
+                    <ul className="mt-2 space-y-1 text-xs text-rose-800/85 dark:text-rose-100/85">
                       {deleteBlocked.blockers.map((blocker) => (
                         <li key={blocker.category}>
                           {blocker.category}: {blocker.count} - {blocker.message}
@@ -438,7 +438,7 @@ export default function ServersPage() {
                       ))}
                     </ul>
                     {confirmingForceDeleteNetworkId === network.id ? (
-                      <div className="mt-3 space-y-2 rounded-lg border border-rose-300/20 bg-black/15 p-3 text-xs text-rose-100/90">
+                      <div className="mt-3 space-y-2 rounded-lg border border-rose-300/20 bg-surface-2/55 p-3 text-xs text-rose-900/90 dark:text-rose-100/90">
                         <p>
                           Force delete will remove this subnet, its target inventory, and dependent plans/jobs. Historical results and reports will remain, but they will be detached from the deleted subnet and targets.
                         </p>
@@ -476,10 +476,10 @@ export default function ServersPage() {
           {selectedNetworkId ? "Showing targets for the selected subnet." : "Showing targets across all subnets."}
         </p>
         {focusedTarget ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-800 dark:text-sky-100">
             <div>
               <p className="font-medium">Focused target</p>
-              <p className="text-xs text-sky-100/85">
+              <p className="text-xs text-sky-800/85 dark:text-sky-100/85">
                 {focusedTarget.displayName ?? focusedTarget.hostname ?? focusedTarget.ipAddress} - {focusedTarget.ipAddress}
               </p>
             </div>
@@ -546,7 +546,7 @@ export default function ServersPage() {
                     <td className="py-3 font-mono text-xs">{target.ipAddress}</td>
                     <td className="py-3">{target.networkName}</td>
                     <td className="py-3">
-                      <span className={`rounded-full px-2 py-1 text-xs ${target.status === "Online" ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-500/15 text-amber-200"}`}>
+                      <span className={`rounded-full px-2 py-1 text-xs ${target.status === "Online" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-200" : "bg-amber-500/15 text-amber-700 dark:text-amber-200"}`}>
                         {target.status}
                       </span>
                     </td>

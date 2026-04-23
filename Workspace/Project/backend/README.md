@@ -69,10 +69,11 @@ Run sidecar locally before report ingestion endpoints:
 ```powershell
 cd ..\ai\service
 pip install -e .[dev]
-uvicorn cti_service.main:app --host 0.0.0.0 --port 8100
+uvicorn decision_service.main:app --host 0.0.0.0 --port 8100
 ```
 
 ## Minimal smoke semantics
 
 - `GET /api/alerts` returning `401` validates routing/pipeline/auth boundary only.
 - It does not validate full business functionality.
+

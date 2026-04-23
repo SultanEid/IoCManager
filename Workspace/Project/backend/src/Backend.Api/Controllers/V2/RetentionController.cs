@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Api.Controllers.V2;
 
 [ApiController]
-[Authorize(Policy = AuthorizationPolicies.AnalystAccess)]
+[Authorize(Policy = AuthorizationPolicies.AdminAccess)]
 [Route("api/v2/retention")]
 public sealed class RetentionController : ControllerBase
 {

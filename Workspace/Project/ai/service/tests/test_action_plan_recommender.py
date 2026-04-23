@@ -4,10 +4,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cti_service import llm_assist_phrasing
-from cti_service.action_policy_matrix import clear_action_policy_matrix_cache
-from cti_service.action_plan_recommender import DISRUPTIVE_ACTIONS, build_action_plan
-from cti_service.contracts import ScoreCaseRequest
+from decision_service import llm_assist_phrasing
+from decision_service.action_policy_matrix import clear_action_policy_matrix_cache
+from decision_service.action_plan_recommender import DISRUPTIVE_ACTIONS, build_action_plan
+from decision_service.contracts import ScoreCaseRequest
 
 
 def _request(
@@ -497,3 +497,4 @@ def test_action_plan_contradiction_cap_blocks_disruptive_actions() -> None:
     assert not any(action in DISRUPTIVE_ACTIONS for action in _actions(plan))
     assert plan.machine_readable.input_snapshot["contradiction_score"] == 0.35
     assert plan.machine_readable.selection["severity_cap_applied"] is True
+

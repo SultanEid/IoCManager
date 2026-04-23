@@ -115,8 +115,8 @@ def test_harness_report_includes_simple_uniform_baseline(tmp_path: Path) -> None
         sys.argv = previous_argv
 
     report = json.loads(output_path.read_text(encoding="utf-8"))
-    assert "uniform" in report["adjudication"]["baselines"]
-    assert "unavailable_metrics" in report["adjudication"]["candidate"]
+    assert "uniform" in report["decision"]["baselines"]
+    assert "unavailable_metrics" in report["decision"]["candidate"]
     assert "bundleFiles" in report
     assert Path(report["bundleFiles"]["summaryMarkdown"]).exists()
     assert Path(report["bundleFiles"]["calibrationJson"]).exists()
@@ -149,7 +149,7 @@ def test_harness_can_evaluate_action_plan_rows(tmp_path: Path) -> None:
                     },
                 },
                 "target_payload": {
-                    "adjudication": {
+                    "decision": {
                         "verdict": "likely_malicious",
                         "confidence": 0.82,
                         "false_positive_risk": 0.18,
@@ -198,3 +198,4 @@ def test_harness_can_evaluate_action_plan_rows(tmp_path: Path) -> None:
     report = json.loads(output_path.read_text(encoding="utf-8"))
     assert report["actionPlan"]["sampleSize"] == 1
     assert "overall" in report["actionPlan"]
+

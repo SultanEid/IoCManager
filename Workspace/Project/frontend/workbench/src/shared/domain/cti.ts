@@ -26,7 +26,7 @@ export type RuleWorkflowLifecycle =
 
 export type PolicyGuardrailStatus = "enforced" | "warning" | "violated"
 
-export type UserPersonaRole = "Analyst" | "Lead" | "Admin"
+export type UserPersonaRole = "IT" | "Analyst" | "Lead" | "Admin" | "DEV"
 
 export type UserPersona = {
   id: string

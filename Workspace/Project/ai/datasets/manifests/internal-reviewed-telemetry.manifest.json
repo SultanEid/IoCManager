@@ -1,0 +1,25 @@
+{
+  "source_name": "internal-reviewed-telemetry",
+  "source_type": "internal_reviewed_telemetry",
+  "location": {
+    "local_path": "ai/datasets/raw/internal-reviewed-telemetry/"
+  },
+  "access_notes": [
+    "Include only reviewed internal telemetry rows with traceable analyst handling or case notes.",
+    "Use this source for medium-trust internal observations that are neither allowlisted nor clean baseline evidence."
+  ],
+  "ingestion_mode": "manual_internal_import",
+  "parser_name": "internal_reviewed_telemetry_parser_v1",
+  "normalization_target": "reviewed_internal_signal_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": true
+}

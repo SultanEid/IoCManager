@@ -421,12 +421,10 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
         var alert = await alertResponse.Content.ReadFromJsonAsync<AlertResponse>(JsonOptions);
         alert.Should().NotBeNull();
 
-        await using (var scope = _factory.Services.CreateAsyncScope())
-        {
-            var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
-            dbContext.AlertScanResults.Add(AlertScanResult.Create(alert!.Id, detection.Id, DateTimeOffset.UtcNow));
-            await dbContext.SaveChangesAsync();
-        }
+        var linkResponse = await leadClient.PostAsJsonAsync(
+            $"/api/v2/alerts/{alert!.Id:D}/scan-results",
+            new LinkAlertScanResultRequest(detection.Id, "lead-1"));
+        linkResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var detail = await leadClient.GetFromJsonAsync<DetectionDetailResponse>(
             $"/api/v2/scanning/results/{detection.Id}",

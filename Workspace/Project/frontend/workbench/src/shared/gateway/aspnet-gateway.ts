@@ -5,10 +5,11 @@ import {
   alertResponseSchema,
   alertListResponseSchema,
   v2AlertDetailResponseSchema,
-  aiAdjudicationActionPlanOrPendingResponseSchema,
-  aiAdjudicationExplanationOrPendingResponseSchema,
-  aiAdjudicationResultResponseSchema,
+  aiDecisionActionPlanOrPendingResponseSchema,
+  aiDecisionExplanationOrPendingResponseSchema,
+  aiDecisionResultResponseSchema,
   aiEvidenceSourcesResponseSchema,
+  iocLatestAiDecisionResponseSchema,
   aiOverrideOrClosureResponseSchema,
   aiSimilarDetectionsResponseSchema,
   alertRuleWorkflowResponseSchema,
@@ -59,7 +60,7 @@ import {
   ruleResponseSchema,
   ruleSimulationResultResponseSchema,
   subnetResponseSchema,
-  submitAiAdjudicationAcceptedResponseSchema,
+  submitAiDecisionAcceptedResponseSchema,
   targetGroupMemberResponseSchema,
   targetGroupResponseSchema,
   targetServerResponseSchema,
@@ -67,10 +68,11 @@ import {
   userResponseSchema,
   type AlertListResponse,
   type AlertResponse,
-  type AiAdjudicationActionPlanOrPendingResponse,
-  type AiAdjudicationExplanationOrPendingResponse,
-  type AiAdjudicationResultResponse,
+  type AiDecisionActionPlanOrPendingResponse,
+  type AiDecisionExplanationOrPendingResponse,
+  type AiDecisionResultResponse,
   type AiEvidenceSourcesResponse,
+  type IocLatestAiDecisionResponse,
   type AiOverrideOrClosureResponse,
   type AiSimilarDetectionsResponse,
   type V2AlertDetailResponse,
@@ -126,12 +128,12 @@ import {
   type TargetGroupResponse,
   type TargetServerResponse,
   type TokenResponse,
-  type SubmitAiAdjudicationAcceptedResponse,
+  type SubmitAiDecisionAcceptedResponse,
   type UserResponse,
 } from "@/shared/api/schemas"
 import type {
   AdvanceRolloutStageInput,
-  AiAdjudicationCursorQuery,
+  AiDecisionCursorQuery,
   AlertListQuery,
   ArchiveRuleInput,
   AuditLogListQuery,
@@ -148,8 +150,8 @@ import type {
   CreateRuleProposalInput,
   DetectionListQuery,
   ExecuteRetentionPolicyInput,
-  SubmitAiAdjudicationInput,
-  SubmitAiAdjudicationOverrideOrClosureInput,
+  SubmitAiDecisionInput,
+  SubmitAiDecisionOverrideOrClosureInput,
   IocListQuery,
   ManagedServerInventoryFilters,
   PromoteDiscoveredHostInput,
@@ -240,23 +242,6 @@ async function withLegacyEmptyFallback<T>(operation: () => Promise<T>, fallback:
   }
 }
 
-function resolvePage(page?: number) {
-  return typeof page === "number" && page > 0 ? page : 1
-}
-
-function resolvePageSize(pageSize?: number, fallback = 20) {
-  return typeof pageSize === "number" && pageSize > 0 ? pageSize : fallback
-}
-
-function emptyPagedItems<T>(page?: number, pageSize?: number) {
-  return {
-    items: [] as T[],
-    totalCount: 0,
-    page: resolvePage(page),
-    pageSize: resolvePageSize(pageSize),
-  }
-}
-
 export class AspNetGateway {
   async login(username: string, password: string): Promise<TokenResponse> {
     return requestJson("/api/auth/token", tokenResponseSchema, {
@@ -309,7 +294,7 @@ export class AspNetGateway {
   }
 
   async listAlerts(signal?: AbortSignal): Promise<AlertResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/alerts", alertsSchema, { signal }), () => [])
+    return requestJson("/api/alerts", alertsSchema, { signal })
   }
 
   async getAlert(alertId: string, signal?: AbortSignal): Promise<AlertResponse> {
@@ -496,10 +481,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/rules${suffix}`, ruleListResponseSchema, { signal }),
-      () => emptyPagedItems(query.page, query.pageSize),
-    )
+    return requestJson(`/api/v2/rules${suffix}`, ruleListResponseSchema, { signal })
   }
 
   async getRuleDetail(ruleId: string, signal?: AbortSignal): Promise<RuleDetail> {
@@ -641,19 +623,19 @@ export class AspNetGateway {
   }
 
   async listJobRuns(signal?: AbortSignal): Promise<JobRunResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/admin/jobs/runs?take=20", jobsSchema, { signal }), () => [])
+    return requestJson("/api/admin/jobs/runs?take=20", jobsSchema, { signal })
   }
 
   async listUsers(signal?: AbortSignal): Promise<UserResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/v2/identity/users", usersSchema, { signal }), () => [])
+    return requestJson("/api/v2/identity/users", usersSchema, { signal })
   }
 
   async listRoles(signal?: AbortSignal): Promise<RoleResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/v2/identity/roles", rolesSchema, { signal }), () => [])
+    return requestJson("/api/v2/identity/roles", rolesSchema, { signal })
   }
 
   async listPermissions(signal?: AbortSignal): Promise<PermissionResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/v2/identity/permissions", permissionsSchema, { signal }), () => [])
+    return requestJson("/api/v2/identity/permissions", permissionsSchema, { signal })
   }
 
   async listRolePermissions(roleId?: string, signal?: AbortSignal): Promise<RolePermissionResponse[]> {
@@ -663,10 +645,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/identity/role-permissions${suffix}`, rolePermissionsSchema, { signal }),
-      () => [],
-    )
+    return requestJson(`/api/v2/identity/role-permissions${suffix}`, rolePermissionsSchema, { signal })
   }
 
   async createUser(input: CreateWorkbenchUserInput): Promise<UserResponse> {
@@ -714,10 +693,7 @@ export class AspNetGateway {
   }
 
   async listRetentionPolicies(signal?: AbortSignal): Promise<RetentionPolicyResponse[]> {
-    return withLegacyEmptyFallback(
-      () => requestJson("/api/v2/retention/policies", retentionPoliciesSchema, { signal }),
-      () => [],
-    )
+    return requestJson("/api/v2/retention/policies", retentionPoliciesSchema, { signal })
   }
 
   async createRetentionPolicy(input: CreateRetentionPolicyInput): Promise<RetentionPolicyResponse> {
@@ -739,10 +715,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/retention/archives${suffix}`, archiveRecordsSchema, { signal }),
-      () => [],
-    )
+    return requestJson(`/api/v2/retention/archives${suffix}`, archiveRecordsSchema, { signal })
   }
 
   async executeRetentionPolicy(input: ExecuteRetentionPolicyInput): Promise<ArchiveRecordResponse[]> {
@@ -757,14 +730,11 @@ export class AspNetGateway {
   }
 
   async listSubnets(signal?: AbortSignal): Promise<SubnetResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/v2/infrastructure/subnets", subnetsSchema, { signal }), () => [])
+    return requestJson("/api/v2/infrastructure/subnets", subnetsSchema, { signal })
   }
 
   async listFeedSources(signal?: AbortSignal): Promise<FeedSourceResponse[]> {
-    return withLegacyEmptyFallback(
-      () => requestJson("/api/v2/iocs/feed-sources", z.array(feedSourceResponseSchema), { signal }),
-      () => [],
-    )
+    return requestJson("/api/v2/iocs/feed-sources", z.array(feedSourceResponseSchema), { signal })
   }
 
   async listIocs(query: IocListQuery = {}, signal?: AbortSignal): Promise<IocListResponse> {
@@ -798,10 +768,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/iocs${suffix}`, iocListResponseSchema, { signal }),
-      () => emptyPagedItems(query.page, query.pageSize),
-    )
+    return requestJson(`/api/v2/iocs${suffix}`, iocListResponseSchema, { signal })
   }
 
   async listTargetServers(subnetId?: string, signal?: AbortSignal): Promise<TargetServerResponse[]> {
@@ -811,21 +778,15 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/infrastructure/target-servers${suffix}`, targetServersSchema, { signal }),
-      () => [],
-    )
+    return requestJson(`/api/v2/infrastructure/target-servers${suffix}`, targetServersSchema, { signal })
   }
 
   async listTargetGroups(signal?: AbortSignal): Promise<TargetGroupResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/v2/infrastructure/target-groups", targetGroupsSchema, { signal }), () => [])
+    return requestJson("/api/v2/infrastructure/target-groups", targetGroupsSchema, { signal })
   }
 
   async listTargetGroupMembers(targetGroupId: string, signal?: AbortSignal): Promise<TargetGroupMemberResponse[]> {
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/infrastructure/target-groups/${targetGroupId}/members`, targetGroupMembersSchema, { signal }),
-      () => [],
-    )
+    return requestJson(`/api/v2/infrastructure/target-groups/${targetGroupId}/members`, targetGroupMembersSchema, { signal })
   }
 
   async listDistributionJobs(filters: DistributionJobFilters = {}, signal?: AbortSignal): Promise<RuleDistributionJobResponse[]> {
@@ -859,10 +820,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/rules/distribution-jobs${suffix}`, ruleDistributionJobsSchema, { signal }),
-      () => [],
-    )
+    return requestJson(`/api/v2/rules/distribution-jobs${suffix}`, ruleDistributionJobsSchema, { signal })
   }
 
   async getDistributionJob(jobId: string, signal?: AbortSignal): Promise<RuleDistributionJobResponse> {
@@ -902,7 +860,7 @@ export class AspNetGateway {
   }
 
   async listScanPlans(signal?: AbortSignal): Promise<ScanPlanResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/v2/scanning/plans", scanPlansSchema, { signal }), () => [])
+    return requestJson("/api/v2/scanning/plans", scanPlansSchema, { signal })
   }
 
   async getScanPlan(scanPlanId: string, signal?: AbortSignal): Promise<ScanPlanResponse> {
@@ -986,7 +944,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(() => requestJson(`/api/v2/scanning/jobs${suffix}`, scanJobsSchema, { signal }), () => [])
+    return requestJson(`/api/v2/scanning/jobs${suffix}`, scanJobsSchema, { signal })
   }
 
   async getScanJob(scanJobId: string, signal?: AbortSignal): Promise<ScanJobResponse> {
@@ -1137,7 +1095,7 @@ export class AspNetGateway {
   }
 
   async listScanners(signal?: AbortSignal): Promise<ScannerResponse[]> {
-    return withLegacyEmptyFallback(() => requestJson("/api/v2/infrastructure/scanners", scannersSchema, { signal }), () => [])
+    return requestJson("/api/v2/infrastructure/scanners", scannersSchema, { signal })
   }
 
   async createScanner(input: CreateScannerInput): Promise<ScannerResponse> {
@@ -1182,10 +1140,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/infrastructure/discovery/runs${suffix}`, discoveryRunsSchema, { signal }),
-      () => [],
-    )
+    return requestJson(`/api/v2/infrastructure/discovery/runs${suffix}`, discoveryRunsSchema, { signal })
   }
 
   async listDiscoveredHosts(subnetId?: string, signal?: AbortSignal): Promise<DiscoveredHostResponse[]> {
@@ -1195,10 +1150,7 @@ export class AspNetGateway {
     }
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
-    return withLegacyEmptyFallback(
-      () => requestJson(`/api/v2/infrastructure/discovered-hosts${suffix}`, discoveredHostsSchema, { signal }),
-      () => [],
-    )
+    return requestJson(`/api/v2/infrastructure/discovered-hosts${suffix}`, discoveredHostsSchema, { signal })
   }
 
   async promoteDiscoveredHost(
@@ -1273,8 +1225,28 @@ export class AspNetGateway {
     return requestJson(`/api/v2/scanning/results/${detectionId}`, detectionDetailResponseSchema, { signal })
   }
 
-  async submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse> {
-    return requestJson("/api/v2/ai/adjudications", submitAiAdjudicationAcceptedResponseSchema, {
+  async getLatestAiDecisionForIoc(iocId: string, signal?: AbortSignal): Promise<IocLatestAiDecisionResponse> {
+    return requestJson(`/api/v2/ai/decisions/iocs/${iocId}/latest`, iocLatestAiDecisionResponseSchema, { signal })
+  }
+
+  async generateAiDecisionForIoc(
+    iocId: string,
+    input: { submittedByUserId: string },
+  ): Promise<SubmitAiDecisionAcceptedResponse> {
+    return requestJson(`/api/v2/ai/decisions/iocs/${iocId}/generate`, submitAiDecisionAcceptedResponseSchema, {
+      method: "POST",
+      body: {
+        submittedByUserId: input.submittedByUserId,
+      },
+    })
+  }
+
+  async getLatestAiDecisionForDetection(detectionId: string, signal?: AbortSignal): Promise<AiDecisionResultResponse> {
+    return requestJson(`/api/v2/ai/decisions/detections/${detectionId}/latest`, aiDecisionResultResponseSchema, { signal })
+  }
+
+  async submitAiDecision(input: SubmitAiDecisionInput): Promise<SubmitAiDecisionAcceptedResponse> {
+    return requestJson("/api/v2/ai/decisions", submitAiDecisionAcceptedResponseSchema, {
       method: "POST",
       body: {
         caseId: input.caseId,
@@ -1288,35 +1260,35 @@ export class AspNetGateway {
     })
   }
 
-  async getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
-    return requestJson(`/api/v2/ai/adjudications/${adjudicationId}`, aiAdjudicationResultResponseSchema, { signal })
+  async getAiDecisionResult(decisionId: string, signal?: AbortSignal): Promise<AiDecisionResultResponse> {
+    return requestJson(`/api/v2/ai/decisions/${decisionId}`, aiDecisionResultResponseSchema, { signal })
   }
 
-  async getAiAdjudicationExplanation(
-    adjudicationId: string,
+  async getAiDecisionExplanation(
+    decisionId: string,
     signal?: AbortSignal,
-  ): Promise<AiAdjudicationExplanationOrPendingResponse> {
+  ): Promise<AiDecisionExplanationOrPendingResponse> {
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/explanation`,
-      aiAdjudicationExplanationOrPendingResponseSchema,
+      `/api/v2/ai/decisions/${decisionId}/explanation`,
+      aiDecisionExplanationOrPendingResponseSchema,
       { signal },
     )
   }
 
-  async getAiAdjudicationActionPlan(
-    adjudicationId: string,
+  async getAiDecisionActionPlan(
+    decisionId: string,
     signal?: AbortSignal,
-  ): Promise<AiAdjudicationActionPlanOrPendingResponse> {
+  ): Promise<AiDecisionActionPlanOrPendingResponse> {
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/action-plan`,
-      aiAdjudicationActionPlanOrPendingResponseSchema,
+      `/api/v2/ai/decisions/${decisionId}/action-plan`,
+      aiDecisionActionPlanOrPendingResponseSchema,
       { signal },
     )
   }
 
-  async listAiAdjudicationEvidenceSources(
-    adjudicationId: string,
-    query: AiAdjudicationCursorQuery = {},
+  async listAiDecisionEvidenceSources(
+    decisionId: string,
+    query: AiDecisionCursorQuery = {},
     signal?: AbortSignal,
   ): Promise<AiEvidenceSourcesResponse> {
     const params = new URLSearchParams()
@@ -1328,15 +1300,15 @@ export class AspNetGateway {
     }
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/evidence-sources${suffix}`,
+      `/api/v2/ai/decisions/${decisionId}/evidence-sources${suffix}`,
       aiEvidenceSourcesResponseSchema,
       { signal },
     )
   }
 
-  async listAiAdjudicationSimilarDetections(
-    adjudicationId: string,
-    query: AiAdjudicationCursorQuery = {},
+  async listAiDecisionSimilarDetections(
+    decisionId: string,
+    query: AiDecisionCursorQuery = {},
     signal?: AbortSignal,
   ): Promise<AiSimilarDetectionsResponse> {
     const params = new URLSearchParams()
@@ -1348,17 +1320,17 @@ export class AspNetGateway {
     }
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/similar-detections${suffix}`,
+      `/api/v2/ai/decisions/${decisionId}/similar-detections${suffix}`,
       aiSimilarDetectionsResponseSchema,
       { signal },
     )
   }
 
-  async submitAiAdjudicationOverrideOrClosure(
-    adjudicationId: string,
-    input: SubmitAiAdjudicationOverrideOrClosureInput,
+  async submitAiDecisionOverrideOrClosure(
+    decisionId: string,
+    input: SubmitAiDecisionOverrideOrClosureInput,
   ): Promise<AiOverrideOrClosureResponse> {
-    return requestJson(`/api/v2/ai/adjudications/${adjudicationId}/override-closure`, aiOverrideOrClosureResponseSchema, {
+    return requestJson(`/api/v2/ai/decisions/${decisionId}/override-closure`, aiOverrideOrClosureResponseSchema, {
       method: "POST",
       body: {
         actionType: input.actionType,
@@ -1542,3 +1514,4 @@ export class AspNetGateway {
     return rollbacksSchema.parse(merged)
   }
 }
+

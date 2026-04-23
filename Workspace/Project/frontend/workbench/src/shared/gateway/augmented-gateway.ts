@@ -17,7 +17,7 @@ import {
 } from "@/shared/gateway/adapters"
 import type {
   AdvanceRolloutStageInput,
-  AiAdjudicationCursorQuery,
+  AiDecisionCursorQuery,
   AlertListQuery,
   ArchiveRuleInput,
   AuditLogListQuery,
@@ -35,8 +35,8 @@ import type {
   CreateRuleProposalInput,
   DetectionListQuery,
   ExecuteRetentionPolicyInput,
-  SubmitAiAdjudicationInput,
-  SubmitAiAdjudicationOverrideOrClosureInput,
+  SubmitAiDecisionInput,
+  SubmitAiDecisionOverrideOrClosureInput,
   Gateway,
   GenerateReportInput,
   GraphRelationshipsVM,
@@ -379,32 +379,44 @@ export class AugmentedGateway implements Gateway {
     return this.source.getDetectionDetail(detectionId, signal)
   }
 
-  submitAiAdjudication(input: SubmitAiAdjudicationInput) {
-    return this.source.submitAiAdjudication(input)
+  getLatestAiDecisionForIoc(iocId: string, signal?: AbortSignal) {
+    return this.source.getLatestAiDecisionForIoc(iocId, signal)
   }
 
-  getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal) {
-    return this.source.getAiAdjudicationResult(adjudicationId, signal)
+  generateAiDecisionForIoc(iocId: string, input: { submittedByUserId: string }) {
+    return this.source.generateAiDecisionForIoc(iocId, input)
   }
 
-  getAiAdjudicationExplanation(adjudicationId: string, signal?: AbortSignal) {
-    return this.source.getAiAdjudicationExplanation(adjudicationId, signal)
+  getLatestAiDecisionForDetection(detectionId: string, signal?: AbortSignal) {
+    return this.source.getLatestAiDecisionForDetection(detectionId, signal)
   }
 
-  getAiAdjudicationActionPlan(adjudicationId: string, signal?: AbortSignal) {
-    return this.source.getAiAdjudicationActionPlan(adjudicationId, signal)
+  submitAiDecision(input: SubmitAiDecisionInput) {
+    return this.source.submitAiDecision(input)
   }
 
-  listAiAdjudicationEvidenceSources(adjudicationId: string, query?: AiAdjudicationCursorQuery, signal?: AbortSignal) {
-    return this.source.listAiAdjudicationEvidenceSources(adjudicationId, query, signal)
+  getAiDecisionResult(decisionId: string, signal?: AbortSignal) {
+    return this.source.getAiDecisionResult(decisionId, signal)
   }
 
-  listAiAdjudicationSimilarDetections(adjudicationId: string, query?: AiAdjudicationCursorQuery, signal?: AbortSignal) {
-    return this.source.listAiAdjudicationSimilarDetections(adjudicationId, query, signal)
+  getAiDecisionExplanation(decisionId: string, signal?: AbortSignal) {
+    return this.source.getAiDecisionExplanation(decisionId, signal)
   }
 
-  submitAiAdjudicationOverrideOrClosure(adjudicationId: string, input: SubmitAiAdjudicationOverrideOrClosureInput) {
-    return this.source.submitAiAdjudicationOverrideOrClosure(adjudicationId, input)
+  getAiDecisionActionPlan(decisionId: string, signal?: AbortSignal) {
+    return this.source.getAiDecisionActionPlan(decisionId, signal)
+  }
+
+  listAiDecisionEvidenceSources(decisionId: string, query?: AiDecisionCursorQuery, signal?: AbortSignal) {
+    return this.source.listAiDecisionEvidenceSources(decisionId, query, signal)
+  }
+
+  listAiDecisionSimilarDetections(decisionId: string, query?: AiDecisionCursorQuery, signal?: AbortSignal) {
+    return this.source.listAiDecisionSimilarDetections(decisionId, query, signal)
+  }
+
+  submitAiDecisionOverrideOrClosure(decisionId: string, input: SubmitAiDecisionOverrideOrClosureInput) {
+    return this.source.submitAiDecisionOverrideOrClosure(decisionId, input)
   }
 
   promoteDiscoveredHost(discoveredHostId: string, input: PromoteDiscoveredHostInput) {
@@ -606,3 +618,4 @@ export class AugmentedGateway implements Gateway {
     return this.source.getCoveragePainAnalysis(input, signal)
   }
 }
+

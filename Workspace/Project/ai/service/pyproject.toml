@@ -10,7 +10,8 @@ dependencies = [
   "pydantic>=2.8.0",
   "numpy>=1.26.0",
   "pandas>=2.2.0",
-  "scikit-learn>=1.5.0"
+  "scikit-learn>=1.5.0",
+  "PyYAML>=6.0.2"
 ]
 
 [project.optional-dependencies]
@@ -21,7 +22,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["cti_service*"]
+include = ["decision_service*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

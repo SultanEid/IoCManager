@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { RouteGuard } from "@/components/workbench/route-guard"
 
 const replace = vi.fn()
+const pathnameState = vi.hoisted(() => ({ value: "/queue" }))
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/queue",
+  usePathname: () => pathnameState.value,
   useRouter: () => ({ replace }),
 }))
 
@@ -25,6 +26,7 @@ describe("RouteGuard", () => {
   })
 
   it("redirects when no session", async () => {
+    pathnameState.value = "/queue"
     vi.mocked(useAuth).mockReturnValue({
       session: null,
       loading: false,
@@ -45,6 +47,7 @@ describe("RouteGuard", () => {
   })
 
   it("renders children when session exists", () => {
+    pathnameState.value = "/queue"
     vi.mocked(useAuth).mockReturnValue({
       session: {
         token: "token",
@@ -68,6 +71,7 @@ describe("RouteGuard", () => {
   })
 
   it("renders permission-restricted state when required role is missing", () => {
+    pathnameState.value = "/queue"
     vi.mocked(useAuth).mockReturnValue({
       session: {
         token: "token",
@@ -92,6 +96,7 @@ describe("RouteGuard", () => {
   })
 
   it("renders children when required role is present", () => {
+    pathnameState.value = "/settings"
     vi.mocked(useAuth).mockReturnValue({
       session: {
         token: "token",
@@ -112,5 +117,32 @@ describe("RouteGuard", () => {
     )
 
     expect(screen.getByText("Protected Content")).toBeInTheDocument()
+  })
+
+  it("redirects admin to settings when route is out of scope", async () => {
+    pathnameState.value = "/queue"
+    vi.mocked(useAuth).mockReturnValue({
+      session: {
+        token: "token",
+        expiresAtUtc: "2099-01-01T00:00:00Z",
+        userId: "u1",
+        username: "admin",
+        roles: ["Admin"],
+      },
+      loading: false,
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+    })
+
+    render(
+      <RouteGuard>
+        <div>Protected Content</div>
+      </RouteGuard>,
+    )
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith("/settings")
+    })
+    expect(screen.getByText("Redirecting to permitted route...")).toBeInTheDocument()
   })
 })

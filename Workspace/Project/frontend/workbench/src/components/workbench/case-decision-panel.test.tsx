@@ -1,4 +1,4 @@
-﻿import { render, screen } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { CaseDecisionPanel } from "@/components/workbench/case-decision-panel"
 import type { CaseDetailVM } from "@/shared/gateway/types"

@@ -304,7 +304,7 @@ export function ManagedServerDetailPage({ serverId }: { serverId: string }) {
                             href={`/scans/${encodeURIComponent(item.id)}`}
                             className="text-xs font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
                           >
-                            Open adjudication
+                            Open decision
                           </Link>
                         </TableCell>
                       </TableRow>

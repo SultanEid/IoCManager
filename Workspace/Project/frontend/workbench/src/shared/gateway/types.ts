@@ -1,9 +1,10 @@
 import type {
   AlertResponse,
-  AiAdjudicationActionPlanOrPendingResponse,
-  AiAdjudicationExplanationOrPendingResponse,
-  AiAdjudicationResultResponse,
+  AiDecisionActionPlanOrPendingResponse,
+  AiDecisionExplanationOrPendingResponse,
+  AiDecisionResultResponse,
   AiEvidenceSourcesResponse,
+  IocLatestAiDecisionResponse,
   AiOverrideOrClosureResponse,
   AiSimilarDetectionsResponse,
   AlertListResponse,
@@ -61,7 +62,7 @@ import type {
   TargetGroupMemberResponse,
   TargetGroupResponse,
   TargetServerResponse,
-  SubmitAiAdjudicationAcceptedResponse,
+  SubmitAiDecisionAcceptedResponse,
   RuleProposalResponse,
   RuleResponse,
   RuleSimulationResultResponse,
@@ -696,7 +697,7 @@ export type DetectionListQuery = {
   sort?: string
 }
 
-export type SubmitAiAdjudicationInput = {
+export type SubmitAiDecisionInput = {
   caseId: string
   detectionId: string
   iocType: string
@@ -706,12 +707,16 @@ export type SubmitAiAdjudicationInput = {
   submittedByUserId: string
 }
 
-export type AiAdjudicationCursorQuery = {
+export type GenerateAiDecisionForIocInput = {
+  submittedByUserId: string
+}
+
+export type AiDecisionCursorQuery = {
   limit?: number
   cursor?: string
 }
 
-export type SubmitAiAdjudicationOverrideOrClosureInput = {
+export type SubmitAiDecisionOverrideOrClosureInput = {
   actionType: "Override" | "Close"
   reason: string
   notes?: string
@@ -739,29 +744,32 @@ export interface Gateway {
   listIocs(query?: IocListQuery, signal?: AbortSignal): Promise<IocListResponse>
   listDetections(query?: DetectionListQuery, signal?: AbortSignal): Promise<DetectionHistoryResponse>
   getDetectionDetail(detectionId: string, signal?: AbortSignal): Promise<DetectionDetailResponse>
-  submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse>
-  getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse>
-  getAiAdjudicationExplanation(
-    adjudicationId: string,
+  getLatestAiDecisionForIoc(iocId: string, signal?: AbortSignal): Promise<IocLatestAiDecisionResponse>
+  generateAiDecisionForIoc(iocId: string, input: GenerateAiDecisionForIocInput): Promise<SubmitAiDecisionAcceptedResponse>
+  getLatestAiDecisionForDetection(detectionId: string, signal?: AbortSignal): Promise<AiDecisionResultResponse>
+  submitAiDecision(input: SubmitAiDecisionInput): Promise<SubmitAiDecisionAcceptedResponse>
+  getAiDecisionResult(decisionId: string, signal?: AbortSignal): Promise<AiDecisionResultResponse>
+  getAiDecisionExplanation(
+    decisionId: string,
     signal?: AbortSignal,
-  ): Promise<AiAdjudicationExplanationOrPendingResponse>
-  getAiAdjudicationActionPlan(
-    adjudicationId: string,
+  ): Promise<AiDecisionExplanationOrPendingResponse>
+  getAiDecisionActionPlan(
+    decisionId: string,
     signal?: AbortSignal,
-  ): Promise<AiAdjudicationActionPlanOrPendingResponse>
-  listAiAdjudicationEvidenceSources(
-    adjudicationId: string,
-    query?: AiAdjudicationCursorQuery,
+  ): Promise<AiDecisionActionPlanOrPendingResponse>
+  listAiDecisionEvidenceSources(
+    decisionId: string,
+    query?: AiDecisionCursorQuery,
     signal?: AbortSignal,
   ): Promise<AiEvidenceSourcesResponse>
-  listAiAdjudicationSimilarDetections(
-    adjudicationId: string,
-    query?: AiAdjudicationCursorQuery,
+  listAiDecisionSimilarDetections(
+    decisionId: string,
+    query?: AiDecisionCursorQuery,
     signal?: AbortSignal,
   ): Promise<AiSimilarDetectionsResponse>
-  submitAiAdjudicationOverrideOrClosure(
-    adjudicationId: string,
-    input: SubmitAiAdjudicationOverrideOrClosureInput,
+  submitAiDecisionOverrideOrClosure(
+    decisionId: string,
+    input: SubmitAiDecisionOverrideOrClosureInput,
   ): Promise<AiOverrideOrClosureResponse>
   listAlerts(signal?: AbortSignal): Promise<AlertResponse[]>
   getAlert(alertId: string, signal?: AbortSignal): Promise<AlertResponse>
@@ -853,3 +861,4 @@ export interface Gateway {
   getSettingsAdmin(signal?: AbortSignal): Promise<SettingsAdminVM>
   runModelRetraining(triggeredByUserId: string): Promise<JobRunResponse>
 }
+

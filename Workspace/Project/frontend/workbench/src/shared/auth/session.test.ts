@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vitest"
 import {
   canAccessAdminActions,
   canAccessLeadActions,
@@ -41,12 +41,14 @@ describe("session auth", () => {
 
     const session = deriveSessionFromToken(token, "2099-01-01T00:00:00Z")
     expect(canAccessAdminActions(session)).toBe(true)
-    expect(canAccessLeadActions(session)).toBe(true)
+    expect(canAccessLeadActions(session)).toBe(false)
   })
 
   it("maps role labels to neutral operational names", () => {
+    expect(roleLabel("IT")).toBe("IT Operations")
     expect(roleLabel("Lead")).toBe("Operator")
     expect(roleLabel("Admin")).toBe("Administrator")
-    expect(roleLabels(["Analyst", "Lead", "Admin"])).toBe("Analyst, Operator, Administrator")
+    expect(roleLabel("DEV")).toBe("Developer")
+    expect(roleLabels(["IT", "Analyst", "Lead", "Admin", "DEV"])).toBe("IT Operations, Analyst, Operator, Administrator, Developer")
   })
 })

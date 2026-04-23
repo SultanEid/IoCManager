@@ -25,11 +25,13 @@ vi.mock("@/shared/gateway", () => ({
   },
 }))
 
-vi.mock("@/shared/auth/session", () => ({
-  getSession: () => ({
-    userId: "lead-1",
-    username: "lead-1",
-    roles: ["Lead"],
+vi.mock("@/shared/auth/auth-provider", () => ({
+  useAuth: () => ({
+    session: {
+      userId: "lead-1",
+      username: "lead-1",
+      roles: ["Lead"],
+    },
   }),
 }))
 
@@ -76,10 +78,10 @@ describe("AlertDetailPage", () => {
     vi.clearAllMocks()
   })
 
-  it("deep-links linked scan results into adjudication detail", () => {
+  it("deep-links linked scan results into decision detail", () => {
     render(<AlertDetailPage />)
 
-    const link = screen.getByText("Open adjudication").closest("a")
+    const link = screen.getByText("Open decision").closest("a")
     expect(link).not.toBeNull()
     expect(link).toHaveAttribute("href", "/scans/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69")
   })

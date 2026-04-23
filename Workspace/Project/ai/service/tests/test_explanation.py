@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from cti_service import llm_assist_phrasing
-from cti_service.contracts import ExplainCaseRequest
-from cti_service.explanation import explain_case
+from decision_service import llm_assist_phrasing
+from decision_service.contracts import ExplainCaseRequest
+from decision_service.explanation import explain_case
 
 
 def _request() -> ExplainCaseRequest:
@@ -122,3 +122,4 @@ def test_explain_case_falls_back_on_malformed_llm_output(monkeypatch) -> None:
 
     assert response.explanation_summary == "Contain after review (state=recommend, policy=p1, model=v1-test)."
     assert response.rationale[0] == "Decision state is 'recommend' with recommendation 'contain_and_monitor'."
+

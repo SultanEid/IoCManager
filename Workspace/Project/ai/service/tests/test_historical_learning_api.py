@@ -6,8 +6,8 @@ import shutil
 
 from fastapi.testclient import TestClient
 
-from cti_service.api import create_app
-from cti_service.config import ServiceSettings
+from decision_service.api import create_app
+from decision_service.config import ServiceSettings
 
 
 def _build_client(name: str) -> tuple[TestClient, ServiceSettings]:
@@ -270,3 +270,4 @@ def test_historical_learning_api_does_not_mutate_model_or_dataset_registry() -> 
 
     assert settings.registry_path.read_text(encoding="utf-8") == before_registry
     assert settings.dataset_registry_path.read_text(encoding="utf-8") == before_dataset_registry
+

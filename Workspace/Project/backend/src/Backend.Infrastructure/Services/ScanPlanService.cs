@@ -1,4 +1,4 @@
-﻿using Backend.Application.Abstractions.Services;
+using Backend.Application.Abstractions.Services;
 using Backend.Contracts.V2;
 using Backend.Domain.IocManager;
 using Backend.Infrastructure.Persistence;

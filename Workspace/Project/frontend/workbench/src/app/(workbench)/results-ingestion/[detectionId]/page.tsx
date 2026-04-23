@@ -9,12 +9,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  type AiAdjudicationActionPlanOrPendingResponse,
-  type AiAdjudicationActionPlanResponse,
-  type AiAdjudicationExplanationOrPendingResponse,
-  type AiAdjudicationExplanationResponse,
-  type AiAdjudicationPendingResponse,
-  type AiAdjudicationResultResponse,
+  type AiDecisionActionPlanOrPendingResponse,
+  type AiDecisionActionPlanResponse,
+  type AiDecisionExplanationOrPendingResponse,
+  type AiDecisionExplanationResponse,
+  type AiDecisionPendingResponse,
+  type AiDecisionResultResponse,
   type AiEvidenceSourceResponse,
   type AiEvidenceSourcesResponse,
   type AiOverrideOrClosureResponse,
@@ -47,8 +47,8 @@ function toPercent(value: number | null | undefined) {
 }
 
 function isPendingResponse(
-  payload: AiAdjudicationExplanationOrPendingResponse | AiAdjudicationActionPlanOrPendingResponse,
-): payload is AiAdjudicationPendingResponse {
+  payload: AiDecisionExplanationOrPendingResponse | AiDecisionActionPlanOrPendingResponse,
+): payload is AiDecisionPendingResponse {
   return "message" in payload
 }
 
@@ -131,9 +131,9 @@ function isTerminalStatus(status: string | null | undefined) {
 }
 
 function collectMissingEvidence(
-  result: AiAdjudicationResultResponse | null,
-  explanation: AiAdjudicationExplanationResponse | null,
-  actionPlan: AiAdjudicationActionPlanResponse | null,
+  result: AiDecisionResultResponse | null,
+  explanation: AiDecisionExplanationResponse | null,
+  actionPlan: AiDecisionActionPlanResponse | null,
 ) {
   const merged = new Map<string, string>()
   for (const item of result?.decision?.nextBestEvidence ?? []) {
@@ -182,7 +182,7 @@ function formatTimestamp(value: string | null | undefined) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
-function summarizeActionPlanExecution(actionPlan: AiAdjudicationActionPlanResponse | null) {
+function summarizeActionPlanExecution(actionPlan: AiDecisionActionPlanResponse | null) {
   if (!actionPlan) {
     return "Not reported"
   }
@@ -195,7 +195,7 @@ function summarizeActionPlanExecution(actionPlan: AiAdjudicationActionPlanRespon
   return actionPlan.neverAutoExecutes ? "Manual only" : "Not reported"
 }
 
-function summarizeActionPlanApproval(actionPlan: AiAdjudicationActionPlanResponse | null) {
+function summarizeActionPlanApproval(actionPlan: AiDecisionActionPlanResponse | null) {
   if (!actionPlan) {
     return "Not reported"
   }
@@ -211,7 +211,7 @@ function summarizeActionPlanApproval(actionPlan: AiAdjudicationActionPlanRespons
 
 function describeSafetyStatus(safetyDiagnostics: AiSafetyDiagnosticsResponse | null) {
   if (!safetyDiagnostics) {
-    return "The backend did not return machine-readable safety diagnostics for this adjudication."
+    return "The backend did not return machine-readable safety diagnostics for this decision."
   }
 
   const signals = [
@@ -227,9 +227,9 @@ function describeSafetyStatus(safetyDiagnostics: AiSafetyDiagnosticsResponse | n
   return `${signals.map((item) => humanizeToken(item)).join(", ")} reported. False-positive risk is ${toPercent(safetyDiagnostics.falsePositiveRisk)}.`
 }
 
-function summarizeDecisionNarrative(result: AiAdjudicationResultResponse | null) {
+function summarizeDecisionNarrative(result: AiDecisionResultResponse | null) {
   if (!result?.decision) {
-    return "Submit adjudication to load the current verdict, supporting rationale, and uncertainty limits."
+    return "Run the AI decision to load the current verdict, supporting rationale, and uncertainty limits."
   }
 
   const decision = result.decision
@@ -258,7 +258,7 @@ function summarizeProgressLabel({
   isSubmitting,
   isPolling,
   pollAttempts,
-  adjudicationResult,
+  decisionResult,
   explanation,
   actionPlan,
   explanationPendingMessage,
@@ -268,37 +268,37 @@ function summarizeProgressLabel({
   isSubmitting: boolean
   isPolling: boolean
   pollAttempts: number
-  adjudicationResult: AiAdjudicationResultResponse | null
-  explanation: AiAdjudicationExplanationResponse | null
-  actionPlan: AiAdjudicationActionPlanResponse | null
+  decisionResult: AiDecisionResultResponse | null
+  explanation: AiDecisionExplanationResponse | null
+  actionPlan: AiDecisionActionPlanResponse | null
   explanationPendingMessage: string | null
   actionPlanPendingMessage: string | null
   pollingExhausted: boolean
 }) {
   if (isSubmitting) {
-    return "Submitting adjudication request"
+    return "Submitting decision request"
   }
 
   if (pollingExhausted) {
     return "Partial results available"
   }
 
-  if (isPolling && !adjudicationResult) {
+  if (isPolling && !decisionResult) {
     return `Analysis in progress (${pollAttempts}/${POLL_MAX_ATTEMPTS})`
   }
 
-  if (isPolling && adjudicationResult) {
-    if (explanationPendingMessage || (!explanation && adjudicationResult.explanationAvailable)) {
+  if (isPolling && decisionResult) {
+    if (explanationPendingMessage || (!explanation && decisionResult.explanationAvailable)) {
       return "Waiting for explanation"
     }
-    if (actionPlanPendingMessage || (!actionPlan && adjudicationResult.actionPlanAvailable)) {
+    if (actionPlanPendingMessage || (!actionPlan && decisionResult.actionPlanAvailable)) {
       return "Waiting for action plan"
     }
     return `Partial results available (${pollAttempts}/${POLL_MAX_ATTEMPTS})`
   }
 
-  if (adjudicationResult) {
-    return humanizeToken(adjudicationResult.status)
+  if (decisionResult) {
+    return humanizeToken(decisionResult.status)
   }
 
   return "Not started"
@@ -306,15 +306,15 @@ function summarizeProgressLabel({
 
 function overrideActionHelp(action: OverrideAction) {
   if (action === "accept") {
-    return "Close the adjudication with the recommended outcome after analyst review."
+    return "Close the decision with the recommended outcome after analyst review."
   }
   if (action === "reject") {
-    return "Replace the adjudication verdict and close the current recommendation."
+    return "Replace the decision verdict and close the current recommendation."
   }
   if (action === "modify") {
     return "Keep the case open to a different analyst decision with a revised verdict and rationale."
   }
-  return "Record follow-up work without marking the adjudication as final."
+  return "Record follow-up work without marking the decision as final."
 }
 
 function PhrasingOriginBadge({ diagnostics }: { diagnostics: AiPhrasingDiagnosticsResponse | null | undefined }) {
@@ -398,7 +398,7 @@ function EvidenceCard({
   )
 }
 
-export default function DetectionAdjudicationPage() {
+export default function DetectionDecisionPage() {
   const params = useParams<{ detectionId: string }>()
   const detectionId = params.detectionId
   const { session } = useAuth()
@@ -406,10 +406,10 @@ export default function DetectionAdjudicationPage() {
   const unmountedRef = useRef(false)
 
   const [selectedCaseId, setSelectedCaseId] = useState("")
-  const [adjudicationId, setAdjudicationId] = useState<string | null>(null)
-  const [adjudicationResult, setAdjudicationResult] = useState<AiAdjudicationResultResponse | null>(null)
-  const [explanation, setExplanation] = useState<AiAdjudicationExplanationResponse | null>(null)
-  const [actionPlan, setActionPlan] = useState<AiAdjudicationActionPlanResponse | null>(null)
+  const [decisionId, setDecisionId] = useState<string | null>(null)
+  const [decisionResult, setDecisionResult] = useState<AiDecisionResultResponse | null>(null)
+  const [explanation, setExplanation] = useState<AiDecisionExplanationResponse | null>(null)
+  const [actionPlan, setActionPlan] = useState<AiDecisionActionPlanResponse | null>(null)
   const [evidenceSources, setEvidenceSources] = useState<AiEvidenceSourcesResponse | null>(null)
   const [similarDetections, setSimilarDetections] = useState<AiSimilarDetectionsResponse | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -471,7 +471,7 @@ export default function DetectionAdjudicationPage() {
     setSelectedCaseId((current) => (linkedCases.some((item) => item.id === current) ? current : ""))
   }, [linkedCases])
 
-  const pollAdjudication = useCallback(async (targetAdjudicationId: string) => {
+  const pollDecision = useCallback(async (targetDecisionId: string) => {
     const runId = ++pollRunRef.current
     setIsPolling(true)
     setPollingExhausted(false)
@@ -490,9 +490,9 @@ export default function DetectionAdjudicationPage() {
 
       setPollAttempts(attempt)
 
-      let result: AiAdjudicationResultResponse
+      let result: AiDecisionResultResponse
       try {
-        result = await gateway.getAiAdjudicationResult(targetAdjudicationId)
+        result = await gateway.getAiDecisionResult(targetDecisionId)
       } catch (error) {
         if (unmountedRef.current || pollRunRef.current !== runId) {
           return
@@ -509,10 +509,10 @@ export default function DetectionAdjudicationPage() {
       }
 
       setPollingError(null)
-      setAdjudicationResult(result)
+      setDecisionResult(result)
 
       try {
-        const nextExplanation = await gateway.getAiAdjudicationExplanation(targetAdjudicationId)
+        const nextExplanation = await gateway.getAiDecisionExplanation(targetDecisionId)
         if (isPendingResponse(nextExplanation)) {
           setExplanationPendingMessage(nextExplanation.message)
           setExplanationError(null)
@@ -528,7 +528,7 @@ export default function DetectionAdjudicationPage() {
       }
 
       try {
-        const nextActionPlan = await gateway.getAiAdjudicationActionPlan(targetAdjudicationId)
+        const nextActionPlan = await gateway.getAiDecisionActionPlan(targetDecisionId)
         if (isPendingResponse(nextActionPlan)) {
           setActionPlanPendingMessage(nextActionPlan.message)
           setActionPlanError(null)
@@ -545,7 +545,7 @@ export default function DetectionAdjudicationPage() {
 
       if (result.evidenceSourcesAvailable || attempt === 1) {
         try {
-          const nextEvidence = await gateway.listAiAdjudicationEvidenceSources(targetAdjudicationId, { limit: LIST_PAGE_SIZE })
+          const nextEvidence = await gateway.listAiDecisionEvidenceSources(targetDecisionId, { limit: LIST_PAGE_SIZE })
           evidenceReady = true
           setEvidenceSources(nextEvidence)
           setEvidenceError(null)
@@ -556,7 +556,7 @@ export default function DetectionAdjudicationPage() {
 
       if (result.similarDetectionsAvailable || attempt === 1) {
         try {
-          const nextSimilar = await gateway.listAiAdjudicationSimilarDetections(targetAdjudicationId, { limit: LIST_PAGE_SIZE })
+          const nextSimilar = await gateway.listAiDecisionSimilarDetections(targetDecisionId, { limit: LIST_PAGE_SIZE })
           similarReady = true
           setSimilarDetections(nextSimilar)
           setSimilarError(null)
@@ -589,7 +589,7 @@ export default function DetectionAdjudicationPage() {
     }
   }, [])
 
-  const handleSubmitAdjudication = useCallback(async () => {
+  const handleSubmitDecision = useCallback(async () => {
     if (!detectionQuery.data) {
       return
     }
@@ -605,7 +605,7 @@ export default function DetectionAdjudicationPage() {
     setOverrideError(null)
     setOverrideResponse(null)
     setIsSubmitting(true)
-    setAdjudicationResult(null)
+    setDecisionResult(null)
     setExplanation(null)
     setActionPlan(null)
     setEvidenceSources(null)
@@ -620,19 +620,21 @@ export default function DetectionAdjudicationPage() {
     setPollingExhausted(false)
 
     try {
-      const submitted = await gateway.submitAiAdjudication({
-        caseId: selectedCase.id,
-        detectionId: detectionQuery.data.id,
-        iocType: detectionQuery.data.iocType ?? "unknown",
-        iocValue: detectionQuery.data.iocValue ?? detectionQuery.data.fingerprint,
-        observedAtUtc: detectionQuery.data.observedAtUtc,
-        detectionPackage: {
+        const submitted = await gateway.submitAiDecision({
+          caseId: selectedCase.id,
           detectionId: detectionQuery.data.id,
-          fingerprint: detectionQuery.data.fingerprint,
-          scannerFamily: detectionQuery.data.scannerFamily,
-          source: detectionQuery.data.source,
-          ruleName: detectionQuery.data.ruleName,
-          iocType: detectionQuery.data.iocType,
+          iocType: detectionQuery.data.iocType ?? "unknown",
+          iocValue: detectionQuery.data.iocValue ?? detectionQuery.data.fingerprint,
+          observedAtUtc: detectionQuery.data.observedAtUtc,
+          detectionPackage: {
+            caseId: selectedCase.id,
+            detectionId: detectionQuery.data.id,
+            observedAt: detectionQuery.data.observedAtUtc,
+            fingerprint: detectionQuery.data.fingerprint,
+            scannerFamily: detectionQuery.data.scannerFamily,
+            source: detectionQuery.data.source,
+            ruleName: detectionQuery.data.ruleName,
+            iocType: detectionQuery.data.iocType,
           iocValue: detectionQuery.data.iocValue,
           linkedCases: detectionQuery.data.linkedCases,
           linkedAlerts: detectionQuery.data.linkedAlerts,
@@ -640,23 +642,23 @@ export default function DetectionAdjudicationPage() {
         submittedByUserId: actorUserId,
       })
 
-      setAdjudicationId(submitted.adjudicationId)
-      await pollAdjudication(submitted.adjudicationId)
+      setDecisionId(submitted.decisionId)
+      await pollDecision(submitted.decisionId)
     } catch (error) {
       setSubmitError(readErrorMessage(error))
     } finally {
       setIsSubmitting(false)
     }
-  }, [actorUserId, detectionQuery.data, linkedCases, pollAdjudication, selectedCaseId])
+  }, [actorUserId, detectionQuery.data, linkedCases, pollDecision, selectedCaseId])
 
   const loadMoreSimilar = useCallback(async () => {
-    if (!adjudicationId || !similarDetections?.nextCursor || isLoadingMoreSimilar) {
+    if (!decisionId || !similarDetections?.nextCursor || isLoadingMoreSimilar) {
       return
     }
 
     setIsLoadingMoreSimilar(true)
     try {
-      const nextPage = await gateway.listAiAdjudicationSimilarDetections(adjudicationId, {
+      const nextPage = await gateway.listAiDecisionSimilarDetections(decisionId, {
         limit: LIST_PAGE_SIZE,
         cursor: similarDetections.nextCursor,
       })
@@ -677,10 +679,10 @@ export default function DetectionAdjudicationPage() {
     } finally {
       setIsLoadingMoreSimilar(false)
     }
-  }, [adjudicationId, isLoadingMoreSimilar, similarDetections?.nextCursor])
+  }, [decisionId, isLoadingMoreSimilar, similarDetections?.nextCursor])
 
   const submitOverrideOrClosure = useCallback(async () => {
-    if (!adjudicationId) {
+    if (!decisionId) {
       return
     }
 
@@ -747,14 +749,14 @@ export default function DetectionAdjudicationPage() {
     setIsSubmittingOverride(true)
     setOverrideError(null)
     try {
-      const response = await gateway.submitAiAdjudicationOverrideOrClosure(adjudicationId, payload)
+      const response = await gateway.submitAiDecisionOverrideOrClosure(decisionId, payload)
       setOverrideResponse(response)
     } catch (error) {
       setOverrideError(readErrorMessage(error))
     } finally {
       setIsSubmittingOverride(false)
     }
-  }, [actorUserId, adjudicationId, overrideAction, overrideNotes, overrideReason, overrideVerdict])
+  }, [actorUserId, decisionId, overrideAction, overrideNotes, overrideReason, overrideVerdict])
 
   if (!isModeConfigured) {
     const failure = classifyUiError(null, { modeMisconfigured: true })
@@ -764,8 +766,8 @@ export default function DetectionAdjudicationPage() {
   if (isMockMode) {
     return (
       <UnavailableState
-        title="AI adjudication unavailable"
-        description="This operator surface is only available in real backend mode. Demo mode does not provide AI verdicts or action plans."
+        title="AI decision unavailable"
+        description="This operator surface is only available in real backend mode. Demo mode does not provide AI decisions or action plans."
       />
     )
   }
@@ -780,13 +782,13 @@ export default function DetectionAdjudicationPage() {
 
   const detection = detectionQuery.data
   const caseSelectionRequired = linkedCases.length > 1 && !selectedCaseId
-  const canSubmitAdjudication = linkedCases.length > 0 && !caseSelectionRequired && !isSubmitting
+  const canSubmitDecision = linkedCases.length > 0 && !caseSelectionRequired && !isSubmitting
 
   const contradictoryEvidence = (evidenceSources?.items ?? []).filter((item) => parseEvidencePolarity(item) === "contradictory")
   const evidenceUsedPositive = (evidenceSources?.items ?? []).filter((item) => parseEvidencePolarity(item) === "positive")
   const evidenceUsedNegative = (evidenceSources?.items ?? []).filter((item) => parseEvidencePolarity(item) === "negative")
   const evidenceUsedOther = (evidenceSources?.items ?? []).filter((item) => parseEvidencePolarity(item) === "other")
-  const missingEvidence = collectMissingEvidence(adjudicationResult, explanation, actionPlan)
+  const missingEvidence = collectMissingEvidence(decisionResult, explanation, actionPlan)
 
   const reasonValue = overrideReason.trim()
   const notesValue = overrideNotes.trim()
@@ -796,15 +798,15 @@ export default function DetectionAdjudicationPage() {
     (overrideAction === "reject" || overrideAction === "modify") && !verdictValue ? "Choose an override verdict." : null,
     (overrideAction === "modify" || overrideAction === "defer") && !notesValue ? "Add follow-up notes." : null,
   ].filter(Boolean) as string[]
-  const canSubmitOverride = Boolean(adjudicationId) && !isSubmittingOverride && overrideRequirements.length === 0
-  const safetyDiagnostics = adjudicationResult?.decision?.safetyDiagnostics ?? null
+  const canSubmitOverride = Boolean(decisionId) && !isSubmittingOverride && overrideRequirements.length === 0
+  const safetyDiagnostics = decisionResult?.decision?.safetyDiagnostics ?? null
   const actionExecutionSummary = summarizeActionPlanExecution(actionPlan)
   const actionApprovalSummary = summarizeActionPlanApproval(actionPlan)
   const progressLabel = summarizeProgressLabel({
     isSubmitting,
     isPolling,
     pollAttempts,
-    adjudicationResult,
+    decisionResult,
     explanation,
     actionPlan,
     explanationPendingMessage,
@@ -821,7 +823,7 @@ export default function DetectionAdjudicationPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="wb-kicker">Scans / Detection Detail</p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight">Detection adjudication</h2>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight">Detection decision</h2>
             <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
               This operator surface presents decision support only. No recommendation executes automatically, and uncertainty is shown directly.
             </p>
@@ -869,7 +871,7 @@ export default function DetectionAdjudicationPage() {
               </Badge>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Choose the case that should receive this adjudication before you submit analysis.
+              Choose the case that should receive this decision before you submit analysis.
             </p>
             <select
               aria-label="Linked case selection"
@@ -893,7 +895,7 @@ export default function DetectionAdjudicationPage() {
             </select>
             {linkedCases.length === 0 ? (
               <p className="mt-2 text-xs text-amber-100">
-                Link this detection to a case before submitting adjudication.
+                Link this detection to a case before running the decision.
               </p>
             ) : null}
             {caseSelectionRequired ? (
@@ -909,18 +911,18 @@ export default function DetectionAdjudicationPage() {
         <motion.article className="wb-panel space-y-4" variants={panelMotion}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold tracking-tight">Adjudication Summary</h3>
+              <h3 className="text-sm font-semibold tracking-tight">Decision Summary</h3>
               <p className="mt-1 text-xs text-muted-foreground">
                 Review the current verdict, uncertainty, and lifecycle state before taking operator action.
               </p>
             </div>
-            <Button type="button" size="sm" onClick={handleSubmitAdjudication} disabled={!canSubmitAdjudication}>
-              {isSubmitting ? "Submitting..." : "Submit AI adjudication"}
+            <Button type="button" size="sm" onClick={handleSubmitDecision} disabled={!canSubmitDecision}>
+              {isSubmitting ? "Submitting..." : "Run AI decision"}
             </Button>
           </div>
 
-          {submitError ? <InlineState title="Adjudication submit failed" description={submitError} tone="danger" /> : null}
-          {pollingError ? <InlineState title="Adjudication refresh degraded" description={pollingError} tone="warning" /> : null}
+          {submitError ? <InlineState title="Decision request failed" description={submitError} tone="danger" /> : null}
+          {pollingError ? <InlineState title="Decision refresh degraded" description={pollingError} tone="warning" /> : null}
 
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -928,64 +930,64 @@ export default function DetectionAdjudicationPage() {
                 <p className="wb-kicker">Analysis Status</p>
                 <p className="mt-1 text-sm font-semibold tracking-tight">{progressLabel}</p>
               </div>
-              {adjudicationId ? (
+              {decisionId ? (
                 <Badge variant="secondary" className="border border-border/70 bg-surface-1/75 text-muted-foreground">
-                  Request {adjudicationId.slice(0, 8)}
+                  Request {decisionId.slice(0, 8)}
                 </Badge>
               ) : null}
             </div>
-            {pollingExhausted && adjudicationId ? (
+            {pollingExhausted && decisionId ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <InlineState
                   title="Refresh required"
                   description="Auto-refresh retries were exhausted. The latest partial results remain visible."
                   tone="warning"
                 />
-                <Button type="button" size="sm" variant="outline" onClick={() => void pollAdjudication(adjudicationId)}>
+                <Button type="button" size="sm" variant="outline" onClick={() => void pollDecision(decisionId)}>
                   Refresh
                 </Button>
               </div>
             ) : null}
           </div>
 
-          {adjudicationResult?.decision ? (
+          {decisionResult?.decision ? (
             <div className="space-y-4 rounded-xl border border-border/70 bg-surface-2/70 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary" className="border border-border/70 bg-surface-1/75 text-foreground">
-                  Verdict: {humanizeToken(adjudicationResult.decision.verdict)}
+                  Verdict: {humanizeToken(decisionResult.decision.verdict)}
                 </Badge>
                 <Badge variant="secondary" className="border border-border/70 bg-surface-1/75 text-muted-foreground">
-                  Review priority: {humanizeToken(adjudicationResult.decision.reviewPriority)}
+                  Review priority: {humanizeToken(decisionResult.decision.reviewPriority)}
                 </Badge>
                 <Badge variant="secondary" className="border border-border/70 bg-surface-1/75 text-muted-foreground">
-                  Lifecycle: {humanizeToken(adjudicationResult.status)}
+                  Lifecycle: {humanizeToken(decisionResult.status)}
                 </Badge>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <CompactMetric label="Confidence" value={toPercent(adjudicationResult.decision.confidence)} />
-                <CompactMetric label="False-Positive Risk" value={toPercent(adjudicationResult.decision.falsePositiveRisk)} />
+                <CompactMetric label="Confidence" value={toPercent(decisionResult.decision.confidence)} />
+                <CompactMetric label="False-Positive Risk" value={toPercent(decisionResult.decision.falsePositiveRisk)} />
                 <CompactMetric
                   label="Abstention"
-                  value={adjudicationResult.decision.abstainReason ? humanizeToken(adjudicationResult.decision.abstainReason) : "Not abstained"}
+                  value={decisionResult.decision.abstainReason ? humanizeToken(decisionResult.decision.abstainReason) : "Not abstained"}
                 />
-                <CompactMetric label="Scored At" value={formatTimestamp(adjudicationResult.decision.scoredAtUtc)} />
+                <CompactMetric label="Scored At" value={formatTimestamp(decisionResult.decision.scoredAtUtc)} />
               </div>
 
-              <p className="text-sm text-muted-foreground">{summarizeDecisionNarrative(adjudicationResult)}</p>
+              <p className="text-sm text-muted-foreground">{summarizeDecisionNarrative(decisionResult)}</p>
 
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Decision rationale</p>
-                {adjudicationResult.decision.reasons.length > 0 ? (
+                {decisionResult.decision.reasons.length > 0 ? (
                   <ul className="space-y-2 text-xs text-muted-foreground">
-                    {adjudicationResult.decision.reasons.map((reason) => (
+                    {decisionResult.decision.reasons.map((reason) => (
                       <li key={reason} className="rounded-lg border border-border/60 bg-surface-1/70 px-3 py-2">
                         {reason}
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <InlineState title="No rationale returned" description="The backend did not return decision rationale lines for this adjudication." />
+                  <InlineState title="No rationale returned" description="The backend did not return decision rationale lines for this decision." />
                 )}
               </div>
 
@@ -993,16 +995,16 @@ export default function DetectionAdjudicationPage() {
                 Confidence values are directional estimates, not certainty guarantees.
               </p>
               <p className="text-[11px] text-muted-foreground">
-                Internal policy state: {humanizeToken(adjudicationResult.decision.action)}
+                Internal policy state: {humanizeToken(decisionResult.decision.action)}
               </p>
             </div>
           ) : (
             <InlineState
-              title={adjudicationId ? "Decision still pending" : "Analysis not started"}
+              title={decisionId ? "Decision still pending" : "Analysis not started"}
               description={
-                adjudicationId
+                decisionId
                   ? "The backend has accepted the request, but the decision payload is not ready yet."
-                  : "Submit adjudication to load the current verdict, uncertainty, and recommendation state."
+                  : "Run the AI decision to load the current verdict, uncertainty, and recommendation state."
               }
             />
           )}
@@ -1085,14 +1087,14 @@ export default function DetectionAdjudicationPage() {
               </>
             ) : actionPlanError ? (
               <InlineState title="Action plan degraded" description={actionPlanError} tone="warning" />
-            ) : adjudicationId && actionPlanPendingMessage ? (
+            ) : decisionId && actionPlanPendingMessage ? (
               <InlineState title="Waiting for action plan" description={actionPlanPendingMessage} />
-            ) : adjudicationResult && !adjudicationResult.actionPlanAvailable ? (
-              <InlineState title="Action plan unavailable" description="The backend did not return an action plan for this adjudication." />
-            ) : adjudicationId ? (
+            ) : decisionResult && !decisionResult.actionPlanAvailable ? (
+              <InlineState title="Action plan unavailable" description="The backend did not return an action plan for this decision." />
+            ) : decisionId ? (
               <InlineState title="Action plan pending" description="The backend is still preparing the recommended action list." />
             ) : (
-              <InlineState title="Action plan not started" description="Submit adjudication to load ranked operator recommendations." />
+              <InlineState title="Action plan not started" description="Run the AI decision to load ranked operator recommendations." />
             )}
           </section>
 
@@ -1136,21 +1138,21 @@ export default function DetectionAdjudicationPage() {
               </>
             ) : similarError ? (
               <InlineState title="Similar detections degraded" description={similarError} tone="warning" />
-            ) : adjudicationResult && !adjudicationResult.similarDetectionsAvailable ? (
-              <InlineState title="Similar detections unavailable" description="No historical similarity surface was returned for this adjudication." />
-            ) : adjudicationId ? (
+            ) : decisionResult && !decisionResult.similarDetectionsAvailable ? (
+              <InlineState title="Similar detections unavailable" description="No historical similarity surface was returned for this decision." />
+            ) : decisionId ? (
               <InlineState title="Similar detections pending" description="The backend is still preparing the similarity lookup." />
             ) : (
-              <InlineState title="Similarity lookup not started" description="Submit adjudication to load historical comparisons." />
+              <InlineState title="Similarity lookup not started" description="Run the AI decision to load historical comparisons." />
             )}
           </section>
 
           <section className="space-y-3">
             <p className="text-sm font-semibold tracking-tight">Audit Trail</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <CompactMetric label="Adjudication ID" value={adjudicationId ?? "Not assigned"} />
+              <CompactMetric label="Decision ID" value={decisionId ?? "Not assigned"} />
               <CompactMetric label="Lifecycle Status" value={progressLabel} />
-              <CompactMetric label="Scored At" value={formatTimestamp(adjudicationResult?.decision?.scoredAtUtc)} />
+              <CompactMetric label="Scored At" value={formatTimestamp(decisionResult?.decision?.scoredAtUtc)} />
               <CompactMetric
                 label="Last Operator Update"
                 value={overrideResponse ? humanizeToken(overrideResponse.actionType) : "None"}
@@ -1185,14 +1187,14 @@ export default function DetectionAdjudicationPage() {
               </>
             ) : explanationError ? (
               <InlineState title="Explanation degraded" description={explanationError} tone="warning" />
-            ) : adjudicationId && explanationPendingMessage ? (
+            ) : decisionId && explanationPendingMessage ? (
               <InlineState title="Waiting for explanation" description={explanationPendingMessage} />
-            ) : adjudicationResult && !adjudicationResult.explanationAvailable ? (
-              <InlineState title="Explanation unavailable" description="The backend did not return a separate explanation for this adjudication." />
-            ) : adjudicationId ? (
+            ) : decisionResult && !decisionResult.explanationAvailable ? (
+              <InlineState title="Explanation unavailable" description="The backend did not return a separate explanation for this decision." />
+            ) : decisionId ? (
               <InlineState title="Explanation pending" description="The backend is still preparing the operator explanation." />
             ) : (
-              <InlineState title="Explanation not started" description="Submit adjudication to load the explanation and supporting rationale." />
+              <InlineState title="Explanation not started" description="Run the AI decision to load the explanation and supporting rationale." />
             )}
           </section>
 
@@ -1224,7 +1226,7 @@ export default function DetectionAdjudicationPage() {
             {!safetyDiagnostics ? (
               <InlineState
                 title="Safety diagnostics unavailable"
-                description="The backend did not return machine-readable safety diagnostics for this adjudication."
+                description="The backend did not return machine-readable safety diagnostics for this decision."
               />
             ) : null}
           </section>
@@ -1245,10 +1247,10 @@ export default function DetectionAdjudicationPage() {
 
             {evidenceError ? (
               <InlineState title="Evidence summary degraded" description={evidenceError} tone="warning" />
-            ) : adjudicationId && !evidenceSources && adjudicationResult?.evidenceSourcesAvailable ? (
+            ) : decisionId && !evidenceSources && decisionResult?.evidenceSourcesAvailable ? (
               <InlineState title="Evidence summary pending" description="The backend is still preparing the evidence source list." />
-            ) : adjudicationResult && !adjudicationResult.evidenceSourcesAvailable && missingEvidence.length === 0 ? (
-              <InlineState title="Evidence summary unavailable" description="The backend did not return a dedicated evidence source list for this adjudication." />
+            ) : decisionResult && !decisionResult.evidenceSourcesAvailable && missingEvidence.length === 0 ? (
+              <InlineState title="Evidence summary unavailable" description="The backend did not return a dedicated evidence source list for this decision." />
             ) : evidenceSources || missingEvidence.length > 0 ? (
               <div className="space-y-4">
                 <div>
@@ -1297,15 +1299,15 @@ export default function DetectionAdjudicationPage() {
                 </div>
               </div>
             ) : (
-              <InlineState title="Evidence summary not started" description="Submit adjudication to load evidence use, conflicts, and missing-evidence requests." />
+              <InlineState title="Evidence summary not started" description="Run the AI decision to load evidence use, conflicts, and missing-evidence requests." />
             )}
           </section>
 
           <section className="space-y-3">
             <p className="text-sm font-semibold tracking-tight">Decision Provenance</p>
-            {adjudicationResult?.decision?.provenance?.length ? (
+            {decisionResult?.decision?.provenance?.length ? (
               <div className="space-y-2">
-                {adjudicationResult.decision.provenance.map((item, index) => (
+                {decisionResult.decision.provenance.map((item, index) => (
                   <div
                     key={`${item.source}-${item.key}-${index}`}
                     className="rounded-lg border border-border/60 bg-surface-1/70 px-3 py-2"
@@ -1321,10 +1323,10 @@ export default function DetectionAdjudicationPage() {
                   </div>
                 ))}
               </div>
-            ) : adjudicationResult ? (
+            ) : decisionResult ? (
               <InlineState title="Decision provenance unavailable" description="No machine-readable provenance items were returned for this decision." />
             ) : (
-              <InlineState title="Decision provenance not started" description="Submit adjudication to load machine-readable provenance for the verdict." />
+              <InlineState title="Decision provenance not started" description="Run the AI decision to load machine-readable provenance for the verdict." />
             )}
           </section>
         </motion.article>
@@ -1386,8 +1388,8 @@ export default function DetectionAdjudicationPage() {
                 title={overrideAction === "accept" ? "Closure behavior" : "Follow-up behavior"}
                 description={
                   overrideAction === "accept"
-                    ? "This records analyst acceptance and closes the current adjudication."
-                    : "This keeps the adjudication open for follow-up without marking it as final."
+                    ? "This records analyst acceptance and closes the current decision."
+                    : "This keeps the decision open for follow-up without marking it as final."
                 }
               />
             )}
@@ -1430,8 +1432,8 @@ export default function DetectionAdjudicationPage() {
             <Button type="button" size="sm" onClick={() => void submitOverrideOrClosure()} disabled={!canSubmitOverride}>
               {isSubmittingOverride ? "Submitting..." : "Submit operator action"}
             </Button>
-            {!adjudicationId ? (
-              <p className="text-xs text-muted-foreground">Submit adjudication first to enable analyst decision entry.</p>
+            {!decisionId ? (
+              <p className="text-xs text-muted-foreground">Run the AI decision first to enable analyst decision entry.</p>
             ) : null}
           </div>
         </motion.article>
@@ -1439,3 +1441,4 @@ export default function DetectionAdjudicationPage() {
     </motion.section>
   )
 }
+

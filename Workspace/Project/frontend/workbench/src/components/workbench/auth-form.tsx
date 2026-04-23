@@ -3,13 +3,32 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AlertTriangle, Lock, User } from "lucide-react"
+import { resolveWorkbenchRoute } from "@/components/workbench/workbench-route-meta"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { roleLabel } from "@/shared/auth/session"
+import { ApiError } from "@/shared/api/error"
+import { canAccessCanonicalRoute, getRoleDefaultRoute } from "@/shared/auth/role-access"
+import { deriveSessionFromToken, roleLabel } from "@/shared/auth/session"
 import { gateway, isMockMode } from "@/shared/gateway"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { listMockPersonas } from "@/shared/mock/personas"
+
+function resolveAuthErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) {
+    return "Invalid username or password."
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.trim()
+    if (message.startsWith("{") && message.endsWith("}")) {
+      return "Sign in failed. Please verify your credentials and try again."
+    }
+    return message
+  }
+
+  return "Sign in failed. Please verify your credentials and try again."
+}
 
 export function AuthForm() {
   const router = useRouter()
@@ -32,8 +51,13 @@ export function AuthForm() {
 
   async function completeSignIn(nextUsername: string, nextPassword: string) {
     const response = await gateway.login(nextUsername, nextPassword)
+    const nextSession = deriveSessionFromToken(response.accessToken, response.expiresAtUtc)
+    const resolvedNext = resolveWorkbenchRoute(redirectPath)
+    const destination = canAccessCanonicalRoute(nextSession.roles, resolvedNext.canonicalPath)
+      ? redirectPath
+      : getRoleDefaultRoute(nextSession.roles)
     signIn(response.accessToken, response.expiresAtUtc)
-    router.replace(redirectPath)
+    router.replace(destination)
   }
 
   async function onSubmit(event: FormEvent) {
@@ -43,7 +67,7 @@ export function AuthForm() {
     try {
       await completeSignIn(username, password)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Authentication failed")
+      setError(resolveAuthErrorMessage(submitError))
     } finally {
       setBusy(false)
     }
@@ -90,7 +114,7 @@ export function AuthForm() {
                   try {
                     await completeSignIn(persona.username, "mock")
                   } catch (submitError) {
-                    setError(submitError instanceof Error ? submitError.message : "Unable to start session")
+                    setError(resolveAuthErrorMessage(submitError))
                   } finally {
                     setBusyPersona(null)
                   }

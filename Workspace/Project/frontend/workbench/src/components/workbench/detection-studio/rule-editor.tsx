@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react"
 import { GitCompare } from "lucide-react"

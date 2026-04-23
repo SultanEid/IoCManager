@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ioc-manager.local/schemas/action-plan.schema.json",
   "title": "Action Plan",
-  "description": "Deterministic post-adjudication action plan with policy checks and manual-only execution.",
+  "description": "Deterministic post-decision action plan with policy checks and manual-only execution.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -344,7 +344,7 @@
           "score": 0.68,
           "rationale": "open_review prioritized due to uncertainty/conflict that requires analyst validation.",
           "prerequisites": [
-            "Attach adjudication evidence summary and policy check trace."
+            "Attach decision evidence summary and policy check trace."
           ],
           "cautions": [
             "Manual review queues can add response latency."
@@ -414,3 +414,4 @@
     }
   ]
 }
+

@@ -1,11 +1,11 @@
 # Verdict Taxonomy
 
 ## Purpose
-Define the adjudication verdicts allowed by IoC Manager and the minimum evidence expectations behind them.
+Define the decision verdicts allowed by IoC Manager and the minimum evidence expectations behind them.
 
 Related documents:
 
-- [AI Adjudication Overview](./ai-adjudication-overview.md)
+- [AI Decision Overview](./ai-decision-overview.md)
 - [Action Plan Policy](./action-plan-policy.md)
 - [Dataset Sources](./dataset-sources.md)
 
@@ -97,4 +97,5 @@ Expected characteristics:
 - Do not map verdicts to actor, campaign, or strategic CTI claims.
 - Do not use generated phrasing alone as verdict evidence.
 - Keep verdict assignment reproducible from the underlying evidence and policy thresholds.
-- Safety rails may downgrade or abstain after family-specific adjudication if the final evidence state is not safe enough.
+- Safety rails may downgrade or abstain after family-specific decisioning if the final evidence state is not safe enough.
+

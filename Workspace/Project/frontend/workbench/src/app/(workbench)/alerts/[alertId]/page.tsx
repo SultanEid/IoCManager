@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { motion } from "framer-motion"
@@ -8,9 +8,10 @@ import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { classifyUiError } from "@/shared/api/error-classification"
+import { useAuth } from "@/shared/auth/auth-provider"
+import { isItOnlyScope } from "@/shared/auth/role-access"
 import type { V2AlertDetailResponse } from "@/shared/api/schemas"
 import { gateway, isModeConfigured } from "@/shared/gateway"
-import { getSession } from "@/shared/auth/session"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { panelMotion, staggerMotion } from "@/shared/ui/motion"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
@@ -90,6 +91,7 @@ function ScannerSpecificFields({ detail }: { detail: V2AlertDetailResponse["link
 
 export default function AlertDetailPage() {
   const params = useParams<{ alertId: string }>()
+  const { session } = useAuth()
   const alertId = params.alertId
   const [statusUpdate, setStatusUpdate] = useState<string | null>(null)
   const [detailOverride, setDetailOverride] = useState<V2AlertDetailResponse | null>(null)
@@ -106,7 +108,7 @@ export default function AlertDetailPage() {
   }, [alertId, alertQuery.data?.updatedAtUtc])
 
   const detail = detailOverride ?? alertQuery.data ?? null
-  const session = useMemo(() => getSession(), [])
+  const canShowNonAlertPivots = !isItOnlyScope(session?.roles ?? [])
 
   const updateStatus = async (nextStatus: string) => {
     if (!detail || statusUpdate) {
@@ -201,7 +203,7 @@ export default function AlertDetailPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {detail.target.ipAddress ?? "Unknown IP"} | {detail.target.targetOsType ?? "Unknown OS"} | {detail.target.status ?? "Unknown status"}
               </p>
-              {detail.target.id ? (
+              {canShowNonAlertPivots && detail.target.id ? (
                 <div className="mt-3">
                   <Link href={`/servers?targetId=${detail.target.id}`} className="inline-flex">
                     <Button type="button" size="sm">Open target</Button>
@@ -229,9 +231,11 @@ export default function AlertDetailPage() {
                     <p className="text-sm font-medium">Result {result.resultId}</p>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge value={result.status} />
-                      <Link href={`/scans/${encodeURIComponent(result.resultId)}`} className="inline-flex">
-                        <Button type="button" size="sm" variant="outline">Open adjudication</Button>
-                      </Link>
+                      {canShowNonAlertPivots ? (
+                        <Link href={`/scans/${encodeURIComponent(result.resultId)}`} className="inline-flex">
+                          <Button type="button" size="sm" variant="outline">Open decision</Button>
+                        </Link>
+                      ) : null}
                     </div>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">

@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Api.Controllers.V2;
 
 [ApiController]
-[Authorize(Policy = AuthorizationPolicies.AnalystAccess)]
+[Authorize(Policy = AuthorizationPolicies.InfrastructureReadAccess)]
 [Route("api/v2/infrastructure")]
 public sealed partial class InfrastructureController : ControllerBase
 {
@@ -1069,7 +1069,7 @@ public sealed partial class InfrastructureController : ControllerBase
     }
 
     [HttpPost("scanners")]
-    [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
+    [Authorize(Policy = AuthorizationPolicies.WorkflowSettingsAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
     [ProducesResponseType<ScannerResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<ScannerResponse>> CreateScanner([FromBody] CreateScannerRequest request, CancellationToken cancellationToken)
@@ -1106,7 +1106,7 @@ public sealed partial class InfrastructureController : ControllerBase
     }
 
     [HttpPut("scanners/{scannerId:guid}/capabilities")]
-    [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
+    [Authorize(Policy = AuthorizationPolicies.WorkflowSettingsAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
     [ProducesResponseType<ScannerResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

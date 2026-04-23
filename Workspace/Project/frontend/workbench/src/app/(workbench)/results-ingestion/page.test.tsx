@@ -88,12 +88,12 @@ describe("ScansPage", () => {
     vi.clearAllMocks()
   })
 
-  it("does not expose adjudication links from legacy scan results", () => {
+  it("does not expose decision links from legacy scan results", () => {
     render(<ScansPage />)
 
     fireEvent.click(screen.getByRole("button", { expanded: false }))
 
     expect(screen.getByText("srv-app-01")).toBeInTheDocument()
-    expect(screen.queryByText("Open adjudication")).not.toBeInTheDocument()
+    expect(screen.queryByText("Open decision")).not.toBeInTheDocument()
   })
 })

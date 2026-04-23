@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from cti_service.eval_framework import (
+from decision_service.eval_framework import (
     EvaluationMetricBundle,
     EvaluationRecord,
     backtest_by_time,
@@ -11,7 +11,7 @@ from cti_service.eval_framework import (
     make_simple_baseline,
     metric_bundle_to_dict,
 )
-from cti_service.evaluation_metrics import EvaluationConfusionMatrix
+from decision_service.evaluation_metrics import EvaluationConfusionMatrix
 
 
 def _record(
@@ -248,3 +248,4 @@ def test_compute_metric_bundle_reports_unavailable_metrics_explicitly() -> None:
     assert metrics.unsafe_recommendation_rate is None
     assert "unsafe_recommendation_rate" in metrics.unavailable_metrics
     assert "false_positive_rate" in metrics.unavailable_metrics
+

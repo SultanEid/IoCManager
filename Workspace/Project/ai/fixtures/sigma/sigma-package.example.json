@@ -22,7 +22,7 @@
   "raw_hit_payload": {
     "event_id": "evt-2026-332",
     "image": "windows/system32/rundll32.exe",
-    "command_line": "rundll32.exe javascript:stage"
+    "command_line": "rundll32.exe benign_stage_marker"
   },
   "object_metadata": {
     "object_id": "proc-4442",

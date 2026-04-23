@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from cti_service.contracts import (
+from decision_service.contracts import (
     CaseScoreVectorResponse,
     DecisionProvenanceItemResponse,
     EvidenceFusionDeduplicationResponse,
@@ -11,7 +11,7 @@ from cti_service.contracts import (
     EvidenceFusionMissingItemResponse,
     ScoreCaseRequest,
 )
-from cti_service.promotion_suppression_engine import build_promotion_suppression_decision
+from decision_service.promotion_suppression_engine import build_promotion_suppression_decision
 
 
 def _score(
@@ -395,3 +395,4 @@ def test_engine_assigns_tier1_role_when_manual_review_is_low_impact() -> None:
     )
     assert result.decision == "needs_human_review"
     assert result.required_reviewer_role == "tier1_analyst"
+

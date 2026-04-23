@@ -1,6 +1,6 @@
 # Training Row Format
 
-Canonical dataset rows are written as JSONL by `ai/jobs/build_adjudication_dataset.py`.
+Canonical dataset rows are written as JSONL by `ai/jobs/build_decision_dataset.py`.
 
 ## Canonical Fields
 - `row_id`
@@ -22,9 +22,9 @@ Canonical dataset rows are written as JSONL by `ai/jobs/build_adjudication_datas
 - `eligible_tasks`
 
 ## Task Views
-- `yara_package_adjudication`
-- `sigma_package_adjudication`
-- `snort_package_adjudication`
+- `yara_package_decision`
+- `sigma_package_decision`
+- `snort_package_decision`
 - `action_plan_recommendation`
 
 ## Partial Rows
@@ -40,3 +40,5 @@ Task split files use Group+Time splitting:
 - Groups are anchored by rule/object identity via `group_key`.
 - Each group is assigned to a single split.
 - Group order is chronological to reduce temporal leakage.
+
+

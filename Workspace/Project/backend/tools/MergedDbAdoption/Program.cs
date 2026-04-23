@@ -131,8 +131,8 @@ var criticalTables = new[]
     new TableKey("dbo", "scan_result_ingestion_runs"),
     new TableKey("dbo", "scan_result_provenances"),
     new TableKey("dbo", "scan_result_ingestion_diagnostics"),
-    new TableKey("dbo", "ai_adjudication_requests"),
-    new TableKey("dbo", "ai_adjudication_results"),
+    new TableKey("dbo", "ai_decision_requests"),
+    new TableKey("dbo", "ai_decision_results"),
     TableKey.MigrationsHistory,
 };
 
@@ -204,7 +204,7 @@ static bool IsBridgeTargetTable(ITable table)
         var fullName = clrType.FullName ?? string.Empty;
 
         if (fullName.StartsWith("Backend.Domain.IocManager.", StringComparison.Ordinal)
-            || fullName.StartsWith("Backend.Domain.AiAdjudication.", StringComparison.Ordinal)
+            || fullName.StartsWith("Backend.Domain.AiDecision.", StringComparison.Ordinal)
             || fullName == "Backend.Infrastructure.Security.ApplicationUser"
             || fullName == "Backend.Infrastructure.Security.ApplicationRole"
             || fullName.StartsWith("Microsoft.AspNetCore.Identity.", StringComparison.Ordinal))
@@ -392,3 +392,4 @@ internal sealed record BridgeOptions
         return args[index];
     }
 }
+

@@ -160,7 +160,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IReportIngestionRepository, ReportIngestionRepository>();
         services.AddScoped<IRuleWorkflowRepository, RuleWorkflowRepository>();
         services.AddScoped<ICtiRecommendationPersistenceRepository, CtiRecommendationPersistenceRepository>();
-        services.AddScoped<IAiAdjudicationRepository, AiAdjudicationRepository>();
+        services.AddScoped<IAiDecisionRepository, AiDecisionRepository>();
         services.AddScoped<ICtiDecisionReplayQueryService, CtiDecisionReplayQueryService>();
         services.AddScoped<ICoveragePainAnalysisQueryService, CoveragePainAnalysisQueryService>();
 
@@ -170,7 +170,7 @@ public static class ServiceCollectionExtensions
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
         });
-        services.AddHttpClient<IAiAdjudicationClient, AiAdjudicationClient>((sp, client) =>
+        services.AddHttpClient<IAiDecisionClient, AiDecisionClient>((sp, client) =>
         {
             var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
@@ -194,3 +194,4 @@ public static class ServiceCollectionExtensions
         }
     }
 }
+

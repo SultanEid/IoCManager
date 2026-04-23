@@ -1,12 +1,11 @@
 # Dataset Manifests
-<!-- scaffold:ai-v0 -->
 
-Metadata-only source manifest placeholders for future ingestion and enrichment.
+Source manifests for dataset ingestion and enrichment staging.
 
 ## Canonical Contract
 - Schema: `ai/schemas/dataset-source-manifest.schema.json`
 - Key style: `snake_case`
-- Scope: template metadata only (no connector logic, no remote pulls, no parser execution in this phase)
+- Scope: source metadata, staging policy, and parser dispatch (no connector logic, no remote pulls)
 
 ## Required Fields
 - `source_name`: stable source identifier.
@@ -17,7 +16,7 @@ Metadata-only source manifest placeholders for future ingestion and enrichment.
 - `parser_name`: reserved parser identifier for future import jobs.
 - `normalization_target`: intended normalized output contract name.
 - `provenance_fields`: canonical provenance keys that imports must preserve exactly.
-- `enabled`: feature flag, defaults to `false` in all templates.
+- `enabled`: feature flag. Supported first-wave local sources may be enabled when staged files exist.
 
 ## Canonical Provenance Fields
 The following ordered list is required in every source manifest:
@@ -31,4 +30,4 @@ The following ordered list is required in every source manifest:
 - `record_locator`
 
 ## Phase Boundary
-This folder intentionally excludes connector/auth implementation. Importers may consume these manifests later, but no active ingestion behavior is introduced in Phase 0.
+This folder intentionally excludes connector/auth implementation. Importers may consume these manifests later, but only local/manual staging is in scope for the current dataset build flow.

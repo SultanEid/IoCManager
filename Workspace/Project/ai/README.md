@@ -1,16 +1,16 @@
-# AI Governance And Adjudication Docs
+# AI Governance And Decision Docs
 
 This directory contains project-scoped AI governance artifacts for IoC Manager.
 
 Primary policy set:
-- [AI Adjudication Overview](../docs/ai-adjudication-overview.md)
+- [AI Decision Overview](../docs/ai-decision-overview.md)
 - [Verdict Taxonomy](../docs/verdict-taxonomy.md)
 - [Action Plan Policy](../docs/action-plan-policy.md)
 - [Dataset Sources](../docs/dataset-sources.md)
 - [Labeling Guidelines Prompt](prompts/labeling-guidelines.md)
 
 Purpose:
-- Keep adjudication decisions grounded and auditable.
+- Keep decision decisions grounded and auditable.
 - Preserve explicit abstain pathways when evidence is insufficient.
 - Ensure verdict/action language aligns with the sidecar contracts.
 
@@ -31,3 +31,5 @@ This Phase 0 scaffold adds safe placeholders only.
 - `ai/scripts/`, `ai/tests/`, `ai/notebooks/` as starter work areas
 
 No model architecture or training expansion is introduced in this phase.
+
+

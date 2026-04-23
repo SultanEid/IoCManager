@@ -1,0 +1,31 @@
+{
+  "source_name": "sigmahq",
+  "source_type": "official_rule_repository",
+  "location": {
+    "local_path": "ai/datasets/raw/sigmahq/",
+    "remote_reference": {
+      "uri": "https://github.com/SigmaHQ/sigma",
+      "format_hint": "zip_repository_snapshot",
+      "retrieval_hint": "official_remote_stage"
+    }
+  },
+  "access_notes": [
+    "Stage only official SigmaHQ rules from the SigmaHQ repository.",
+    "Preserve source path, repository commit hint, and rule metadata for provenance.",
+    "Prefer stable/test rules with clear logsource coverage."
+  ],
+  "ingestion_mode": "official_remote_stage",
+  "parser_name": "sigmahq_rule_parser_v1",
+  "normalization_target": "sigma_rule_package_v1",
+  "provenance_fields": [
+    "source",
+    "key",
+    "value",
+    "evidence_id",
+    "citation_ref",
+    "retrieved_at_utc",
+    "retrieved_by",
+    "record_locator"
+  ],
+  "enabled": true
+}

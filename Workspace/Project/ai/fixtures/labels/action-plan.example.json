@@ -39,7 +39,7 @@
       "score": 0.66,
       "rationale": "open_review prioritized due to uncertainty/conflict that requires analyst validation.",
       "prerequisites": [
-        "Attach adjudication evidence summary and policy check trace."
+        "Attach decision evidence summary and policy check trace."
       ],
       "cautions": [
         "Manual review queues can add response latency."
@@ -124,3 +124,4 @@
     }
   }
 }
+

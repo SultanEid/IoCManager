@@ -8,9 +8,11 @@ import {
   Bell,
   ChevronRight,
   Menu,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Sun,
   Star,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
@@ -36,10 +38,13 @@ import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/shared/auth/auth-provider"
+import { canAccessCanonicalRoute } from "@/shared/auth/role-access"
+import type { UserRole } from "@/shared/auth/session"
 import { roleLabels } from "@/shared/auth/session"
 import { gateway, isMockMode } from "@/shared/gateway"
 import { listLegacyJobs } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
+import { useThemeMode } from "@/shared/theme/theme-provider"
 import { pageMotion } from "@/shared/ui/motion"
 import { CompactEmptyState, CompactErrorState, CompactLoadingState } from "@/shared/ui/state-panels"
 
@@ -53,17 +58,28 @@ type NotificationItem = {
 type SidebarNavProps = {
   collapsed: boolean
   pathname: string
+  roles: readonly UserRole[]
   onNavigate?: () => void
 }
 
 type SidebarWorkAreaProps = {
   collapsed: boolean
+  alertsEnabled: boolean
   pinned: PinnedWorkbenchItem[]
   onTogglePin: (alertId: string) => void
 }
 
-function SidebarNav({ collapsed, pathname, onNavigate }: SidebarNavProps) {
-  const sections = useMemo(() => getWorkbenchNavByModule(), [])
+function SidebarNav({ collapsed, pathname, roles, onNavigate }: SidebarNavProps) {
+  const sections = useMemo(
+    () =>
+      getWorkbenchNavByModule()
+        .map((section) => ({
+          ...section,
+          routes: section.routes.filter((route) => canAccessCanonicalRoute(roles, route.href)),
+        }))
+        .filter((section) => section.routes.length > 0),
+    [roles],
+  )
 
   return (
     <div className="space-y-5">
@@ -99,8 +115,10 @@ function SidebarNav({ collapsed, pathname, onNavigate }: SidebarNavProps) {
   )
 }
 
-function SidebarWorkArea({ collapsed, pinned, onTogglePin }: SidebarWorkAreaProps) {
-  const alertsQuery = useWorkbenchQuery(["shell", "sidebar", "alerts"], (signal) => gateway.listAlerts(signal))
+function SidebarWorkArea({ collapsed, alertsEnabled, pinned, onTogglePin }: SidebarWorkAreaProps) {
+  const alertsQuery = useWorkbenchQuery(["shell", "sidebar", "alerts"], (signal) => gateway.listAlerts(signal), {
+    enabled: alertsEnabled,
+  })
 
   const pinnedRows = useMemo(() => {
     const alerts = alertsQuery.data ?? []
@@ -115,7 +133,7 @@ function SidebarWorkArea({ collapsed, pinned, onTogglePin }: SidebarWorkAreaProp
     })
   }, [alertsQuery.data, pinned])
 
-  if (collapsed || pinned.length === 0) {
+  if (!alertsEnabled || collapsed || pinned.length === 0) {
     return null
   }
 
@@ -159,14 +177,16 @@ function SidebarWorkArea({ collapsed, pinned, onTogglePin }: SidebarWorkAreaProp
 function SidebarContent({
   collapsed,
   pathname,
+  roles,
   onNavigate,
+  alertsEnabled,
   pinned,
   onTogglePin,
 }: SidebarNavProps & SidebarWorkAreaProps) {
   return (
     <ScrollArea className="h-full px-2 pb-4 pt-3">
-      <SidebarNav collapsed={collapsed} pathname={pathname} onNavigate={onNavigate} />
-      <SidebarWorkArea collapsed={collapsed} pinned={pinned} onTogglePin={onTogglePin} />
+      <SidebarNav collapsed={collapsed} pathname={pathname} roles={roles} onNavigate={onNavigate} />
+      <SidebarWorkArea collapsed={collapsed} alertsEnabled={alertsEnabled} pinned={pinned} onTogglePin={onTogglePin} />
     </ScrollArea>
   )
 }
@@ -191,12 +211,12 @@ function ShellNotifications({
       {hasPartialError ? <CompactErrorState label="Some feeds unavailable. Showing partial notifications." /> : null}
       {reducedCapability ? (
         <div className="rounded-md border border-border/70 bg-surface-2/55 px-2 py-2 text-[11px] text-muted-foreground">
-          Notification feed is intentionally reduced: this panel currently shows only contract-backed job activity.
+          Notification coverage is currently limited to job activity returned by the backend.
         </div>
       ) : null}
       {items.length === 0 ? (
         <CompactEmptyState
-          label={reducedCapability ? "No recent job activity available in reduced-capability mode." : "No notifications available."}
+          label={reducedCapability ? "No recent job activity returned." : "No notifications available."}
         />
       ) : null}
       {items.map((item) => (
@@ -207,7 +227,7 @@ function ShellNotifications({
         </div>
       ))}
       <p className="text-[11px] text-muted-foreground">
-        Notification center is explicitly constrained until a dedicated notification/feed contract is available.
+        Additional notification sources will appear automatically as backend contracts are enabled.
       </p>
     </div>
   )
@@ -217,6 +237,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { session, signOut } = useAuth()
+  const { mode: themeMode, toggleMode } = useThemeMode()
   const { closeInspector } = useWorkbenchInspector()
 
   const [collapsed, setCollapsed] = useState(false)
@@ -226,6 +247,9 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const [pinned, setPinned] = useState<PinnedWorkbenchItem[]>([])
 
   const resolvedRoute = useMemo(() => resolveWorkbenchRoute(pathname), [pathname])
+  const roleSet = session?.roles ?? []
+  const canOpenAlerts = canAccessCanonicalRoute(roleSet, "/alerts")
+  const canOpenScans = canAccessCanonicalRoute(roleSet, "/scans")
 
   const notificationsQuery = useWorkbenchQuery(["shell", "notifications"], async (signal) => {
     const jobsResult = await Promise.allSettled([listLegacyJobs(signal)])
@@ -250,14 +274,9 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
       hasPartialError: jobsResult[0].status === "rejected",
       reducedCapability,
     }
+  }, {
+    enabled: canOpenScans,
   })
-
-  useEffect(() => {
-    const root = document.documentElement
-    root.classList.remove("light")
-    root.classList.add("dark")
-    window.localStorage.removeItem("ioc.manager.theme")
-  }, [])
 
   useEffect(() => {
     setPinned(readPinnedWorkbenchItems())
@@ -276,8 +295,10 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   }
 
   const notificationItems = notificationsQuery.data?.items ?? []
-  const hasPartialNotificationError = notificationsQuery.data?.hasPartialError ?? false
-  const reducedNotificationCapability = notificationsQuery.data?.reducedCapability ?? !isMockMode
+  const hasPartialNotificationError = canOpenScans ? (notificationsQuery.data?.hasPartialError ?? false) : false
+  const reducedNotificationCapability = canOpenScans
+    ? (notificationsQuery.data?.reducedCapability ?? !isMockMode)
+    : true
   const RouteIcon = resolvedRoute.route?.icon
 
   return (
@@ -286,11 +307,11 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         <motion.aside
           animate={{ width: collapsed ? 96 : 292 }}
           transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-          className="hidden border-r border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--shell-sidebar)_94%,transparent),color-mix(in_srgb,var(--background)_86%,transparent))] shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent),18px_0_42px_rgba(0,0,0,0.22)] backdrop-blur md:flex md:flex-col"
+          className="hidden border-r border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--shell-sidebar)_94%,transparent),color-mix(in_srgb,var(--background)_86%,transparent))] shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent),18px_0_42px_color-mix(in_srgb,var(--foreground)_24%,transparent)] backdrop-blur md:flex md:flex-col"
         >
           <div className={cn("px-3", collapsed ? "flex flex-col items-center gap-2 py-3" : "flex h-16 items-center justify-between")}>
             <div className={cn("flex items-center gap-2", collapsed && "w-full justify-center")}>
-              <div className="grid h-9 w-9 place-items-center rounded-xl border border-primary/35 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--primary)_18%,transparent),color-mix(in_srgb,var(--surface-2)_74%,transparent))] text-primary shadow-[0_14px_30px_rgba(0,0,0,0.24)]">
+              <div className="grid h-9 w-9 place-items-center rounded-xl border border-primary/35 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--primary)_18%,transparent),color-mix(in_srgb,var(--surface-2)_74%,transparent))] text-primary shadow-[var(--shadow-soft)]">
                 <span className="text-[11px] font-semibold tracking-[0.14em]">IOC</span>
               </div>
               {!collapsed ? (
@@ -314,6 +335,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
           <SidebarContent
             collapsed={collapsed}
             pathname={pathname}
+            roles={roleSet}
+            alertsEnabled={canOpenAlerts}
             pinned={pinned}
             onTogglePin={handleTogglePin}
           />
@@ -338,6 +361,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                   <SidebarContent
                     collapsed={false}
                     pathname={pathname}
+                    roles={roleSet}
+                    alertsEnabled={canOpenAlerts}
                     onNavigate={() => setMobileOpen(false)}
                     pinned={pinned}
                     onTogglePin={handleTogglePin}
@@ -351,7 +376,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                     {resolvedRoute.module}
                   </span>
                   <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_90%,transparent),color-mix(in_srgb,var(--surface-1)_76%,transparent))] text-foreground shadow-[0_14px_30px_rgba(0,0,0,0.18)]">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_90%,transparent),color-mix(in_srgb,var(--surface-1)_76%,transparent))] text-foreground shadow-[var(--shadow-soft)]">
                       {RouteIcon ? <RouteIcon className="h-4.5 w-4.5" /> : <Search className="h-4.5 w-4.5" />}
                     </span>
                     <div className="min-w-0">
@@ -406,6 +431,17 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
               </Sheet>
 
               <Button
+                size="icon-sm"
+                variant="outline"
+                onClick={toggleMode}
+                aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                title={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                data-testid="theme-toggle"
+              >
+                {themeMode === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+
+              <Button
                 size="sm"
                 variant="outline"
                 onClick={() => {
@@ -456,7 +492,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <WorkbenchCommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+      <WorkbenchCommandPalette open={commandOpen} onOpenChange={setCommandOpen} roles={roleSet} />
       <WorkbenchInspectorDrawer />
     </div>
   )

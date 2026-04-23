@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -7,7 +7,7 @@ import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/shared/auth/auth-provider"
-import { canAccessAdminActions } from "@/shared/auth/session"
+import { canAccessLeadActions } from "@/shared/auth/session"
 import { gateway, isMockMode } from "@/shared/gateway"
 import { getDetectionStudioVm } from "@/shared/modules/mock-foundation"
 import type {
@@ -81,7 +81,7 @@ function RulesRolloutReadOnly({
   }
 
   const { session } = useAuth()
-  const canOperate = canAccessAdminActions(session)
+  const canOperate = canAccessLeadActions(session)
   const alertsQuery = useWorkbenchQuery(["rules-rollout", "alerts"], (signal) => gateway.listAlerts(signal))
   const jobsQuery = useWorkbenchQuery(["rules-rollout", "jobs"], (signal) => gateway.listJobRuns(signal))
 

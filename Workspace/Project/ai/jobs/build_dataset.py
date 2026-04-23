@@ -10,8 +10,8 @@ from _bootstrap import bootstrap_service_path
 
 bootstrap_service_path()
 
-from cti_service.snapshots import SnapshotLoader, build_training_examples
-from cti_service.dataset_registry import DatasetRegistryEntry, DatasetRegistryStore
+from decision_service.snapshots import SnapshotLoader, build_training_examples
+from decision_service.dataset_registry import DatasetRegistryEntry, DatasetRegistryStore
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,3 +77,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

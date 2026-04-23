@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cti_service.action_policy_matrix import (
+from decision_service.action_policy_matrix import (
     clear_action_policy_matrix_cache,
     get_action_policy_matrix,
     select_action_policy,
@@ -170,3 +170,4 @@ def test_policy_matrix_selection_prefers_highest_priority_then_first_row() -> No
     finally:
         clear_action_policy_matrix_cache()
         matrix_path.unlink(missing_ok=True)
+

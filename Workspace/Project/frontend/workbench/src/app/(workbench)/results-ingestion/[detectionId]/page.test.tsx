@@ -1,18 +1,18 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import DetectionAdjudicationPage from "@/app/(workbench)/results-ingestion/[detectionId]/page"
+import DetectionDecisionPage from "@/app/(workbench)/results-ingestion/[detectionId]/page"
 
 const mockedUseWorkbenchQuery = vi.hoisted(() => vi.fn())
 const mockedGateway = vi.hoisted(() => ({
   getDetectionDetail: vi.fn(),
-  submitAiAdjudication: vi.fn(),
-  getAiAdjudicationResult: vi.fn(),
-  getAiAdjudicationExplanation: vi.fn(),
-  getAiAdjudicationActionPlan: vi.fn(),
-  listAiAdjudicationEvidenceSources: vi.fn(),
-  listAiAdjudicationSimilarDetections: vi.fn(),
-  submitAiAdjudicationOverrideOrClosure: vi.fn(),
+  submitAiDecision: vi.fn(),
+  getAiDecisionResult: vi.fn(),
+  getAiDecisionExplanation: vi.fn(),
+  getAiDecisionActionPlan: vi.fn(),
+  listAiDecisionEvidenceSources: vi.fn(),
+  listAiDecisionSimilarDetections: vi.fn(),
+  submitAiDecisionOverrideOrClosure: vi.fn(),
 }))
 
 const gatewayState = vi.hoisted(() => ({
@@ -74,12 +74,12 @@ const detectionDetailBase = {
   source: "telemetry",
 }
 
-describe("DetectionAdjudicationPage", () => {
+describe("DetectionDecisionPage", () => {
   beforeEach(() => {
     gatewayState.isMockMode = false
     gatewayState.isModeConfigured = true
-    mockedGateway.submitAiAdjudication.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.submitAiDecision.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       status: "Queued",
       submittedAtUtc: "2026-04-20T00:00:00Z",
       links: {
@@ -91,8 +91,8 @@ describe("DetectionAdjudicationPage", () => {
         overrideClosure: "/override",
       },
     })
-    mockedGateway.getAiAdjudicationResult.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.getAiDecisionResult.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       status: "Completed",
       submittedAtUtc: "2026-04-20T00:00:00Z",
       startedAtUtc: "2026-04-20T00:00:00Z",
@@ -136,30 +136,30 @@ describe("DetectionAdjudicationPage", () => {
       similarDetectionsAvailable: false,
       evidenceSourcesAvailable: false,
     })
-    mockedGateway.getAiAdjudicationExplanation.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.getAiDecisionExplanation.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       status: "Running",
       message: "pending",
     })
-    mockedGateway.getAiAdjudicationActionPlan.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.getAiDecisionActionPlan.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       status: "Running",
       message: "pending",
     })
-    mockedGateway.listAiAdjudicationEvidenceSources.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.listAiDecisionEvidenceSources.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       limit: 20,
       nextCursor: null,
       items: [],
     })
-    mockedGateway.listAiAdjudicationSimilarDetections.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.listAiDecisionSimilarDetections.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       limit: 20,
       nextCursor: null,
       items: [],
     })
-    mockedGateway.submitAiAdjudicationOverrideOrClosure.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.submitAiDecisionOverrideOrClosure.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       overrideId: "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
       actionType: "Close",
       previousStatus: "Completed",
@@ -223,25 +223,25 @@ describe("DetectionAdjudicationPage", () => {
       },
     }))
 
-    render(<DetectionAdjudicationPage />)
+    render(<DetectionDecisionPage />)
 
-    const submit = screen.getByRole("button", { name: "Submit AI adjudication" })
+    const submit = screen.getByRole("button", { name: "Run AI decision" })
     expect(submit).toBeDisabled()
     expect(screen.getByText(/select the target case before submitting analysis/i)).toBeInTheDocument()
   })
 
-  it("blocks adjudication content in demo mode", () => {
+  it("blocks decision content in demo mode", () => {
     gatewayState.isMockMode = true
 
-    render(<DetectionAdjudicationPage />)
+    render(<DetectionDecisionPage />)
 
-    expect(screen.getByText("AI adjudication unavailable")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Submit AI adjudication" })).not.toBeInTheDocument()
+    expect(screen.getByText("AI decision unavailable")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run AI decision" })).not.toBeInTheDocument()
   })
 
   it("renders operator-facing safety, provenance, and action summaries", async () => {
-    mockedGateway.getAiAdjudicationExplanation.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.getAiDecisionExplanation.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       status: "Completed",
       summary: "Deterministic explanation.",
       decisionState: "hold",
@@ -256,8 +256,8 @@ describe("DetectionAdjudicationPage", () => {
       raw: {},
       phrasingDiagnostics: null,
     })
-    mockedGateway.getAiAdjudicationActionPlan.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.getAiDecisionActionPlan.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       status: "Completed",
       summary: "Review first.",
       recommendedActions: [
@@ -283,14 +283,14 @@ describe("DetectionAdjudicationPage", () => {
       raw: {},
       phrasingDiagnostics: null,
     })
-    mockedGateway.listAiAdjudicationEvidenceSources.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.listAiDecisionEvidenceSources.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       limit: 20,
       nextCursor: null,
       items: [],
     })
-    mockedGateway.getAiAdjudicationResult.mockResolvedValue({
-      adjudicationId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
+    mockedGateway.getAiDecisionResult.mockResolvedValue({
+      decisionId: "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       status: "Completed",
       submittedAtUtc: "2026-04-20T00:00:00Z",
       startedAtUtc: "2026-04-20T00:00:00Z",
@@ -312,7 +312,7 @@ describe("DetectionAdjudicationPage", () => {
         reasons: ["Need non-lexical corroboration."],
         provenance: [
           {
-            source: "sigma_adjudication",
+            source: "sigma_decision",
             key: "rule_id",
             value: "SIG-1",
             evidenceId: "evt-1",
@@ -343,9 +343,19 @@ describe("DetectionAdjudicationPage", () => {
       evidenceSourcesAvailable: true,
     })
 
-    render(<DetectionAdjudicationPage />)
+    render(<DetectionDecisionPage />)
 
-    await userEvent.click(screen.getByRole("button", { name: "Submit AI adjudication" }))
+    await userEvent.click(screen.getByRole("button", { name: "Run AI decision" }))
+    await waitFor(() => expect(mockedGateway.submitAiDecision).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: "case-1",
+      detectionId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+      observedAtUtc: "2026-04-20T00:00:00Z",
+      detectionPackage: expect.objectContaining({
+        caseId: "case-1",
+        detectionId: "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69",
+        observedAt: "2026-04-20T00:00:00Z",
+      }),
+    })))
     await waitFor(() => expect(screen.getByText("Decision Support")).toBeInTheDocument())
 
     expect(screen.getByText(/False-positive risk is 62%/i)).toBeInTheDocument()
@@ -356,10 +366,10 @@ describe("DetectionAdjudicationPage", () => {
   })
 
   it("maps accept/reject/modify/defer operator actions to expected API payloads", async () => {
-    render(<DetectionAdjudicationPage />)
+    render(<DetectionDecisionPage />)
 
-    await userEvent.click(screen.getByRole("button", { name: "Submit AI adjudication" }))
-    await waitFor(() => expect(mockedGateway.submitAiAdjudication).toHaveBeenCalledTimes(1))
+    await userEvent.click(screen.getByRole("button", { name: "Run AI decision" }))
+    await waitFor(() => expect(mockedGateway.submitAiDecision).toHaveBeenCalledTimes(1))
 
     const submitOperatorAction = screen.getByRole("button", { name: "Submit operator action" })
     const reasonInput = screen.getByPlaceholderText("Why are you taking this action?")
@@ -368,7 +378,7 @@ describe("DetectionAdjudicationPage", () => {
     expect(submitOperatorAction).toBeEnabled()
     await userEvent.click(submitOperatorAction)
 
-    await waitFor(() => expect(mockedGateway.submitAiAdjudicationOverrideOrClosure).toHaveBeenLastCalledWith(
+    await waitFor(() => expect(mockedGateway.submitAiDecisionOverrideOrClosure).toHaveBeenLastCalledWith(
       "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       expect.objectContaining({
         actionType: "Close",
@@ -385,7 +395,7 @@ describe("DetectionAdjudicationPage", () => {
     expect(submitOperatorAction).toBeEnabled()
     await userEvent.click(submitOperatorAction)
 
-    await waitFor(() => expect(mockedGateway.submitAiAdjudicationOverrideOrClosure).toHaveBeenLastCalledWith(
+    await waitFor(() => expect(mockedGateway.submitAiDecisionOverrideOrClosure).toHaveBeenLastCalledWith(
       "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       expect.objectContaining({
         actionType: "Override",
@@ -406,7 +416,7 @@ describe("DetectionAdjudicationPage", () => {
     expect(submitOperatorAction).toBeEnabled()
     await userEvent.click(submitOperatorAction)
 
-    await waitFor(() => expect(mockedGateway.submitAiAdjudicationOverrideOrClosure).toHaveBeenLastCalledWith(
+    await waitFor(() => expect(mockedGateway.submitAiDecisionOverrideOrClosure).toHaveBeenLastCalledWith(
       "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       expect.objectContaining({
         actionType: "Override",
@@ -425,7 +435,7 @@ describe("DetectionAdjudicationPage", () => {
     expect(submitOperatorAction).toBeEnabled()
     await userEvent.click(submitOperatorAction)
 
-    await waitFor(() => expect(mockedGateway.submitAiAdjudicationOverrideOrClosure).toHaveBeenLastCalledWith(
+    await waitFor(() => expect(mockedGateway.submitAiDecisionOverrideOrClosure).toHaveBeenLastCalledWith(
       "95fef7ff-c894-4d2d-9f95-b6de6e68b2e0",
       expect.objectContaining({
         actionType: "Close",
@@ -436,3 +446,5 @@ describe("DetectionAdjudicationPage", () => {
     ))
   }, 15000)
 })
+
+

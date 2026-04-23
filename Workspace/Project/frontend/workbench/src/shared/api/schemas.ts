@@ -1,4 +1,4 @@
-﻿import { z } from "zod"
+import { z } from "zod"
 
 export const tokenResponseSchema = z.object({
   accessToken: z.string().min(1),
@@ -418,8 +418,8 @@ export const permissionResponseSchema = z.object({
 })
 
 export const rolePermissionResponseSchema = z.object({
-  roleId: z.string().uuid(),
-  permissionId: z.string().uuid(),
+  roleId: z.string().min(1),
+  permissionId: z.string().min(1),
   grantedByUserId: z.string(),
   grantedAtUtc: z.string(),
 })
@@ -910,7 +910,7 @@ export const detectionDetailResponseSchema = z.object({
 
 const rawJsonObjectSchema = z.record(z.string(), z.unknown())
 
-export const aiAdjudicationLinksResponseSchema = z.object({
+export const aiDecisionLinksResponseSchema = z.object({
   result: z.string(),
   explanation: z.string(),
   actionPlan: z.string(),
@@ -919,11 +919,11 @@ export const aiAdjudicationLinksResponseSchema = z.object({
   overrideClosure: z.string(),
 })
 
-export const submitAiAdjudicationAcceptedResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+export const submitAiDecisionAcceptedResponseSchema = z.object({
+  decisionId: z.string().uuid(),
   status: z.string(),
   submittedAtUtc: z.string(),
-  links: aiAdjudicationLinksResponseSchema,
+  links: aiDecisionLinksResponseSchema,
 })
 
 export const aiDecisionProvenanceResponseSchema = z.object({
@@ -948,7 +948,7 @@ export const aiSafetyDiagnosticsResponseSchema = z.object({
   degradationReasons: z.array(z.string()),
 })
 
-export const aiAdjudicationDecisionResponseSchema = z.object({
+export const aiDecisionDecisionResponseSchema = z.object({
   verdict: z.string(),
   action: z.string(),
   confidence: z.number(),
@@ -967,8 +967,8 @@ export const aiAdjudicationDecisionResponseSchema = z.object({
   raw: rawJsonObjectSchema,
 })
 
-export const aiAdjudicationResultResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+export const aiDecisionResultResponseSchema = z.object({
+  decisionId: z.string().uuid(),
   status: z.string(),
   submittedAtUtc: z.string(),
   startedAtUtc: z.string().nullable(),
@@ -977,11 +977,17 @@ export const aiAdjudicationResultResponseSchema = z.object({
   failureMessage: z.string().nullable(),
   modelVersion: z.string().nullable(),
   datasetVersion: z.string().nullable(),
-  decision: aiAdjudicationDecisionResponseSchema.nullable(),
+  decision: aiDecisionDecisionResponseSchema.nullable(),
   explanationAvailable: z.boolean(),
   actionPlanAvailable: z.boolean(),
   similarDetectionsAvailable: z.boolean(),
   evidenceSourcesAvailable: z.boolean(),
+})
+
+export const iocLatestAiDecisionResponseSchema = z.object({
+  iocId: z.string().uuid(),
+  detectionId: z.string().uuid().nullable(),
+  result: aiDecisionResultResponseSchema,
 })
 
 export const aiExplanationCitationResponseSchema = z.object({
@@ -1003,8 +1009,8 @@ export const aiPhrasingDiagnosticsResponseSchema = z.object({
   raw: rawJsonObjectSchema.nullable(),
 })
 
-export const aiAdjudicationExplanationResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+export const aiDecisionExplanationResponseSchema = z.object({
+  decisionId: z.string().uuid(),
   status: z.string(),
   summary: z.string().nullable(),
   decisionState: z.string().nullable(),
@@ -1033,8 +1039,8 @@ export const aiRecommendedActionResponseSchema = z.object({
   executionMode: z.string(),
 })
 
-export const aiAdjudicationActionPlanResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+export const aiDecisionActionPlanResponseSchema = z.object({
+  decisionId: z.string().uuid(),
   status: z.string(),
   summary: z.string().nullable(),
   recommendedActions: z.array(aiRecommendedActionResponseSchema),
@@ -1048,20 +1054,20 @@ export const aiAdjudicationActionPlanResponseSchema = z.object({
   phrasingDiagnostics: aiPhrasingDiagnosticsResponseSchema.nullable(),
 })
 
-export const aiAdjudicationPendingResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+export const aiDecisionPendingResponseSchema = z.object({
+  decisionId: z.string().uuid(),
   status: z.string(),
   message: z.string(),
 })
 
-export const aiAdjudicationExplanationOrPendingResponseSchema = z.union([
-  aiAdjudicationExplanationResponseSchema,
-  aiAdjudicationPendingResponseSchema,
+export const aiDecisionExplanationOrPendingResponseSchema = z.union([
+  aiDecisionExplanationResponseSchema,
+  aiDecisionPendingResponseSchema,
 ])
 
-export const aiAdjudicationActionPlanOrPendingResponseSchema = z.union([
-  aiAdjudicationActionPlanResponseSchema,
-  aiAdjudicationPendingResponseSchema,
+export const aiDecisionActionPlanOrPendingResponseSchema = z.union([
+  aiDecisionActionPlanResponseSchema,
+  aiDecisionPendingResponseSchema,
 ])
 
 export const aiSimilarDetectionResponseSchema = z.object({
@@ -1081,7 +1087,7 @@ export const aiSimilarDetectionResponseSchema = z.object({
 })
 
 export const aiSimilarDetectionsResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+  decisionId: z.string().uuid(),
   limit: z.number().int(),
   nextCursor: z.string().nullable(),
   items: z.array(aiSimilarDetectionResponseSchema),
@@ -1102,14 +1108,14 @@ export const aiEvidenceSourceResponseSchema = z.object({
 })
 
 export const aiEvidenceSourcesResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+  decisionId: z.string().uuid(),
   limit: z.number().int(),
   nextCursor: z.string().nullable(),
   items: z.array(aiEvidenceSourceResponseSchema),
 })
 
 export const aiOverrideOrClosureResponseSchema = z.object({
-  adjudicationId: z.string().uuid(),
+  decisionId: z.string().uuid(),
   overrideId: z.string().uuid(),
   actionType: z.string(),
   previousStatus: z.string(),
@@ -1320,20 +1326,21 @@ export type DetectionHistoryItemResponse = z.infer<typeof detectionHistoryItemRe
 export type DetectionHistoryResponse = z.infer<typeof detectionHistoryResponseSchema>
 export type DetectionLinkedAlertCaseResponse = z.infer<typeof detectionLinkedAlertCaseResponseSchema>
 export type DetectionDetailResponse = z.infer<typeof detectionDetailResponseSchema>
-export type AiAdjudicationLinksResponse = z.infer<typeof aiAdjudicationLinksResponseSchema>
-export type SubmitAiAdjudicationAcceptedResponse = z.infer<typeof submitAiAdjudicationAcceptedResponseSchema>
+export type AiDecisionLinksResponse = z.infer<typeof aiDecisionLinksResponseSchema>
+export type SubmitAiDecisionAcceptedResponse = z.infer<typeof submitAiDecisionAcceptedResponseSchema>
 export type AiDecisionProvenanceResponse = z.infer<typeof aiDecisionProvenanceResponseSchema>
 export type AiSafetyDiagnosticsResponse = z.infer<typeof aiSafetyDiagnosticsResponseSchema>
-export type AiAdjudicationDecisionResponse = z.infer<typeof aiAdjudicationDecisionResponseSchema>
-export type AiAdjudicationResultResponse = z.infer<typeof aiAdjudicationResultResponseSchema>
+export type AiDecisionDecisionResponse = z.infer<typeof aiDecisionDecisionResponseSchema>
+export type AiDecisionResultResponse = z.infer<typeof aiDecisionResultResponseSchema>
+export type IocLatestAiDecisionResponse = z.infer<typeof iocLatestAiDecisionResponseSchema>
 export type AiExplanationCitationResponse = z.infer<typeof aiExplanationCitationResponseSchema>
 export type AiPhrasingDiagnosticsResponse = z.infer<typeof aiPhrasingDiagnosticsResponseSchema>
-export type AiAdjudicationExplanationResponse = z.infer<typeof aiAdjudicationExplanationResponseSchema>
+export type AiDecisionExplanationResponse = z.infer<typeof aiDecisionExplanationResponseSchema>
 export type AiRecommendedActionResponse = z.infer<typeof aiRecommendedActionResponseSchema>
-export type AiAdjudicationActionPlanResponse = z.infer<typeof aiAdjudicationActionPlanResponseSchema>
-export type AiAdjudicationPendingResponse = z.infer<typeof aiAdjudicationPendingResponseSchema>
-export type AiAdjudicationExplanationOrPendingResponse = z.infer<typeof aiAdjudicationExplanationOrPendingResponseSchema>
-export type AiAdjudicationActionPlanOrPendingResponse = z.infer<typeof aiAdjudicationActionPlanOrPendingResponseSchema>
+export type AiDecisionActionPlanResponse = z.infer<typeof aiDecisionActionPlanResponseSchema>
+export type AiDecisionPendingResponse = z.infer<typeof aiDecisionPendingResponseSchema>
+export type AiDecisionExplanationOrPendingResponse = z.infer<typeof aiDecisionExplanationOrPendingResponseSchema>
+export type AiDecisionActionPlanOrPendingResponse = z.infer<typeof aiDecisionActionPlanOrPendingResponseSchema>
 export type AiSimilarDetectionResponse = z.infer<typeof aiSimilarDetectionResponseSchema>
 export type AiSimilarDetectionsResponse = z.infer<typeof aiSimilarDetectionsResponseSchema>
 export type AiEvidenceSourceResponse = z.infer<typeof aiEvidenceSourceResponseSchema>
@@ -1344,3 +1351,4 @@ export type DiscoveredHostResponse = z.infer<typeof discoveredHostResponseSchema
 export type PromoteDiscoveredHostResponse = z.infer<typeof promoteDiscoveredHostResponseSchema>
 export type CoveragePainAnalysisResponse = z.infer<typeof coveragePainAnalysisResponseSchema>
 export type JobRunResponse = z.infer<typeof jobRunResponseSchema>
+

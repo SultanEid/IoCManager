@@ -10,8 +10,9 @@
     }
   },
   "access_notes": [
-    "Review provider usage policy and quotas before activation.",
-    "Planned raw staging path: ai/datasets/raw/yaraify/."
+    "Manual local staging only in Phase 1. Review provider usage policy and quotas before any future automation.",
+    "Expected raw staging path: ai/datasets/raw/yaraify/.",
+    "Preserve provider provenance fields and rule/sample references exactly as staged."
   ],
   "ingestion_mode": "deferred_remote_import",
   "parser_name": "yaraify_feed_parser_v1",
@@ -26,5 +27,5 @@
     "retrieved_by",
     "record_locator"
   ],
-  "enabled": false
+  "enabled": true
 }

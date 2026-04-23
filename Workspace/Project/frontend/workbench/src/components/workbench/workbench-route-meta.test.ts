@@ -45,6 +45,13 @@ describe("resolveWorkbenchRoute", () => {
     expect(resolved.title).toBe("Rules Management")
   })
 
+  it("resolves distribution aliases to canonical rules routes", () => {
+    const resolved = resolveWorkbenchRoute("/distribution")
+    expect(resolved.canonicalPath).toBe("/rules")
+    expect(resolved.module).toBe("Operations")
+    expect(resolved.title).toBe("Rules Management")
+  })
+
   it("resolves repository rule detail routes", () => {
     const resolved = resolveWorkbenchRoute("/rules/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69")
     expect(resolved.canonicalPath).toBe("/rules/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69")
@@ -104,6 +111,7 @@ describe("resolveWorkbenchRoute", () => {
   it("keeps canonical nav active across nested routes", () => {
     expect(isWorkbenchNavActive("/servers/scanner-fleet", "/servers")).toBe(true)
     expect(isWorkbenchNavActive("/rules/review", "/rules")).toBe(true)
+    expect(isWorkbenchNavActive("/distribution", "/rules")).toBe(true)
     expect(isWorkbenchNavActive("/ioc-ingestion/feed-explorer", "/ioc-ingestion")).toBe(true)
     expect(isWorkbenchNavActive("/servers/scan-plans", "/scan-plan")).toBe(true)
     expect(isWorkbenchNavActive("/alerts/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69", "/alerts")).toBe(true)
