@@ -999,3 +999,164 @@ class EvaluateModelResponse(ApiModel):
     sample_size: int
     overall: EvaluationOverallMetrics
     slices: list[EvaluationSliceMetrics] = Field(default_factory=list)
+
+
+ScanAnalystAction = Literal["RecommendOnly", "CreatePlan", "CreateAndRun"]
+ScanAnalystScannerCapability = Literal["Yara", "Sigma", "Snort", "Suricata"]
+ScanAnalystRuleSelectionMode = Literal["RuleSet", "RuleScope"]
+ScanAnalystCadenceType = Literal["Manual", "Interval", "Daily", "Weekly"]
+
+
+class ScanAnalystFocusSubnetInput(ApiModel):
+    subnet_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    cidr_block: str = Field(min_length=1)
+
+
+class ScanAnalystDiscoveryRunInput(ApiModel):
+    discovery_run_id: str = Field(min_length=1)
+    subnet_id: str = Field(min_length=1)
+    requested_cidr: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    total_hosts: int = Field(ge=0)
+    reachable_hosts: int = Field(ge=0)
+    unreachable_hosts: int = Field(ge=0)
+    summary: str = ""
+    queued_at_utc: datetime
+    completed_at_utc: datetime | None = None
+
+
+class ScanAnalystDiscoveredHostInput(ApiModel):
+    discovered_host_id: str = Field(min_length=1)
+    subnet_id: str = Field(min_length=1)
+    ip_address: str = Field(min_length=1)
+    hostname: str = ""
+    reachability: str = Field(min_length=1)
+    already_promoted: bool = False
+    last_checked_at_utc: datetime
+
+
+class ScanAnalystManagedServerInput(ApiModel):
+    target_server_id: str = Field(min_length=1)
+    subnet_id: str = Field(min_length=1)
+    hostname: str = Field(min_length=1)
+    ip_address: str = Field(min_length=1)
+    operating_system: str = ""
+    environment: str = ""
+    status: str = Field(min_length=1)
+    connectivity_status: str = Field(min_length=1)
+    scanner_capabilities: list[str] = Field(default_factory=list)
+    last_contact_utc: datetime | None = None
+
+
+class ScanAnalystRuleInput(ApiModel):
+    rule_revision_id: str = Field(min_length=1)
+    rule_artifact_id: str = Field(min_length=1)
+    rule_name: str = Field(min_length=1)
+    rule_family: str = Field(min_length=1)
+    revision_number: int = Field(ge=1)
+    version_label: str = Field(min_length=1)
+    lifecycle_status: str = Field(min_length=1)
+    scope_type: str = Field(min_length=1)
+    scope_value: str | None = None
+    description: str = ""
+
+
+class ScanAnalystPlanInput(ApiModel):
+    scan_plan_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    scanner_capability: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    rule_selection_mode: str = Field(min_length=1)
+    target_count: int = Field(ge=0)
+    rule_count: int = Field(ge=0)
+    last_result_status: str | None = None
+    updated_at_utc: datetime
+
+
+class ScanAnalystJobInput(ApiModel):
+    scan_job_id: str = Field(min_length=1)
+    scan_plan_id: str | None = None
+    trigger_source: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    total_targets: int = Field(ge=0)
+    completed_targets: int = Field(ge=0)
+    failed_targets: int = Field(ge=0)
+    detection_count: int = Field(ge=0)
+    summary: str = ""
+    queued_at_utc: datetime
+    completed_at_utc: datetime | None = None
+
+
+class ScanAnalystRequest(ApiModel):
+    objective: str = Field(min_length=1)
+    action: ScanAnalystAction = "RecommendOnly"
+    preferred_scanner_capability: ScanAnalystScannerCapability | None = None
+    max_target_count: int = Field(default=5, ge=1, le=20)
+    focus_subnet: ScanAnalystFocusSubnetInput | None = None
+    discovery_runs: list[ScanAnalystDiscoveryRunInput] = Field(default_factory=list)
+    discovered_hosts: list[ScanAnalystDiscoveredHostInput] = Field(default_factory=list)
+    managed_servers: list[ScanAnalystManagedServerInput] = Field(default_factory=list)
+    candidate_rules: list[ScanAnalystRuleInput] = Field(default_factory=list)
+    existing_plans: list[ScanAnalystPlanInput] = Field(default_factory=list)
+    recent_jobs: list[ScanAnalystJobInput] = Field(default_factory=list)
+
+
+class ScanAnalystTargetResponse(ApiModel):
+    target_server_id: str = Field(min_length=1)
+    hostname: str = Field(min_length=1)
+    ip_address: str = Field(min_length=1)
+    operating_system: str = ""
+    environment: str = ""
+    status: str = Field(min_length=1)
+    connectivity_status: str = Field(min_length=1)
+    scanner_capabilities: list[str] = Field(default_factory=list)
+    reason: str = Field(min_length=1)
+
+
+class ScanAnalystRuleResponse(ApiModel):
+    rule_revision_id: str = Field(min_length=1)
+    rule_artifact_id: str = Field(min_length=1)
+    rule_name: str = Field(min_length=1)
+    rule_family: str = Field(min_length=1)
+    revision_number: int = Field(ge=1)
+    version_label: str = Field(min_length=1)
+    lifecycle_status: str = Field(min_length=1)
+    scope_type: str = Field(min_length=1)
+    scope_value: str | None = None
+    reason: str = Field(min_length=1)
+
+
+class ScanAnalystPlanProposalResponse(ApiModel):
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    scanner_capability: ScanAnalystScannerCapability
+    rule_selection_mode: ScanAnalystRuleSelectionMode
+    rule_scope_type: str | None = None
+    rule_scope_value: str | None = None
+    cadence_type: ScanAnalystCadenceType = "Manual"
+    interval_minutes: int | None = Field(default=None, ge=1)
+    run_at_hour_utc: int | None = Field(default=None, ge=0, le=23)
+    run_at_minute_utc: int | None = Field(default=None, ge=0, le=59)
+    weekly_day_of_week: int | None = Field(default=None, ge=0, le=6)
+    operator_notes: str = Field(min_length=1)
+    status: str = "Draft"
+    target_server_ids: list[str] = Field(default_factory=list)
+    rule_revision_ids: list[str] = Field(default_factory=list)
+    targets: list[ScanAnalystTargetResponse] = Field(default_factory=list)
+    rules: list[ScanAnalystRuleResponse] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_rule_selection(self) -> "ScanAnalystPlanProposalResponse":
+        if self.rule_selection_mode == "RuleSet" and not self.rule_revision_ids:
+            raise ValueError("rule_revision_ids are required for RuleSet proposals.")
+        return self
+
+
+class ScanAnalystResponse(ApiModel):
+    summary: str = Field(min_length=1)
+    observations: list[str] = Field(default_factory=list)
+    reasoning: list[str] = Field(default_factory=list)
+    validation_warnings: list[str] = Field(default_factory=list)
+    recommended_scanner_capability: ScanAnalystScannerCapability
+    proposal: ScanAnalystPlanProposalResponse

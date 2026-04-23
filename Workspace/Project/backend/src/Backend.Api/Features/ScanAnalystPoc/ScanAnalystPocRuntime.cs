@@ -1,0 +1,202 @@
+using System.Collections.Concurrent;
+using Backend.Contracts.V2;
+
+namespace Backend.Api.Features.ScanAnalystPoc;
+
+public sealed class ScanAnalystPocOptions
+{
+    public const string SectionName = "ScanAnalystPoc";
+
+    public bool Enabled { get; init; } = true;
+    public bool AllowMockFallbackWithoutDatabase { get; init; } = true;
+    public bool AutonomyEnabled { get; init; } = true;
+    public int AutonomyIntervalSeconds { get; init; } = 45;
+    public int AutonomyCooldownMinutes { get; init; } = 15;
+    public string SystemActorUserId { get; init; } = "system-scan-analyst-agent";
+    public string[] AllowedSubnets { get; init; } = [];
+    public string[] AllowedEnvironments { get; init; } = ["lab", "staging"];
+    public int MaxTargetsPerRun { get; init; } = 5;
+    public string PreferredScannerFamily { get; init; } = "Auto";
+    public bool AutoRun { get; init; } = true;
+    public string QuietHours { get; init; } = "01:00-05:00 UTC";
+    public bool WatchForNewHosts { get; init; } = true;
+    public bool WatchForFailedRecentJobs { get; init; } = true;
+    public bool RequireMatchingRuleFamily { get; init; } = true;
+}
+
+public sealed class ScanAnalystPocRuntimeState
+{
+    private string _operatingMode = ScanAnalystPocModes.LiveData;
+    private bool _databaseAvailable = true;
+    private string? _degradedReason;
+    private int _activeSessionCount;
+    private IReadOnlyList<string> _activeMockConditions = Array.Empty<string>();
+    private ScanAnalystAutonomousActivityDto? _lastAutonomousActivity;
+    private readonly object _syncRoot = new();
+
+    public string OperatingMode => _operatingMode;
+    public bool DatabaseAvailable => _databaseAvailable;
+    public string? DegradedReason => _degradedReason;
+    public int ActiveSessionCount => _activeSessionCount;
+    public IReadOnlyList<string> ActiveMockConditions => _activeMockConditions;
+    public ScanAnalystAutonomousActivityDto? LastAutonomousActivity => _lastAutonomousActivity;
+
+    public void MarkDatabaseAvailable()
+    {
+        lock (_syncRoot)
+        {
+            _databaseAvailable = true;
+            _operatingMode = ScanAnalystPocModes.LiveData;
+            _degradedReason = null;
+        }
+    }
+
+    public void MarkDatabaseUnavailable(string reason)
+    {
+        lock (_syncRoot)
+        {
+            _databaseAvailable = false;
+            _operatingMode = ScanAnalystPocModes.MockFallback;
+            _degradedReason = string.IsNullOrWhiteSpace(reason) ? "Database unavailable for scan analyst POC." : reason.Trim();
+        }
+    }
+
+    public void SetActiveSessionCount(int count)
+    {
+        lock (_syncRoot)
+        {
+            _activeSessionCount = Math.Max(0, count);
+        }
+    }
+
+    public void SetActiveMockConditions(IReadOnlyList<string> conditions)
+    {
+        lock (_syncRoot)
+        {
+            _activeMockConditions = conditions.Count == 0 ? Array.Empty<string>() : conditions.ToArray();
+        }
+    }
+
+    public void RecordAutonomousActivity(ScanAnalystAutonomousActivityDto activity)
+    {
+        lock (_syncRoot)
+        {
+            _lastAutonomousActivity = activity;
+        }
+    }
+}
+
+public static class ScanAnalystPocModes
+{
+    public const string LiveData = "LiveData";
+    public const string MockFallback = "MockFallback";
+}
+
+public static class ScanAnalystPocMockConditions
+{
+    public const string NewHostsFound = "new_hosts_found";
+    public const string FailedRecentJob = "failed_recent_job";
+    public const string StaleCoverage = "stale_coverage";
+
+    public static readonly string[] All =
+    [
+        NewHostsFound,
+        FailedRecentJob,
+        StaleCoverage,
+    ];
+}
+
+public sealed class ScanAnalystPocSessionStore
+{
+    private readonly ConcurrentDictionary<Guid, SessionState> _sessions = new();
+    private readonly ConcurrentDictionary<Guid, ScanAnalystRunSummaryDto> _mockRunSummaries = new();
+    private readonly ScanAnalystPocRuntimeState _runtimeState;
+
+    public ScanAnalystPocSessionStore(ScanAnalystPocRuntimeState runtimeState)
+    {
+        _runtimeState = runtimeState;
+    }
+
+    public SessionSnapshot GetOrCreate(Guid? sessionId)
+    {
+        var effectiveSessionId = sessionId.GetValueOrDefault();
+        if (effectiveSessionId == Guid.Empty)
+        {
+            effectiveSessionId = Guid.NewGuid();
+        }
+
+        var state = _sessions.GetOrAdd(effectiveSessionId, _ => new SessionState());
+        _runtimeState.SetActiveSessionCount(_sessions.Count);
+        lock (state.SyncRoot)
+        {
+            return new SessionSnapshot(
+                effectiveSessionId,
+                state.Messages.ToArray(),
+                state.LatestAnalysis,
+                state.LatestRunSummary,
+                state.ActiveMockConditions.ToArray());
+        }
+    }
+
+    public SessionSnapshot Update(
+        Guid sessionId,
+        ScanAnalystAgentMessageDto userMessage,
+        ScanAnalystAgentMessageDto agentMessage,
+        ScanAnalystResponseDto latestAnalysis,
+        ScanAnalystRunSummaryDto? latestRunSummary,
+        IReadOnlyList<string> activeMockConditions)
+    {
+        var state = _sessions.GetOrAdd(sessionId, _ => new SessionState());
+        lock (state.SyncRoot)
+        {
+            state.Messages.Add(userMessage);
+            state.Messages.Add(agentMessage);
+            while (state.Messages.Count > 24)
+            {
+                state.Messages.RemoveAt(0);
+            }
+
+            state.LatestAnalysis = latestAnalysis;
+            state.LatestRunSummary = latestRunSummary;
+            state.ActiveMockConditions = activeMockConditions.Count == 0
+                ? Array.Empty<string>()
+                : activeMockConditions.ToArray();
+
+            if (latestRunSummary is { IsSimulated: true, ScanJobId: { } runId })
+            {
+                _mockRunSummaries[runId] = latestRunSummary;
+            }
+
+            _runtimeState.SetActiveSessionCount(_sessions.Count);
+            _runtimeState.SetActiveMockConditions(state.ActiveMockConditions);
+
+            return new SessionSnapshot(
+                sessionId,
+                state.Messages.ToArray(),
+                state.LatestAnalysis,
+                state.LatestRunSummary,
+                state.ActiveMockConditions.ToArray());
+        }
+    }
+
+    public bool TryGetMockRunSummary(Guid scanJobId, out ScanAnalystRunSummaryDto summary)
+    {
+        return _mockRunSummaries.TryGetValue(scanJobId, out summary!);
+    }
+
+    private sealed class SessionState
+    {
+        public object SyncRoot { get; } = new();
+        public List<ScanAnalystAgentMessageDto> Messages { get; } = [];
+        public ScanAnalystResponseDto? LatestAnalysis { get; set; }
+        public ScanAnalystRunSummaryDto? LatestRunSummary { get; set; }
+        public IReadOnlyList<string> ActiveMockConditions { get; set; } = Array.Empty<string>();
+    }
+}
+
+public sealed record SessionSnapshot(
+    Guid SessionId,
+    IReadOnlyList<ScanAnalystAgentMessageDto> Messages,
+    ScanAnalystResponseDto? LatestAnalysis,
+    ScanAnalystRunSummaryDto? LatestRunSummary,
+    IReadOnlyList<string> ActiveMockConditions);

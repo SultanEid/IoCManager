@@ -27,6 +27,8 @@ from .contracts import (
     GraphLinkCandidateResponse,
     ReportIngestionRequest,
     ReportIngestionResponse,
+    ScanAnalystRequest,
+    ScanAnalystResponse,
     ScoreBatchRequest,
     ScoreBatchResponse,
     ScoreCaseRequest,
@@ -41,6 +43,7 @@ from .feedback_store import FeedbackStore
 from .graph import score_graph_neighbors
 from .historical_learning import HistoricalLearningEngine
 from .registry import ModelRegistryEntry, ModelRegistryStore
+from .scan_analyst import recommend_scan_plan
 from .scorer import BaselineScorer, ScorerContext, ScoringThresholds
 from .snapshots import SnapshotDataset, SnapshotLoader
 
@@ -202,6 +205,10 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
     @app.post("/historical_learning/query", response_model=HistoricalLearningQueryResponse)
     def historical_learning_query_endpoint(request: HistoricalLearningQueryRequest) -> HistoricalLearningQueryResponse:
         return runtime.historical_learning_engine.query(request)
+
+    @app.post("/scan_analyst", response_model=ScanAnalystResponse)
+    def scan_analyst_endpoint(request: ScanAnalystRequest) -> ScanAnalystResponse:
+        return recommend_scan_plan(request)
 
     @app.post("/evaluate_model", response_model=EvaluateModelResponse, deprecated=True)
     def evaluate_model_endpoint(request: EvaluateModelRequest) -> EvaluateModelResponse:

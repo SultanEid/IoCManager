@@ -1,0 +1,1080 @@
+"use client"
+
+import Link from "next/link"
+import { useMutation } from "@tanstack/react-query"
+import { motion } from "framer-motion"
+import { Bot, PlayCircle, Radar, Sparkles } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { StatusBadge } from "@/components/workbench/status-badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
+import type {
+  ScanAnalystChatResponse,
+  ScanAnalystAgentStatusResponse,
+  ScanAnalystPlanProposalResponse,
+  ScannerCapability,
+} from "@/shared/api/schemas"
+import { classifyUiError } from "@/shared/api/error-classification"
+import { useAuth } from "@/shared/auth/auth-provider"
+import { gateway } from "@/shared/gateway"
+import type { ScanAnalystSimulatedCondition, SendScanAnalystChatTurnInput } from "@/shared/gateway/types"
+import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
+import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
+import { panelMotion, staggerMotion } from "@/shared/ui/motion"
+import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
+import { normalizeZiraOperatingMode, writeZiraWidgetState } from "@/shared/zira/widget-state"
+
+const ACTIONS: Array<{ value: SendScanAnalystChatTurnInput["action"]; label: string; description: string }> = [
+  { value: "RecommendOnly", label: "Recommend", description: "Draft and explain the plan." },
+  { value: "CreatePlan", label: "Create Plan", description: "Persist the proposal without running it." },
+  { value: "CreateAndRun", label: "Create & Run", description: "Persist and execute the plan." },
+]
+
+const CAPABILITIES: Array<ScannerCapability | "Auto"> = ["Auto", "Yara", "Sigma", "Snort", "Suricata"]
+
+const MOCK_CONDITION_LABELS: Record<ScanAnalystSimulatedCondition, string> = {
+  new_hosts_found: "New hosts found",
+  failed_recent_job: "Failed recent job",
+  stale_coverage: "Stale coverage",
+}
+
+const MOCK_CONDITION_STATUS_PRESETS: Record<
+  ScanAnalystSimulatedCondition,
+  {
+    currentActivity: string
+    latestActionSummary: string
+    recentActionTitle: string
+    recentActionSummary: string
+    completedPlan: {
+      id: string
+      name: string
+      scannerCapability: ScannerCapability
+      targetCount: number
+      detectionCount: number
+      outcome: string
+    }
+    autonomous: {
+      summary: string
+      trigger: string
+      action: "RecommendOnly" | "CreatePlan" | "CreateAndRun"
+    }
+  }
+> = {
+  new_hosts_found: {
+    currentActivity: "Reviewing newly added targets and preparing a first-pass follow-up scan.",
+    latestActionSummary: "Zira detected new hosts in scope and drafted a focused onboarding sweep without waiting for a prompt.",
+    recentActionTitle: "Prepared new-host follow-up",
+    recentActionSummary: "Zira scoped a first-pass sweep for the newly discovered hosts with matching scanner coverage.",
+    completedPlan: {
+      id: "mock-completed-plan-new-hosts",
+      name: "zira-new-hosts-followup",
+      scannerCapability: "Sigma",
+      targetCount: 4,
+      detectionCount: 1,
+      outcome: "Prepared for 4 new hosts",
+    },
+    autonomous: {
+      summary: "Zira noticed new targets and prepared a follow-up scan automatically.",
+      trigger: "new hosts",
+      action: "CreateAndRun",
+    },
+  },
+  failed_recent_job: {
+    currentActivity: "Analyzing the failed recent job and drafting a tighter rerun.",
+    latestActionSummary: "Zira correlated the failed job with reduced coverage and prepared a narrower rerun plan.",
+    recentActionTitle: "Drafted failed-job rerun",
+    recentActionSummary: "Zira removed the degraded path from the first pass and queued a more focused rerun recommendation.",
+    completedPlan: {
+      id: "mock-completed-plan-failed-job",
+      name: "zira-failed-job-rerun",
+      scannerCapability: "Yara",
+      targetCount: 2,
+      detectionCount: 0,
+      outcome: "Prepared rerun after failed job",
+    },
+    autonomous: {
+      summary: "Zira detected a failed recent job and prepared a tighter rerun automatically.",
+      trigger: "failed recent job",
+      action: "CreatePlan",
+    },
+  },
+  stale_coverage: {
+    currentActivity: "Reviewing stale coverage and selecting hosts that need the next scan.",
+    latestActionSummary: "Zira identified aging coverage gaps and prepared the next highest-value scan pass.",
+    recentActionTitle: "Reviewed stale coverage",
+    recentActionSummary: "Zira highlighted the hosts with aging coverage and prepared a focused refresh plan.",
+    completedPlan: {
+      id: "mock-completed-plan-stale-coverage",
+      name: "zira-stale-coverage-refresh",
+      scannerCapability: "Suricata",
+      targetCount: 3,
+      detectionCount: 2,
+      outcome: "Prepared refresh for stale coverage",
+    },
+    autonomous: {
+      summary: "Zira found stale coverage and prepared the next scan automatically.",
+      trigger: "stale coverage",
+      action: "RecommendOnly",
+    },
+  },
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString() : "N/A"
+}
+
+function resolveCapabilityLabel(value: ScannerCapability | "Auto" | null | undefined) {
+  return value && value !== "Auto" ? value : null
+}
+
+function deriveMockStatus(
+  status: ScanAnalystAgentStatusResponse,
+  simulatedConditions: ScanAnalystSimulatedCondition[],
+): ScanAnalystAgentStatusResponse {
+  if (status.operatingMode !== "MockFallback") {
+    return status
+  }
+
+  const activeConditions: ScanAnalystSimulatedCondition[] = simulatedConditions.length > 0 ? simulatedConditions : ["new_hosts_found"]
+  const primaryCondition = activeConditions[activeConditions.length - 1]
+  const preset = MOCK_CONDITION_STATUS_PRESETS[primaryCondition]
+
+  return {
+    ...status,
+    activeMockConditions: activeConditions,
+    currentActivity: preset.currentActivity,
+    latestActionSummary: preset.latestActionSummary,
+    recentActions: [
+      {
+        id: `${primaryCondition}-recent-action`,
+        title: preset.recentActionTitle,
+        summary: preset.recentActionSummary,
+        occurredAtUtc: new Date(Date.now() - 2 * 60_000).toISOString(),
+        status: "Completed",
+      },
+      ...(status.recentActions ?? []).slice(0, 2),
+    ],
+    completedPlans: [
+      {
+        ...preset.completedPlan,
+        completedAtUtc: new Date(Date.now() - 8 * 60_000).toISOString(),
+      },
+      ...(status.completedPlans ?? []).slice(0, 1),
+    ],
+    lastAutonomousActivity: {
+      summary: preset.autonomous.summary,
+      trigger: preset.autonomous.trigger,
+      action: preset.autonomous.action,
+      operatingMode: "MockFallback",
+      occurredAtUtc: new Date(Date.now() - 3 * 60_000).toISOString(),
+    },
+  }
+}
+
+function clonePlan(plan: ScanAnalystPlanProposalResponse | null) {
+  if (!plan) {
+    return null
+  }
+
+  return {
+    ...plan,
+    targetServerIds: [...plan.targetServerIds],
+    ruleRevisionIds: [...plan.ruleRevisionIds],
+    targets: [...plan.targets],
+    rules: [...plan.rules],
+  } satisfies ScanAnalystPlanProposalResponse
+}
+
+function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) {
+  return (
+    <motion.article className="grid gap-4 xl:grid-cols-[1fr_1fr]" variants={panelMotion}>
+      <section className="wb-panel space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="wb-kicker">Latest action</p>
+            <h2 className="mt-1 text-sm font-semibold tracking-tight">What Zira has been doing</h2>
+          </div>
+          <StatusBadge value={status.operatingMode === "LiveData" ? "Live" : "Demo"} />
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+          <p className="text-sm font-medium text-foreground">
+            {status.latestActionSummary ?? status.currentActivity ?? "Zira is monitoring the workspace and waiting for the next task."}
+          </p>
+          {status.lastAutonomousActivity ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Last autonomous pass: {status.lastAutonomousActivity.summary} at {formatTimestamp(status.lastAutonomousActivity.occurredAtUtc)}.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          {(status.recentActions ?? []).length > 0 ? (
+            status.recentActions?.map((action) => (
+              <div key={action.id} className="rounded-xl border border-border/70 bg-surface-2/55 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{action.title}</p>
+                  <StatusBadge value={action.status} />
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{action.summary}</p>
+                <p className="mt-2 text-xs text-muted-foreground">{formatTimestamp(action.occurredAtUtc)}</p>
+              </div>
+            ))
+          ) : (
+            <EmptyState
+              title="No recent actions yet"
+              description="Zira will list its latest work here once the first planning or run activity is available."
+            />
+          )}
+        </div>
+      </section>
+
+      <section className="wb-panel space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="wb-kicker">Completed scan plans</p>
+            <h2 className="mt-1 text-sm font-semibold tracking-tight">Recently finished work</h2>
+          </div>
+          <StatusBadge value={`${status.completedPlans?.length ?? 0} plans`} />
+        </div>
+
+        {(status.completedPlans ?? []).length > 0 ? (
+          <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Scanner</TableHead>
+                  <TableHead>Outcome</TableHead>
+                  <TableHead>Completed</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {status.completedPlans?.map((plan) => (
+                  <TableRow key={plan.id}>
+                    <TableCell>
+                      <div className="font-medium">{plan.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Targets {plan.targetCount} | Detections {plan.detectionCount}
+                      </div>
+                    </TableCell>
+                    <TableCell>{plan.scannerCapability}</TableCell>
+                    <TableCell>
+                      <StatusBadge value={plan.outcome} />
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatTimestamp(plan.completedAtUtc)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <EmptyState
+            title="No completed plans yet"
+            description="Finished plans from the live environment or demo scenario will appear here."
+          />
+        )}
+      </section>
+    </motion.article>
+  )
+}
+
+export function ScanAnalystPage() {
+  const { session } = useAuth()
+  const actorUserId = session?.userId ?? session?.username ?? ""
+  const conversationRef = useRef<HTMLElement | null>(null)
+
+  const [message, setMessage] = useState("")
+  const [subnetId, setSubnetId] = useState("")
+  const [preferredCapability, setPreferredCapability] = useState<ScannerCapability | "Auto">("Auto")
+  const [maxTargetCount, setMaxTargetCount] = useState("5")
+  const [simulatedConditions, setSimulatedConditions] = useState<ScanAnalystSimulatedCondition[]>(["new_hosts_found"])
+  const [chatState, setChatState] = useState<ScanAnalystChatResponse | null>(null)
+  const [draftPlan, setDraftPlan] = useState<ScanAnalystPlanProposalResponse | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [activeAction, setActiveAction] = useState<SendScanAnalystChatTurnInput["action"] | null>(null)
+  const [lastActionFeedback, setLastActionFeedback] = useState<{
+    title: string
+    detail: string
+    timestampUtc: string
+  } | null>(null)
+
+  const subnetsQuery = useWorkbenchQuery(["scan-analyst", "subnets"], (signal) => gateway.listSubnets(signal))
+  const statusQuery = useWorkbenchQuery(["scan-analyst", "status"], (signal) => gateway.getScanAnalystStatus(signal))
+
+  const queuedJobId = chatState?.latestAnalysis.queuedJob?.id ?? ""
+  const liveRunSummaryQuery = useWorkbenchQuery(
+    ["scan-analyst", "run-summary", queuedJobId],
+    (signal) => gateway.getScanAnalystRunSummary(queuedJobId, signal),
+    {
+      enabled: queuedJobId.length > 0 && chatState?.operatingMode === "LiveData",
+      refetchInterval: 4000,
+    },
+  )
+
+  const activeRunSummary = chatState?.latestRunSummary ?? liveRunSummaryQuery.data ?? chatState?.latestAnalysis.runSummary ?? null
+  const currentAnalysis = chatState?.latestAnalysis ?? null
+  const trimmedMessage = message.trim()
+  const actionDisabledReason = !actorUserId
+    ? "Open a demo workspace first so Zira has an operator identity for the session."
+    : trimmedMessage.length < 10
+      ? "Enter at least 10 characters so Zira has enough context to act."
+      : null
+  const selectedSubnet = useMemo(
+    () => (subnetsQuery.data ?? []).find((subnet) => subnet.id === subnetId) ?? null,
+    [subnetId, subnetsQuery.data],
+  )
+
+  useEffect(() => {
+    if (chatState?.latestAnalysis?.proposedPlan) {
+      setDraftPlan(clonePlan(chatState.latestAnalysis.proposedPlan))
+    }
+  }, [chatState])
+
+  useEffect(() => {
+    if (!chatState) {
+      return
+    }
+
+    conversationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [chatState])
+
+  function actionLabel(action: SendScanAnalystChatTurnInput["action"]) {
+    return ACTIONS.find((item) => item.value === action)?.label ?? action
+  }
+
+  function actionProgressLine(action: SendScanAnalystChatTurnInput["action"]) {
+    switch (action) {
+      case "RecommendOnly":
+        return "Zira is reviewing the current context and drafting a recommendation."
+      case "CreatePlan":
+        return "Zira is preparing and packaging the scan plan for creation."
+      case "CreateAndRun":
+        return "Zira is preparing the plan, queueing execution, and waiting for run output."
+      default:
+        return "Zira is working on your request."
+    }
+  }
+
+  function publishWidgetState(
+    phase: "analyzing" | "drafting" | "creating" | "running" | "summarizing" | "completed" | "blocked",
+    title: string,
+    scannerCapability: string | null,
+  ) {
+    writeZiraWidgetState({
+      phase,
+      title,
+      scannerCapability,
+      operatingMode: normalizeZiraOperatingMode(statusQuery.data?.operatingMode),
+      source: phase === "completed" ? "user_action" : phase === "blocked" ? "user_action" : "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
+  }
+
+  const chatMutation = useMutation({
+    mutationFn: async (action: SendScanAnalystChatTurnInput["action"]) => {
+      if (!actorUserId) {
+        throw new Error("Open a demo workspace first so Zira has an operator identity for the session.")
+      }
+
+      if (trimmedMessage.length < 10) {
+        throw new Error("Enter at least 10 characters so Zira has enough context to act.")
+      }
+
+      return gateway.sendScanAnalystChatTurn({
+        sessionId: chatState?.sessionId,
+        actorUserId,
+        message: trimmedMessage,
+        action,
+        subnetId: subnetId || undefined,
+        preferredScannerCapability: preferredCapability === "Auto" ? undefined : preferredCapability,
+        maxTargetCount: Number.parseInt(maxTargetCount, 10) || undefined,
+        editedPlan: draftPlan ?? undefined,
+        simulatedConditions: statusQuery.data?.operatingMode === "MockFallback" ? simulatedConditions : undefined,
+      })
+    },
+    onMutate: (action) => {
+      setActiveAction(action)
+      setSubmitError(null)
+      const capability = draftPlan?.scannerCapability ?? resolveCapabilityLabel(preferredCapability)
+      const title =
+        action === "RecommendOnly"
+          ? capability
+            ? `Reviewing context and drafting a ${capability} recommendation`
+            : "Reviewing context and drafting a recommendation"
+          : action === "CreatePlan"
+            ? capability
+              ? `Creating a ${capability} scan plan`
+              : "Creating a scan plan"
+            : capability
+              ? `Queueing a ${capability} scan run`
+              : "Queueing a scan run"
+      publishWidgetState(action === "CreateAndRun" ? "running" : action === "CreatePlan" ? "creating" : "analyzing", title, capability)
+    },
+    onSuccess: (response) => {
+      setChatState(response)
+      setSubmitError(null)
+      setActiveAction(null)
+      const analysis = response.latestAnalysis
+      const capability = analysis.proposedPlan.scannerCapability
+      const title =
+        analysis.action === "CreateAndRun"
+          ? "Zira created and ran the plan"
+          : analysis.action === "CreatePlan"
+            ? "Zira created the plan"
+            : "Zira drafted a recommendation"
+      const detail =
+        analysis.action === "CreateAndRun"
+          ? `${analysis.proposedPlan.name} is queued with ${analysis.proposedPlan.targetServerIds.length} targets and ${analysis.proposedPlan.ruleRevisionIds.length} rules.`
+          : analysis.action === "CreatePlan"
+            ? `${analysis.proposedPlan.name} was prepared with ${analysis.proposedPlan.targetServerIds.length} targets and ${analysis.proposedPlan.ruleRevisionIds.length} rules.`
+            : `${analysis.proposedPlan.name} is ready for review with ${analysis.proposedPlan.targetServerIds.length} targets and ${analysis.proposedPlan.ruleRevisionIds.length} rules.`
+      setLastActionFeedback({
+        title,
+        detail,
+        timestampUtc: new Date().toISOString(),
+      })
+      const widgetTitle =
+        analysis.action === "CreateAndRun"
+          ? `Summarized the ${capability} run and prepared the next recommendation`
+          : analysis.action === "CreatePlan"
+            ? `Created a ${capability} scan plan for operator review`
+            : `Drafted a ${capability} recommendation for review`
+      publishWidgetState(analysis.action === "CreateAndRun" ? "summarizing" : analysis.action === "CreatePlan" ? "completed" : "drafting", widgetTitle, capability)
+    },
+    onError: (error) => {
+      setActiveAction(null)
+      setSubmitError(classifyUiError(error).message)
+      const capability = draftPlan?.scannerCapability ?? resolveCapabilityLabel(preferredCapability)
+      publishWidgetState("blocked", "Blocked while processing the latest request", capability)
+    },
+  })
+
+  useEffect(() => {
+    if (!currentAnalysis || currentAnalysis.action !== "CreateAndRun" || !activeRunSummary) {
+      return
+    }
+
+    publishWidgetState(
+      "completed",
+      `Completed a ${currentAnalysis.proposedPlan.scannerCapability} run summary with ${activeRunSummary.detectionCount} mock detections`,
+      currentAnalysis.proposedPlan.scannerCapability,
+    )
+  }, [activeRunSummary, currentAnalysis])
+
+  if (subnetsQuery.isLoading || statusQuery.isLoading) {
+    return <LoadingState label="Loading Zira workspace" />
+  }
+
+  if (subnetsQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(subnetsQuery.error)} fallbackTitle="Zira unavailable" />
+  }
+
+  if (statusQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(statusQuery.error)} fallbackTitle="Agent status unavailable" />
+  }
+
+  const status = deriveMockStatus(statusQuery.data!, simulatedConditions)
+
+  function toggleCondition(condition: ScanAnalystSimulatedCondition) {
+    const next = simulatedConditions.includes(condition)
+      ? simulatedConditions.filter((item) => item !== condition)
+      : [...simulatedConditions, condition]
+    const activeConditions: ScanAnalystSimulatedCondition[] = next.length > 0 ? next : ["new_hosts_found"]
+    const primaryCondition = activeConditions[activeConditions.length - 1]
+    const preset = MOCK_CONDITION_STATUS_PRESETS[primaryCondition]
+
+    setSimulatedConditions(next)
+    writeZiraWidgetState({
+      phase: "drafting",
+      title: preset.currentActivity,
+      scannerCapability: preset.completedPlan.scannerCapability,
+      operatingMode: "MockFallback",
+      source: "autonomous",
+      updatedAtUtc: new Date().toISOString(),
+    })
+  }
+
+  function updateDraftPlan(patch: Partial<ScanAnalystPlanProposalResponse>) {
+    setDraftPlan((previous) => (previous ? { ...previous, ...patch } : previous))
+  }
+
+  function toggleTarget(targetId: string) {
+    setDraftPlan((previous) => {
+      if (!previous) {
+        return previous
+      }
+
+      const nextTargetIds = previous.targetServerIds.includes(targetId)
+        ? previous.targetServerIds.filter((item) => item !== targetId)
+        : [...previous.targetServerIds, targetId]
+
+      return {
+        ...previous,
+        targetServerIds: nextTargetIds,
+      }
+    })
+  }
+
+  function toggleRule(ruleRevisionId: string) {
+    setDraftPlan((previous) => {
+      if (!previous) {
+        return previous
+      }
+
+      const nextRuleIds = previous.ruleRevisionIds.includes(ruleRevisionId)
+        ? previous.ruleRevisionIds.filter((item) => item !== ruleRevisionId)
+        : [...previous.ruleRevisionIds, ruleRevisionId]
+
+      return {
+        ...previous,
+        ruleRevisionIds: nextRuleIds,
+      }
+    })
+  }
+
+  return (
+    <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
+      <motion.header className="wb-page-header" variants={panelMotion}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="wb-kicker">Operations</p>
+            <h1 className="mt-1 text-lg font-semibold tracking-tight">Zira</h1>
+            <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
+              Zira is the AI agent workspace for chat-driven planning, editable scan proposals, autonomous backend activity, and
+              run summaries that switch between live SQL-backed data and demo fallback.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-2xl border border-border/70 bg-surface-2/70 px-3 py-2 text-xs">
+            <Bot className="h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">{status.personaName ?? "Zira"}</p>
+              <p className="text-muted-foreground">
+                {status.operatingMode === "LiveData" ? "Real discovery context" : "Mock fallback context"}
+              </p>
+            </div>
+          </div>
+        </div>
+      </motion.header>
+
+      <motion.article className="wb-panel space-y-4" variants={panelMotion}>
+        <div className="grid gap-3 lg:grid-cols-[1.8fr_1fr_1fr_140px]">
+          <label className="space-y-1 lg:col-span-4">
+            <span className="wb-kicker">Ask Zira</span>
+            <Textarea
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Example: Review new hosts in the lab subnet, prefer Sigma, and remove Linux systems from the first pass."
+              rows={4}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="wb-kicker">Subnet Focus</span>
+            <select
+              value={subnetId}
+              onChange={(event) => setSubnetId(event.target.value)}
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            >
+              <option value="">All subnets</option>
+              {(subnetsQuery.data ?? []).map((subnet) => (
+                <option key={subnet.id} value={subnet.id}>
+                  {subnet.name} ({subnet.cidrBlock})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="wb-kicker">Preferred Scanner</span>
+            <select
+              value={preferredCapability}
+              onChange={(event) => setPreferredCapability(event.target.value as ScannerCapability | "Auto")}
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            >
+              {CAPABILITIES.map((capability) => (
+                <option key={capability} value={capability}>
+                  {capability}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="wb-kicker">Target Limit</span>
+            <Input value={maxTargetCount} onChange={(event) => setMaxTargetCount(event.target.value)} inputMode="numeric" />
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {ACTIONS.map((action) => (
+            <Button
+              key={action.value}
+              type="button"
+              onClick={() => chatMutation.mutate(action.value)}
+              disabled={chatMutation.isPending}
+            >
+              {chatMutation.isPending && activeAction === action.value ? `${action.label}...` : action.label}
+            </Button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+          <span>Focused subnet: {selectedSubnet ? `${selectedSubnet.name} (${selectedSubnet.cidrBlock})` : "All available inventory"}</span>
+          <span>Actor: {actorUserId || "Unavailable"}</span>
+          <span>Autonomy: {status.autonomyEnabled ? "Backend active" : "Disabled"}</span>
+          {submitError ? <span className="text-destructive">{submitError}</span> : null}
+        </div>
+
+        {actionDisabledReason ? (
+          <div className="rounded-xl border border-border/70 bg-surface-2/55 px-3 py-2 text-sm text-muted-foreground">
+            {actionDisabledReason}
+          </div>
+        ) : null}
+
+        {chatMutation.isPending && activeAction ? (
+          <div className="rounded-xl border border-primary/25 bg-primary/10 px-3 py-3 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium">Zira is working</p>
+              <span className="text-xs text-muted-foreground">{actionLabel(activeAction)}</span>
+            </div>
+            <p className="mt-1 text-muted-foreground">{actionProgressLine(activeAction)}</p>
+          </div>
+        ) : null}
+
+        {chatState ? (
+          <div className="rounded-xl border border-primary/25 bg-primary/10 px-3 py-3 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium">Zira responded</p>
+              <span className="text-xs text-muted-foreground">{formatTimestamp(chatState.messages.at(-1)?.timestampUtc)}</span>
+            </div>
+            <p className="mt-1 text-muted-foreground">
+              {chatState.messages.at(-1)?.content ?? chatState.agentStatusLine}
+            </p>
+          </div>
+        ) : null}
+
+        {lastActionFeedback ? (
+          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-3 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium">{lastActionFeedback.title}</p>
+              <span className="text-xs text-muted-foreground">{formatTimestamp(lastActionFeedback.timestampUtc)}</span>
+            </div>
+            <p className="mt-1 text-muted-foreground">{lastActionFeedback.detail}</p>
+          </div>
+        ) : null}
+
+        {status.operatingMode === "MockFallback" ? (
+          <div className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/8 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Radar className="h-4 w-4 text-amber-300" />
+              Demo scenario controls
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {status.availableMockConditions.map((condition) => {
+                const typed = condition as ScanAnalystSimulatedCondition
+                const active = simulatedConditions.includes(typed)
+                return (
+                  <button
+                    key={condition}
+                    type="button"
+                    onClick={() => toggleCondition(typed)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                      active
+                        ? "border-primary/40 bg-primary/15 text-foreground"
+                        : "border-border/70 bg-surface-2/55 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {MOCK_CONDITION_LABELS[typed]}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Live SQL data is unavailable for the POC, so Zira is using a fixed demo scenario with optional simulated
+              conditions.
+            </p>
+          </div>
+        ) : null}
+      </motion.article>
+
+      <StatusOverview status={status} />
+
+      <motion.article className="grid gap-4 xl:grid-cols-[1.1fr_1fr]" variants={panelMotion}>
+        <section ref={conversationRef} className="wb-panel space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="wb-kicker">Conversation</p>
+              <h2 className="mt-1 text-sm font-semibold tracking-tight">Zira session</h2>
+            </div>
+            <div className="rounded-full border border-border/70 bg-surface-2/60 px-3 py-1 text-xs text-muted-foreground">
+              {chatState?.sessionId ? `Session ${chatState.sessionId.slice(0, 8)}` : "No active session"}
+            </div>
+          </div>
+
+          {chatState ? (
+            <div className="space-y-3">
+              {chatState.messages.map((entry, index) => (
+                <div
+                  key={`${entry.timestampUtc}-${index}`}
+                  className={`rounded-2xl border p-3 ${
+                    entry.role === "agent"
+                      ? "border-primary/25 bg-primary/10"
+                      : "border-border/70 bg-surface-2/55"
+                  }`}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="inline-flex items-center gap-2 text-xs font-medium">
+                      {entry.role === "agent" ? <Sparkles className="h-3.5 w-3.5 text-primary" /> : <Bot className="h-3.5 w-3.5" />}
+                      {entry.role === "agent" ? "Zira" : "User"}
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">{formatTimestamp(entry.timestampUtc)}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{entry.content}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No conversation yet"
+              description="Ask Zira to investigate a discovery pattern, revise a plan, or run a scan so the session memory can start building."
+            />
+          )}
+        </section>
+
+        <section className="wb-panel space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="wb-kicker">Zira posture</p>
+              <h2 className="mt-1 text-sm font-semibold tracking-tight">Autonomy and guardrails</h2>
+            </div>
+            <StatusBadge value={status.operatingMode === "LiveData" ? "Live" : "Demo"} />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
+              <p className="wb-kicker">Preferred family</p>
+              <p className="mt-1 text-base font-semibold">{status.parameters.preferredScannerFamily}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
+              <p className="wb-kicker">Max targets</p>
+              <p className="mt-1 text-base font-semibold">{status.parameters.maxTargetsPerRun}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
+              <p className="wb-kicker">Auto run</p>
+              <p className="mt-1 text-base font-semibold">{status.parameters.autoRun ? "Enabled" : "Approval only"}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
+              <p className="wb-kicker">Quiet hours</p>
+              <p className="mt-1 text-base font-semibold">{status.parameters.quietHours}</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-surface-2/55 p-3 text-sm text-muted-foreground">
+            <p>{chatState?.agentStatusLine ?? "Zira is online and waiting for a session request."}</p>
+            {status.lastAutonomousActivity ? (
+              <p className="mt-2 text-xs">
+                Last autonomous pass: {status.lastAutonomousActivity.summary} at{" "}
+                {formatTimestamp(status.lastAutonomousActivity.occurredAtUtc)}.
+              </p>
+            ) : null}
+          </div>
+        </section>
+      </motion.article>
+
+      {!currentAnalysis ? (
+        <motion.article variants={panelMotion}>
+          <EmptyState
+            title="No Zira proposal yet"
+            description="Start the conversation above, then Zira will draft a plan, keep context across turns, and surface execution output when available."
+          />
+        </motion.article>
+      ) : (
+        <>
+          <motion.article className="wb-panel space-y-4" variants={panelMotion}>
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Scanner</p>
+                <p className="mt-1 text-lg font-semibold">{currentAnalysis.recommendedScannerCapability}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Targets</p>
+                <p className="mt-1 text-lg font-semibold">{currentAnalysis.proposedPlan.targetServerIds.length}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Rules</p>
+                <p className="mt-1 text-lg font-semibold">{currentAnalysis.proposedPlan.ruleRevisionIds.length}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Mode</p>
+                <p className="mt-1 text-lg font-semibold">{currentAnalysis.operatingMode}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Action</p>
+                <p className="mt-1 text-base font-semibold">{actionLabel(currentAnalysis.action)}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Created plan</p>
+                <p className="mt-1 text-base font-semibold">{currentAnalysis.createdPlan ? "Yes" : "Not yet"}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Queued run</p>
+                <p className="mt-1 text-base font-semibold">{currentAnalysis.queuedJob ? "Yes" : "Not yet"}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
+              <p className="text-sm font-medium">{currentAnalysis.summary}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Context: {currentAnalysis.contextSummary.discoveryRunCount} discovery runs,{" "}
+                {currentAnalysis.contextSummary.discoveredHostCount} discovered hosts, {currentAnalysis.contextSummary.managedServerCount} managed
+                servers, {currentAnalysis.contextSummary.candidateRuleCount} candidate rules.
+              </p>
+            </div>
+
+            {currentAnalysis.createdPlan ? (
+              <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/8 p-3 text-sm">
+                <p>
+                  Created plan <strong>{currentAnalysis.createdPlan.name}</strong>.{" "}
+                  <Link href="/scan-plan" className="underline underline-offset-4">
+                    Open scan plans
+                  </Link>
+                </p>
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-2">
+                <h2 className="text-sm font-semibold tracking-tight">Observations</h2>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  {currentAnalysis.observations.map((item, index) => (
+                    <li key={`${item}-${index}`} className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-sm font-semibold tracking-tight">Reasoning</h2>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  {currentAnalysis.reasoning.map((item, index) => (
+                    <li key={`${item}-${index}`} className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                {currentAnalysis.validationWarnings.length > 0 ? (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-500">Warnings</h3>
+                    {currentAnalysis.validationWarnings.map((item, index) => (
+                      <p key={`${item}-${index}`} className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </motion.article>
+
+          <motion.article className="wb-panel space-y-4" variants={panelMotion}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="wb-kicker">Plan Editor</p>
+                <h2 className="mt-1 text-sm font-semibold tracking-tight">Refine before the next run</h2>
+              </div>
+              {draftPlan ? <StatusBadge value={draftPlan.status} /> : null}
+            </div>
+
+            {draftPlan ? (
+              <>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="wb-kicker">Plan name</span>
+                    <Input value={draftPlan.name} onChange={(event) => updateDraftPlan({ name: event.target.value })} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="wb-kicker">Scanner family</span>
+                    <select
+                      value={draftPlan.scannerCapability}
+                      onChange={(event) =>
+                        updateDraftPlan({ scannerCapability: event.target.value as ScanAnalystPlanProposalResponse["scannerCapability"] })
+                      }
+                      className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                    >
+                      {CAPABILITIES.filter((item) => item !== "Auto").map((capability) => (
+                        <option key={capability} value={capability}>
+                          {capability}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 lg:col-span-2">
+                    <span className="wb-kicker">Description</span>
+                    <Textarea value={draftPlan.description} onChange={(event) => updateDraftPlan({ description: event.target.value })} rows={3} />
+                  </label>
+                  <label className="space-y-1 lg:col-span-2">
+                    <span className="wb-kicker">Operator notes</span>
+                    <Textarea value={draftPlan.operatorNotes} onChange={(event) => updateDraftPlan({ operatorNotes: event.target.value })} rows={3} />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Use</TableHead>
+                          <TableHead>Target</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {draftPlan.targets.map((target) => {
+                          const selected = draftPlan.targetServerIds.includes(target.targetServerId)
+                          return (
+                            <TableRow key={target.targetServerId}>
+                              <TableCell>
+                                <input type="checkbox" checked={selected} onChange={() => toggleTarget(target.targetServerId)} />
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{target.hostname}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {target.ipAddress} - {target.operatingSystem} - {target.environment}
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">{target.reason}</div>
+                              </TableCell>
+                              <TableCell>
+                                <StatusBadge value={target.connectivityStatus} />
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Use</TableHead>
+                          <TableHead>Rule</TableHead>
+                          <TableHead>Family</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {draftPlan.rules.map((rule) => {
+                          const selected = draftPlan.ruleRevisionIds.includes(rule.ruleRevisionId)
+                          return (
+                            <TableRow key={rule.ruleRevisionId}>
+                              <TableCell>
+                                <input type="checkbox" checked={selected} onChange={() => toggleRule(rule.ruleRevisionId)} />
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{rule.ruleName}</div>
+                                <div className="text-xs text-muted-foreground">{rule.reason}</div>
+                              </TableCell>
+                              <TableCell>{rule.ruleFamily}</TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </motion.article>
+
+          {activeRunSummary ? (
+            <motion.article className="wb-panel space-y-4" variants={panelMotion}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="wb-kicker">Run Summary</p>
+                  <h2 className="mt-1 text-sm font-semibold tracking-tight">Analyst narrative</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <PlayCircle className="h-4 w-4 text-primary" />
+                  <StatusBadge value={activeRunSummary.jobStatus} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+                <p className="text-sm">{activeRunSummary.narrativeSummary}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Generated {formatTimestamp(activeRunSummary.generatedAtUtc)} | Targets {activeRunSummary.completedTargets}/
+                  {activeRunSummary.totalTargets} complete | Detections {activeRunSummary.detectionCount}
+                </p>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Target</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Summary</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activeRunSummary.targetExecutions.map((target, index) => (
+                        <TableRow key={`${target.targetHostname}-${index}`}>
+                          <TableCell>
+                            <div className="font-medium">{target.targetHostname}</div>
+                            <div className="text-xs text-muted-foreground">{target.targetIpAddress}</div>
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge value={target.status} />
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{target.errorMessage ?? target.summary}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Rule</TableHead>
+                        <TableHead>Disposition</TableHead>
+                        <TableHead>Observed</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activeRunSummary.detections.length > 0 ? (
+                        activeRunSummary.detections.map((detection) => (
+                          <TableRow key={detection.detectionId}>
+                            <TableCell>
+                              <div className="font-medium">{detection.ruleName}</div>
+                              <div className="text-xs text-muted-foreground">{detection.serverHostname}</div>
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge value={detection.disposition} />
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{formatTimestamp(detection.observedAtUtc)}</TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                            No detections are available for this run summary yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </motion.article>
+          ) : null}
+        </>
+      )}
+    </motion.section>
+  )
+}
