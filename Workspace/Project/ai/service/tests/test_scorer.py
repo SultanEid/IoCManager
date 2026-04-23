@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from cti_service.calibration import LogisticCalibrator
-from cti_service.contracts import ScoreCaseRequest
-from cti_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
+from decision_service.calibration import LogisticCalibrator
+from decision_service.contracts import ScoreCaseRequest
+from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
 
 
 def test_scorer_is_deterministic_for_same_input() -> None:
@@ -516,3 +516,4 @@ def test_internal_allowlist_row_stays_non_positive_despite_high_trust() -> None:
 
     assert scored.decision_state in {"abstain", "defer"}
     assert scored.maliciousness_score < 0.45
+

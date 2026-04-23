@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from cti_service.contracts import (
+from decision_service.contracts import (
     EvaluateModelRequest,
     GroundedDecisionResponse,
     HistoricalLearningQueryRequest,
@@ -598,3 +598,4 @@ def test_grounded_decision_contract_rejects_non_manual_action_plan_execution() -
     }
     with pytest.raises(ValidationError):
         GroundedDecisionResponse.model_validate(payload)
+

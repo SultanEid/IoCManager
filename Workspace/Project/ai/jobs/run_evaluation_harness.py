@@ -22,13 +22,13 @@ except ModuleNotFoundError:
 
 bootstrap_service_path()
 
-from cti_service.action_plan_evaluator import evaluate_canonical_action_plan_rows
-from cti_service.evaluation_artifacts import hash_file, write_report_bundle
-from cti_service.evaluation_metrics import (
-    AdjudicationEvaluationRow,
-    slice_adjudication_metrics,
+from decision_service.action_plan_evaluator import evaluate_canonical_action_plan_rows
+from decision_service.evaluation_artifacts import hash_file, write_report_bundle
+from decision_service.evaluation_metrics import (
+    DecisionEvaluationRow,
+    slice_decision_metrics,
 )
-from cti_service.eval_framework import (
+from decision_service.eval_framework import (
     EvaluationRecord,
     backtest_by_time,
     compare_against_baselines,
@@ -42,12 +42,12 @@ def parse_args() -> argparse.Namespace:
     ai_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(
         description=(
-            "Run offline adjudication and action-plan evaluation with reproducible report bundles."
+            "Run offline decision and action-plan evaluation with reproducible report bundles."
         )
     )
     parser.add_argument("--input-file", type=Path, required=True, help="JSONL file with scored rows or canonical dataset rows.")
     parser.add_argument("--output-file", type=Path, required=True, help="Path to write evaluation report JSON.")
-    parser.add_argument("--task", choices=["auto", "adjudication", "action_plan", "both"], default="auto")
+    parser.add_argument("--task", choices=["auto", "decision", "action_plan", "both"], default="auto")
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--time-bucket", choices=["month", "week"], default="month")
     parser.add_argument("--min-precision-gain", type=float, default=0.01)
@@ -76,7 +76,7 @@ def main() -> None:
         "inputHash": input_hash,
         "inputFormat": input_format,
         "taskMode": task_mode,
-        "adjudication": None,
+        "decision": None,
         "actionPlan": None,
     }
     summary_lines = [
@@ -88,34 +88,34 @@ def main() -> None:
         f"- task mode: `{task_mode}`",
     ]
 
-    adjudication_candidate = None
-    if task_mode in {"adjudication", "both"}:
+    decision_candidate = None
+    if task_mode in {"decision", "both"}:
         scored_rows = build_scored_rows(payloads)
         if scored_rows:
-            adjudication_candidate = compute_metric_bundle(scored_rows, top_k=args.top_k)
-            adjudication_section = build_adjudication_section(
+            decision_candidate = compute_metric_bundle(scored_rows, top_k=args.top_k)
+            decision_section = build_decision_section(
                 scored_rows=scored_rows,
-                candidate_metrics=adjudication_candidate,
+                candidate_metrics=decision_candidate,
                 top_k=args.top_k,
                 time_bucket=args.time_bucket,
                 min_precision_gain=args.min_precision_gain,
                 max_unsafe_rate_increase=args.max_unsafe_rate_increase,
                 max_regret_increase=args.max_regret_increase,
             )
-            report["adjudication"] = adjudication_section
+            report["decision"] = decision_section
             summary_lines.extend(
                 [
                     "",
-                    "## Adjudication",
-                    f"- sample size: `{adjudication_section['sampleSize']}`",
-                    f"- precision: `{adjudication_section['candidate']['precision']}`",
-                    f"- recall: `{adjudication_section['candidate']['recall']}`",
-                    f"- F1: `{adjudication_section['candidate']['f1']}`",
-                    f"- abstain rate: `{adjudication_section['candidate']['abstain_rate']}`",
-                    f"- false-positive rate: `{adjudication_section['candidate']['false_positive_rate']}`",
-                    f"- false-negative rate: `{adjudication_section['candidate']['false_negative_rate']}`",
-                    f"- ECE: `{adjudication_section['candidate']['calibration_error']}`",
-                    f"- Brier score: `{adjudication_section['candidate']['brier_score']}`",
+                    "## Decision",
+                    f"- sample size: `{decision_section['sampleSize']}`",
+                    f"- precision: `{decision_section['candidate']['precision']}`",
+                    f"- recall: `{decision_section['candidate']['recall']}`",
+                    f"- F1: `{decision_section['candidate']['f1']}`",
+                    f"- abstain rate: `{decision_section['candidate']['abstain_rate']}`",
+                    f"- false-positive rate: `{decision_section['candidate']['false_positive_rate']}`",
+                    f"- false-negative rate: `{decision_section['candidate']['false_negative_rate']}`",
+                    f"- ECE: `{decision_section['candidate']['calibration_error']}`",
+                    f"- Brier score: `{decision_section['candidate']['brier_score']}`",
                 ]
             )
 
@@ -152,8 +152,8 @@ def main() -> None:
                 ]
             )
 
-    if task_mode == "adjudication" and report["adjudication"] is None:
-        raise SystemExit("No scored adjudication rows were found in the input file.")
+    if task_mode == "decision" and report["decision"] is None:
+        raise SystemExit("No scored decision rows were found in the input file.")
     if task_mode == "action_plan" and report["actionPlan"] is None:
         raise SystemExit("No canonical action-plan rows were found in the input file.")
 
@@ -167,12 +167,12 @@ def main() -> None:
         "topK": args.top_k,
         "timeBucket": args.time_bucket,
         "thresholds": {
-            "adjudicationPositiveThreshold": 0.55,
+            "decisionPositiveThreshold": 0.55,
         },
     }
     calibration_bins = []
-    if adjudication_candidate is not None:
-        calibration_bins = [asdict(item) for item in adjudication_candidate.calibration_bins]
+    if decision_candidate is not None:
+        calibration_bins = [asdict(item) for item in decision_candidate.calibration_bins]
     bundle_files = write_report_bundle(
         bundle_dir=args.bundle_root / bundle_name,
         report_payload=report,
@@ -186,12 +186,12 @@ def main() -> None:
     args.output_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
 
-    if args.fail_on_no_gain and report["adjudication"] is not None:
-        if not report["adjudication"]["complexityGate"]["passed"]:
+    if args.fail_on_no_gain and report["decision"] is not None:
+        if not report["decision"]["complexityGate"]["passed"]:
             raise SystemExit(2)
 
 
-def build_adjudication_section(
+def build_decision_section(
     *,
     scored_rows: list[EvaluationRecord],
     candidate_metrics,
@@ -224,7 +224,7 @@ def build_adjudication_section(
     )
     time_backtest = backtest_by_time(scored_rows, top_k=top_k, bucket=time_bucket)
     slice_rows = [
-        AdjudicationEvaluationRow(
+        DecisionEvaluationRow(
             label=row.label,
             score=row.score,
             abstained=row.is_abstention,
@@ -241,7 +241,7 @@ def build_adjudication_section(
         )
         for row in scored_rows
     ]
-    slices = slice_adjudication_metrics(
+    slices = slice_decision_metrics(
         slice_rows,
         threshold=0.55,
         slice_fields=[
@@ -309,7 +309,7 @@ def resolve_task_mode(requested: str, input_format: str) -> str:
         return requested
     if input_format == "canonical_rows":
         return "action_plan"
-    return "adjudication"
+    return "decision"
 
 
 def build_scored_rows(payloads: list[dict[str, Any]]) -> list[EvaluationRecord]:
@@ -322,10 +322,10 @@ def build_scored_rows(payloads: list[dict[str, Any]]) -> list[EvaluationRecord]:
 
 
 def build_bundle_name(report: dict[str, Any]) -> str:
-    adjudication = report.get("adjudication")
+    decision = report.get("decision")
     action_plan = report.get("actionPlan")
-    if adjudication is not None:
-        return "adjudication-harness"
+    if decision is not None:
+        return "decision-harness"
     if action_plan is not None:
         return "action-plan-harness"
     return "evaluation-harness"
@@ -446,3 +446,5 @@ def _parse_utc(value: str) -> datetime:
 
 if __name__ == "__main__":
     main()
+
+

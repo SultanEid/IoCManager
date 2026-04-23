@@ -5,7 +5,7 @@ Define the approved source classes, provenance expectations, and evaluation inpu
 
 Related documents:
 
-- [AI Decision Overview](./ai-adjudication-overview.md)
+- [AI Decision Overview](./ai-decision-overview.md)
 - [Verdict Taxonomy](./verdict-taxonomy.md)
 - [Action Plan Policy](./action-plan-policy.md)
 
@@ -78,3 +78,4 @@ For decision scoring on built datasets, export scored rows from canonical JSONL 
 - do not treat raw LLM narration as an authoritative evidence source
 - do not use fabricated production examples as trusted labels
 - do not widen source policy into campaign/actor intelligence scope that is outside IoC Manager operations
+

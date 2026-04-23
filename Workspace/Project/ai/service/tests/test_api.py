@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from cti_service.config import load_settings
+from decision_service.config import load_settings
 
 CANONICAL_VERDICTS = {
     "benign",
@@ -139,7 +139,7 @@ def test_score_case_endpoint(client) -> None:
     assert fusion["deduplication"]["duplicateCount"] >= 1
 
 
-def test_score_case_endpoint_uses_deterministic_yara_adjudication_for_lexical_only_input(client) -> None:
+def test_score_case_endpoint_uses_deterministic_yara_decision_for_lexical_only_input(client) -> None:
     response = client.post(
         "/score_case",
         json={
@@ -183,7 +183,7 @@ def test_score_case_endpoint_uses_deterministic_yara_adjudication_for_lexical_on
     assert grounded["safetyDiagnostics"]["weakEvidence"] is True
 
 
-def test_score_case_endpoint_uses_deterministic_sigma_adjudication_for_lexical_only_input(client) -> None:
+def test_score_case_endpoint_uses_deterministic_sigma_decision_for_lexical_only_input(client) -> None:
     response = client.post(
         "/score_case",
         json={
@@ -226,12 +226,12 @@ def test_score_case_endpoint_uses_deterministic_sigma_adjudication_for_lexical_o
     assert grounded["abstainReason"] == "missing_non_string_corroboration"
     assert grounded["reasons"]
     assert grounded["nextBestEvidence"]
-    assert "SIGMA deterministic adjudication produced verdict=" in grounded["reasons"][0]
+    assert "SIGMA deterministic decision produced verdict=" in grounded["reasons"][0]
     assert 0.0 <= grounded["falsePositiveRisk"] <= 1.0
     assert grounded["safetyDiagnostics"]["weakEvidence"] is True
 
 
-def test_score_case_endpoint_uses_deterministic_snort_adjudication_for_lexical_only_input(client) -> None:
+def test_score_case_endpoint_uses_deterministic_snort_decision_for_lexical_only_input(client) -> None:
     response = client.post(
         "/score_case",
         json={
@@ -276,7 +276,7 @@ def test_score_case_endpoint_uses_deterministic_snort_adjudication_for_lexical_o
     assert grounded["abstainReason"] == "missing_non_string_corroboration"
     assert grounded["reasons"]
     assert grounded["nextBestEvidence"]
-    assert "SNORT deterministic adjudication produced verdict=" in grounded["reasons"][0]
+    assert "SNORT deterministic decision produced verdict=" in grounded["reasons"][0]
     assert 0.0 <= grounded["falsePositiveRisk"] <= 1.0
     assert grounded["safetyDiagnostics"]["weakEvidence"] is True
 
@@ -737,8 +737,8 @@ def test_health_includes_version_metadata(client) -> None:
 
 
 def test_app_metadata_uses_ioc_manager_identity(client) -> None:
-    assert client.app.title == "IoC Manager Adjudication Sidecar"
-    assert "adjudication support" in client.app.description.lower()
+    assert client.app.title == "IoC Manager Decision Sidecar"
+    assert "decision support" in client.app.description.lower()
     assert "compatibility surfaces" not in client.app.description.lower()
 
 
@@ -755,3 +755,5 @@ def test_load_settings_prefers_ioc_manager_aliases(monkeypatch, tmp_path) -> Non
     assert settings.service_name == "ioc-manager-sidecar-alias"
     assert settings.environment == "staging"
     assert settings.artifacts_root == tmp_path / "ioc-manager-artifacts"
+
+

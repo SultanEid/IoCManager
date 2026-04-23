@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cti_service.registry import ModelRegistryEntry, ModelRegistryStore
+from decision_service.registry import ModelRegistryEntry, ModelRegistryStore
 
 
 def test_registry_roundtrip(tmp_path: Path) -> None:
@@ -58,3 +58,4 @@ def test_registry_promote_archives_previous_active(tmp_path: Path) -> None:
     statuses = {entry.model_version: entry.status for entry in doc.entries}
     assert statuses["v1-new"] == "active"
     assert statuses["v1-old"] == "archived"
+

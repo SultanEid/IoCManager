@@ -9,12 +9,12 @@ from _bootstrap import bootstrap_service_path
 
 bootstrap_service_path()
 
-from cti_service.evaluation_artifacts import hash_payload, write_report_bundle
-from cti_service.calibration import LogisticCalibrator
-from cti_service.evaluator import evaluate_snapshot
-from cti_service.registry import ModelRegistryStore
-from cti_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
-from cti_service.snapshots import SnapshotLoader
+from decision_service.evaluation_artifacts import hash_payload, write_report_bundle
+from decision_service.calibration import LogisticCalibrator
+from decision_service.evaluator import evaluate_snapshot
+from decision_service.registry import ModelRegistryStore
+from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
+from decision_service.snapshots import SnapshotLoader
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,7 +90,7 @@ def main() -> None:
 
     summary = "\n".join(
         [
-            "# Adjudication Evaluation Report",
+            "# Decision Evaluation Report",
             "",
             f"- model version: `{entry.model_version}`",
             f"- dataset version: `{args.dataset_version}`",
@@ -106,7 +106,7 @@ def main() -> None:
         ]
     )
     manifest = {
-        "reportType": "adjudication_evaluation",
+        "reportType": "decision_evaluation",
         "datasetVersion": args.dataset_version,
         "modelVersion": entry.model_version,
         "snapshotManifestHash": snapshot.manifest_hash,
@@ -124,7 +124,7 @@ def main() -> None:
         "windowStartUtc": window_start.isoformat() if window_start else None,
         "windowEndUtc": window_end.isoformat() if window_end else None,
     }
-    bundle_name = f"adjudication-{entry.model_version}-{args.dataset_version}"
+    bundle_name = f"decision-{entry.model_version}-{args.dataset_version}"
     bundle_files = write_report_bundle(
         bundle_dir=args.bundle_root / bundle_name,
         report_payload=report,
@@ -148,3 +148,5 @@ def _parse_optional_utc(value: str | None) -> datetime | None:
 
 if __name__ == "__main__":
     main()
+
+

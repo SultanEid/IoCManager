@@ -1,4 +1,4 @@
-﻿using Backend.Contracts.V2;
+using Backend.Contracts.V2;
 
 namespace Backend.Application.Abstractions.Services;
 

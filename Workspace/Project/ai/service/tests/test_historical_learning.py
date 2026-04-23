@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 
-from cti_service.contracts import SubmitFeedbackRequest
-from cti_service.feedback_store import HistoricalLearningStore
-from cti_service.historical_learning import HistoricalLearningEngine
+from decision_service.contracts import SubmitFeedbackRequest
+from decision_service.feedback_store import HistoricalLearningStore
+from decision_service.historical_learning import HistoricalLearningEngine
 
 
 def _feedback_payload(*, case_id: str, ioc_value: str, verdict: str = "true_positive", **kwargs: object) -> SubmitFeedbackRequest:
@@ -350,3 +350,4 @@ def test_historical_learning_similarity_order_is_deterministic_on_ties() -> None
         detection_package={"rule_family": "sigma", "rule_metadata": {"rule_id": "SIG-TIE"}},
     )
     assert [item.detection_id for item in first.similar_detections] == [item.detection_id for item in second.similar_detections]
+

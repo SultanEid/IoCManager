@@ -1,6 +1,8 @@
 # IoC Manager AI Sidecar
 
-FastAPI sidecar used by IoC Manager for:
+FastAPI sidecar used by IoC Manager as a human-governed security decision assistant.
+
+It is responsible for:
 
 - report extraction
 - decision support
@@ -9,10 +11,19 @@ FastAPI sidecar used by IoC Manager for:
 
 This sidecar is part of the IoC Manager decision workflow. It is not an autonomous response engine and it is not the product's core backend.
 
+In practice, it helps the app:
+
+- score detections and IOC context
+- explain why a decision was produced
+- surface uncertainty and false-positive pressure directly
+- recommend safe, policy-constrained next actions
+- add similar historical context where available
+
 ## Documentation
 Subsystem documentation lives under `docs`:
 
-- [AI Decision Overview](../../docs/ai-adjudication-overview.md)
+- [AI Decision Overview](../../docs/ai-decision-overview.md)
+- [AI Decision System Reference](../../docs/ai-decision-system-reference.md)
 - [Verdict Taxonomy](../../docs/verdict-taxonomy.md)
 - [Action Plan Policy](../../docs/action-plan-policy.md)
 - [Dataset Sources](../../docs/dataset-sources.md)
@@ -73,15 +84,15 @@ Optional phrasing assist remains bounded by deterministic outputs:
 ## Run
 ```bash
 pip install -e .
-uvicorn cti_service.main:app --host 0.0.0.0 --port 8100
+uvicorn decision_service.main:app --host 0.0.0.0 --port 8100
 ```
 
 ## Offline Jobs
 Offline jobs live under `ai/jobs`:
 
-- `build_dataset.py`
-- dataset builder job
+- `build_decision_dataset.py`
 - `evaluate_model.py`
 - `run_evaluation_harness.py`
 - `train_baseline.py`
 - `publish_model.py`
+

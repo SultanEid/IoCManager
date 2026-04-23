@@ -1,4 +1,4 @@
-﻿import { Suspense } from "react"
+import { Suspense } from "react"
 import { AuthForm } from "@/components/workbench/auth-form"
 
 export default function AuthPage() {

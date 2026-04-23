@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query"
 

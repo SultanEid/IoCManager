@@ -47,7 +47,7 @@ def test_export_job_writes_scored_rows_and_skips_neutral_targets(tmp_path: Path)
                 "linked_enrichment": {"enrichments": [{"kind": "threat_intel", "source": "threatfox"}]},
             },
             "target_payload": {
-                "adjudication": {
+                "decision": {
                     "verdict": "likely_malicious",
                 }
             },
@@ -67,7 +67,7 @@ def test_export_job_writes_scored_rows_and_skips_neutral_targets(tmp_path: Path)
                 "object_metadata": {"object_id": "a" * 64, "object_type": "file", "source_system": "yaraify"},
             },
             "target_payload": {
-                "adjudication": {
+                "decision": {
                     "verdict": "insufficient_evidence",
                 }
             },
@@ -128,3 +128,4 @@ def test_rule_context_includes_source_aware_signals_for_external_rows() -> None:
     assert context["externalSourceSignal"] >= 0.69
     assert context["indicatorStrength"] >= 0.75
     assert context["sightingsCount"] >= 2.0
+

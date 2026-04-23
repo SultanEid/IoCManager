@@ -1,4 +1,4 @@
-﻿import { StatusBadge } from "@/components/workbench/status-badge"
+import { StatusBadge } from "@/components/workbench/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { CaseDetailVM, PolicyGuardrailVM } from "@/shared/gateway/types"

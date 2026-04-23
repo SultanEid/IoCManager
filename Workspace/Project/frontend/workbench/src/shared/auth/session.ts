@@ -1,4 +1,4 @@
-﻿import { decodeJwt } from "jose"
+import { decodeJwt } from "jose"
 
 export type UserRole = "IT" | "Analyst" | "Lead" | "Admin" | "DEV"
 

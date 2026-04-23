@@ -5,7 +5,7 @@ Define the decision verdicts allowed by IoC Manager and the minimum evidence exp
 
 Related documents:
 
-- [AI Decision Overview](./ai-adjudication-overview.md)
+- [AI Decision Overview](./ai-decision-overview.md)
 - [Action Plan Policy](./action-plan-policy.md)
 - [Dataset Sources](./dataset-sources.md)
 
@@ -98,3 +98,4 @@ Expected characteristics:
 - Do not use generated phrasing alone as verdict evidence.
 - Keep verdict assignment reproducible from the underlying evidence and policy thresholds.
 - Safety rails may downgrade or abstain after family-specific decisioning if the final evidence state is not safe enough.
+

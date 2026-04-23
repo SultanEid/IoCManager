@@ -1,9 +1,9 @@
-﻿import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "vitest"
 import {
   alertResponseSchema,
-  aiAdjudicationResultResponseSchema,
-  aiAdjudicationActionPlanOrPendingResponseSchema,
-  aiAdjudicationExplanationOrPendingResponseSchema,
+  aiDecisionResultResponseSchema,
+  aiDecisionActionPlanOrPendingResponseSchema,
+  aiDecisionExplanationOrPendingResponseSchema,
   alertRuleWorkflowResponseSchema,
   archiveRecordResponseSchema,
   detectionDetailResponseSchema,
@@ -391,16 +391,16 @@ describe("API schemas", () => {
     expect(parsed.serverHostname).toBe("srv-01")
   })
 
-  it("parses adjudication explanation and action-plan pending/ready payloads", () => {
-    const pendingExplanation = aiAdjudicationExplanationOrPendingResponseSchema.parse({
-      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+  it("parses decision explanation and action-plan pending/ready payloads", () => {
+    const pendingExplanation = aiDecisionExplanationOrPendingResponseSchema.parse({
+      decisionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
       status: "Running",
       message: "Explanation is not ready yet.",
     })
     expect("message" in pendingExplanation).toBe(true)
 
-    const readyExplanation = aiAdjudicationExplanationOrPendingResponseSchema.parse({
-      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+    const readyExplanation = aiDecisionExplanationOrPendingResponseSchema.parse({
+      decisionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
       status: "Completed",
       summary: "Deterministic summary.",
       decisionState: "monitor",
@@ -417,15 +417,15 @@ describe("API schemas", () => {
     })
     expect("summary" in readyExplanation).toBe(true)
 
-    const pendingActionPlan = aiAdjudicationActionPlanOrPendingResponseSchema.parse({
-      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+    const pendingActionPlan = aiDecisionActionPlanOrPendingResponseSchema.parse({
+      decisionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
       status: "Running",
       message: "Action plan is not ready yet.",
     })
     expect("message" in pendingActionPlan).toBe(true)
 
-    const readyActionPlan = aiAdjudicationActionPlanOrPendingResponseSchema.parse({
-      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+    const readyActionPlan = aiDecisionActionPlanOrPendingResponseSchema.parse({
+      decisionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
       status: "Completed",
       summary: "Escalate to lead analyst.",
       recommendedActions: [],
@@ -441,9 +441,9 @@ describe("API schemas", () => {
     expect("summary" in readyActionPlan).toBe(true)
   })
 
-  it("parses adjudication results with safety diagnostics", () => {
-    const parsed = aiAdjudicationResultResponseSchema.parse({
-      adjudicationId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
+  it("parses decision results with safety diagnostics", () => {
+    const parsed = aiDecisionResultResponseSchema.parse({
+      decisionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
       status: "Completed",
       submittedAtUtc: "2026-04-20T00:00:00Z",
       startedAtUtc: "2026-04-20T00:00:01Z",
@@ -619,3 +619,4 @@ describe("API schemas", () => {
     expect(parsed.success).toBe(false)
   })
 })
+

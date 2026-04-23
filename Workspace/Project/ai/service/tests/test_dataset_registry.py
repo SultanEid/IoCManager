@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cti_service.dataset_registry import DatasetRegistryEntry, DatasetRegistryStore
+from decision_service.dataset_registry import DatasetRegistryEntry, DatasetRegistryStore
 
 
 def test_dataset_registry_roundtrip(tmp_path: Path) -> None:
@@ -27,3 +27,4 @@ def test_dataset_registry_roundtrip(tmp_path: Path) -> None:
     latest = store.get_latest()
     assert latest is not None
     assert latest.dataset_version == "test-v1"
+

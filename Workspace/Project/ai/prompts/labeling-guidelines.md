@@ -1,10 +1,10 @@
-# Labeling Guidelines For IoC Adjudication
+# Labeling Guidelines For IoC Decision
 
 ## Prompt Objective
-Apply consistent, evidence-grounded labels for IoC Manager adjudication data.
+Apply consistent, evidence-grounded labels for IoC Manager decision data.
 
 Use with:
-- [AI Adjudication Overview](../../docs/ai-adjudication-overview.md)
+- [AI Decision Overview](../../docs/ai-decision-overview.md)
 - [Verdict Taxonomy](../../docs/verdict-taxonomy.md)
 - [Action Plan Policy](../../docs/action-plan-policy.md)
 - [Dataset Sources](../../docs/dataset-sources.md)
@@ -61,6 +61,8 @@ Use with:
 ```
 
 ## Scope Guardrail
-- This prompt supports IoC Manager adjudication only.
+- This prompt supports IoC Manager decision only.
 - Do not introduce CTI campaign/actor graph reasoning labels.
+
+
 

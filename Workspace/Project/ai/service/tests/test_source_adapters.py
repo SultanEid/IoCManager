@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from cti_service.adjudication_dataset_builder import _normalize_row
-from cti_service.source_adapters import adapt_source_record
+from decision_service.decision_dataset_builder import _normalize_row
+from decision_service.source_adapters import adapt_source_record
 
 
 def test_fixture_yara_parser_preserves_raw_payload_and_behavior_refs() -> None:
@@ -61,7 +61,7 @@ def test_malwarebazaar_parser_adds_enrichment_and_row_remains_partial_when_rule_
         "first_seen": "2026-04-16T00:00:00Z",
         "tags": ["loader", "stealer"],
         "event_time": "2026-04-16T00:00:00Z",
-        "adjudication_result": {"verdict": "likely_malicious"},
+        "decision_result": {"verdict": "likely_malicious"},
     }
 
     row = _normalize_row(
@@ -297,7 +297,7 @@ def test_internal_reviewed_telemetry_parser_supports_sigma_review_rows() -> None
     result = adapt_source_record(payload=payload, source_file={"parser_name": "internal_reviewed_telemetry_parser_v1"})
 
     assert result.package_payload["rule_family"] == "sigma"
-    assert result.target_payload_patch["adjudication"]["verdict"] == "suspicious"
+    assert result.target_payload_patch["decision"]["verdict"] == "suspicious"
     assert result.package_payload["object_metadata"]["source_system"] == "siem"
     assert result.evidence_used_patch[0]["source"] == "internal_reviewed_telemetry"
 
@@ -339,7 +339,7 @@ def test_internal_reviewed_telemetry_parser_supports_network_review_rows() -> No
     result = adapt_source_record(payload=payload, source_file={"parser_name": "internal_reviewed_telemetry_parser_v1"})
 
     assert result.package_payload["rule_family"] == "suricata"
-    assert result.target_payload_patch["adjudication"]["verdict"] == "false_positive"
+    assert result.target_payload_patch["decision"]["verdict"] == "false_positive"
     assert result.package_payload["object_metadata"]["source_system"] == "suricata"
     assert result.evidence_used_patch[0]["source"] == "internal_reviewed_telemetry"
 
@@ -383,7 +383,7 @@ def test_threatfox_parser_maps_indicator_metadata_and_target_patch() -> None:
     assert result.package_payload["raw_hit_payload"]["event_id"] == "threatfox-777001"
     assert result.package_payload["raw_hit_payload"]["domain"] == "login-updater.example"
     assert result.package_payload["object_metadata"]["object_type"] == "domain"
-    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+    assert result.target_payload_patch["decision"]["verdict"] == "likely_malicious"
     assert result.provenance_items[0]["source"] == "threatfox"
 
 
@@ -412,7 +412,7 @@ def test_urlhaus_parser_maps_url_metadata_payloads_and_target_patch() -> None:
     assert result.package_payload["raw_hit_payload"]["message"].startswith("URLhaus malware url")
     assert result.package_payload["raw_hit_payload"]["network"]["request_url"] == "https://cdn-bad.example/dropper.exe"
     assert result.package_payload["object_metadata"]["object_type"] == "url"
-    assert result.target_payload_patch["adjudication"]["verdict"] == "malicious"
+    assert result.target_payload_patch["decision"]["verdict"] == "malicious"
     assert result.provenance_items[0]["source"] == "urlhaus"
 
 
@@ -498,7 +498,7 @@ def test_analyst_closure_parser_populates_prior_outcomes_and_target_patch() -> N
         source_file={"parser_name": "analyst_closure_parser_v1", "source_path": "closure.jsonl"},
     )
 
-    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_benign"
+    assert result.target_payload_patch["decision"]["verdict"] == "likely_benign"
     prior = result.package_payload["prior_analyst_outcomes"]["outcomes"][0]
     assert prior["verdict"] == "false_positive"
     assert prior["analyst_id"] == "analyst-1"
@@ -723,7 +723,7 @@ def test_sigmahq_parser_maps_official_rule_metadata_and_target_patch() -> None:
 
     assert result.package_payload["rule_family"] == "sigma"
     assert result.package_payload["rule_metadata"]["source"] == "sigmahq"
-    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+    assert result.target_payload_patch["decision"]["verdict"] == "likely_malicious"
     assert result.provenance_items[0]["source"] == "sigmahq"
 
 
@@ -750,7 +750,7 @@ def test_snort_community_parser_maps_network_rule_and_target_patch() -> None:
 
     assert result.package_payload["rule_family"] == "snort"
     assert result.package_payload["rule_metadata"]["source"] == "snort_community"
-    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+    assert result.target_payload_patch["decision"]["verdict"] == "likely_malicious"
 
 
 def test_et_open_suricata_parser_preserves_suricata_family() -> None:
@@ -777,7 +777,7 @@ def test_et_open_suricata_parser_preserves_suricata_family() -> None:
     assert result.package_payload["rule_family"] == "suricata"
     assert result.package_payload["rule_metadata"]["source"] == "et_open_suricata"
     assert result.package_payload["object_metadata"]["source_system"] == "suricata"
-    assert result.target_payload_patch["adjudication"]["verdict"] == "likely_malicious"
+    assert result.target_payload_patch["decision"]["verdict"] == "likely_malicious"
 
 
 def test_internal_negative_sources_patch_benign_targets() -> None:
@@ -797,7 +797,7 @@ def test_internal_negative_sources_patch_benign_targets() -> None:
         payload=allowlist_payload,
         source_file={"parser_name": "internal_allowlist_parser_v1"},
     )
-    assert allowlist_result.target_payload_patch["adjudication"]["verdict"] == "benign"
+    assert allowlist_result.target_payload_patch["decision"]["verdict"] == "benign"
 
     baseline_payload = {
         "profile_id": "base-1",
@@ -816,4 +816,6 @@ def test_internal_negative_sources_patch_benign_targets() -> None:
         payload=baseline_payload,
         source_file={"parser_name": "clean_baseline_profile_parser_v1"},
     )
-    assert baseline_result.target_payload_patch["adjudication"]["verdict"] in {"benign", "likely_benign"}
+    assert baseline_result.target_payload_patch["decision"]["verdict"] in {"benign", "likely_benign"}
+
+

@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from cti_service.snapshots import SnapshotLoader
+from decision_service.snapshots import SnapshotLoader
 
 
 def test_snapshot_loader_reads_version(snapshot_root: Path) -> None:
@@ -82,3 +82,4 @@ def test_snapshot_loader_keeps_mixed_iso_timestamps(tmp_path: Path) -> None:
     assert len(snapshot.observables) == 3
     assert len(snapshot.detections) == 3
     assert len(snapshot.outcomes) == 3
+

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cti_service.calibration import LogisticCalibrator, train_logistic_calibrator
+from decision_service.calibration import LogisticCalibrator, train_logistic_calibrator
 
 
 def test_logistic_calibration_is_bounded() -> None:
@@ -50,3 +50,4 @@ def test_train_calibrator_accepts_medium_signal_weights() -> None:
     assert calibrator.method in {"logistic", "isotonic"}
     assert all(0.0 <= value <= 1.0 for value in calibrated)
     assert calibrated == sorted(calibrated)
+

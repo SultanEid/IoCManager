@@ -14,7 +14,7 @@ bootstrap_service_path()
 
 from fastapi.testclient import TestClient
 
-from cti_service.api import create_app
+from decision_service.api import create_app
 
 FAMILIES = ("sigma", "snort", "yara")
 POSITIVE_VERDICTS = {"malicious", "likely_malicious", "suspicious"}
@@ -276,3 +276,4 @@ def _build_rule_context(family: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 if __name__ == "__main__":
     main()
+

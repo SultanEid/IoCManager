@@ -19,7 +19,7 @@ except ModuleNotFoundError:
 
 bootstrap_service_path()
 
-from cti_service.adjudication_dataset_builder import build_dataset_inventory
+from decision_service.decision_dataset_builder import build_dataset_inventory
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,3 +53,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

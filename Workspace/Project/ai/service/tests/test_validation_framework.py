@@ -3,14 +3,14 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from cti_service.contracts import ScoreCaseRequest
-from cti_service.decision_support import build_grounded_decision
-from cti_service.eval_framework import (
+from decision_service.contracts import ScoreCaseRequest
+from decision_service.decision_support import build_grounded_decision
+from decision_service.eval_framework import (
     EvaluationMetricBundle,
     compare_against_baselines,
 )
-from cti_service.scorer import BaselineScorer, ScorerContext
-from cti_service.snort_adjudication import adjudicate_snort
+from decision_service.scorer import BaselineScorer, ScorerContext
+from decision_service.snort_decision import adjudicate_snort
 
 
 def _build_scorer(now: datetime) -> BaselineScorer:
@@ -303,10 +303,10 @@ def test_grounded_decision_uses_sigma_deterministic_path_and_provenance() -> Non
     grounded = build_grounded_decision(diagnostics, request)
     assert grounded.verdict == "insufficient_evidence"
     assert grounded.abstain_reason == "missing_non_string_corroboration"
-    assert any(item.source == "sigma_adjudication" for item in grounded.provenance)
+    assert any(item.source == "sigma_decision" for item in grounded.provenance)
     assert any(item.source == "sigma_feature" for item in grounded.provenance)
     assert grounded.reasons
-    assert "SIGMA deterministic adjudication produced verdict=" in grounded.reasons[0]
+    assert "SIGMA deterministic decision produced verdict=" in grounded.reasons[0]
     assert any("Lexical-only evidence was detected" in reason for reason in grounded.reasons)
     assert grounded.safety_diagnostics.weak_evidence is True
 
@@ -349,10 +349,10 @@ def test_grounded_decision_uses_snort_deterministic_path_and_provenance() -> Non
     grounded = build_grounded_decision(diagnostics, request)
     assert grounded.verdict == "insufficient_evidence"
     assert grounded.abstain_reason == "missing_non_string_corroboration"
-    assert any(item.source == "snort_adjudication" for item in grounded.provenance)
+    assert any(item.source == "snort_decision" for item in grounded.provenance)
     assert any(item.source == "snort_feature" for item in grounded.provenance)
     assert grounded.reasons
-    assert "SNORT deterministic adjudication produced verdict=" in grounded.reasons[0]
+    assert "SNORT deterministic decision produced verdict=" in grounded.reasons[0]
     assert any("Lexical-only evidence was detected" in reason for reason in grounded.reasons)
     assert grounded.safety_diagnostics.weak_evidence is True
 
@@ -487,15 +487,15 @@ def test_logging_emits_abstention_partial_evidence_and_enrichment_events(caplog)
     )
 
     diagnostics = scorer.score_case(request)
-    with caplog.at_level(logging.INFO, logger="cti_service.decision_support"):
+    with caplog.at_level(logging.INFO, logger="decision_service.decision_support"):
         grounded = build_grounded_decision(diagnostics, request)
 
     assert grounded.verdict == "insufficient_evidence"
     messages = {record.message for record in caplog.records}
-    assert "adjudication_abstained" in messages
-    assert "adjudication_partial_evidence" in messages
-    assert "adjudication_enrichment_degraded" in messages
-    abstained_record = next(record for record in caplog.records if record.message == "adjudication_abstained")
+    assert "decision_abstained" in messages
+    assert "decision_partial_evidence" in messages
+    assert "decision_enrichment_degraded" in messages
+    abstained_record = next(record for record in caplog.records if record.message == "decision_abstained")
     assert abstained_record.case_id == "case-safety-log"
     assert abstained_record.rule_family == "sigma"
     assert abstained_record.enrichment_status == "unavailable"
@@ -534,3 +534,5 @@ def test_complexity_gate_rejects_candidate_when_simple_baseline_is_safer() -> No
     gate = compare_against_baselines(candidate, {"source_trust": baseline}, min_precision_gain=0.01)
     assert gate.passed is False
     assert gate.reasons
+
+

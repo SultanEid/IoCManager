@@ -3,8 +3,8 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timezone
 
-from cti_service.contracts import ReportIngestionRequest
-from cti_service.extraction import _CandidateClaim, _partition_by_confidence, extract_report
+from decision_service.contracts import ReportIngestionRequest
+from decision_service.extraction import _CandidateClaim, _partition_by_confidence, extract_report
 
 
 def _request(**overrides: object) -> ReportIngestionRequest:
@@ -134,3 +134,4 @@ def test_llm_fallback_runs_only_when_unresolved_and_enabled(monkeypatch) -> None
     llm_stage = next(stage for stage in unresolved_enabled.pipeline_stages if stage.stage == "llm_fallback")
     assert llm_stage.executed is True
     assert any("llm_provider_not_configured" in claim.abstain_reason_codes for claim in unresolved_enabled.claims)
+

@@ -1,4 +1,4 @@
-﻿{
+{
   "alert": {
     "event_id": "evt-sigma-alert-fixture-001",
     "timestamp": "2026-04-16T07:50:00Z",
@@ -39,9 +39,10 @@
       ]
     }
   },
-  "adjudication_result": {
+  "decision_result": {
     "verdict": "likely_malicious",
     "confidence": 0.78,
     "false_positive_risk": 0.22
   }
 }
+

@@ -1,8 +1,8 @@
 import type {
   AlertListResponse,
-  AiAdjudicationActionPlanOrPendingResponse,
-  AiAdjudicationExplanationOrPendingResponse,
-  AiAdjudicationResultResponse,
+  AiDecisionActionPlanOrPendingResponse,
+  AiDecisionExplanationOrPendingResponse,
+  AiDecisionResultResponse,
   AiEvidenceSourcesResponse,
   AiOverrideOrClosureResponse,
   AiSimilarDetectionsResponse,
@@ -47,13 +47,13 @@ import type {
   TargetServerResponse,
   RuleProposalResponse,
   RuleSimulationResultResponse,
-  SubmitAiAdjudicationAcceptedResponse,
+  SubmitAiDecisionAcceptedResponse,
   TokenResponse,
   UserResponse,
 } from "@/shared/api/schemas"
 import type {
   AdvanceRolloutStageInput,
-  AiAdjudicationCursorQuery,
+  AiDecisionCursorQuery,
   AlertListQuery,
   ArchiveRuleInput,
   AuditLogListQuery,
@@ -91,8 +91,8 @@ import type {
   ReviewRuleProposalInput,
   SettingsAdminVM,
   SimulateRuleProposalInput,
-  SubmitAiAdjudicationInput,
-  SubmitAiAdjudicationOverrideOrClosureInput,
+  SubmitAiDecisionInput,
+  SubmitAiDecisionOverrideOrClosureInput,
   TriggerRollbackInput,
   AssignWorkbenchRolePermissionInput,
   RetryDistributionJobInput,
@@ -941,30 +941,30 @@ export class MockGateway implements Gateway {
     }
   }
 
-  async submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse> {
+  async submitAiDecision(input: SubmitAiDecisionInput): Promise<SubmitAiDecisionAcceptedResponse> {
     consume(input)
-    const adjudicationId = nextUserId()
+    const decisionId = nextUserId()
     const submittedAtUtc = new Date().toISOString()
     return {
-      adjudicationId,
+      decisionId,
       status: "Queued",
       submittedAtUtc,
       links: {
-        result: `/api/v2/ai/adjudications/${adjudicationId}`,
-        explanation: `/api/v2/ai/adjudications/${adjudicationId}/explanation`,
-        actionPlan: `/api/v2/ai/adjudications/${adjudicationId}/action-plan`,
-        similarDetections: `/api/v2/ai/adjudications/${adjudicationId}/similar-detections`,
-        evidenceSources: `/api/v2/ai/adjudications/${adjudicationId}/evidence-sources`,
-        overrideClosure: `/api/v2/ai/adjudications/${adjudicationId}/override-closure`,
+        result: `/api/v2/ai/decisions/${decisionId}`,
+        explanation: `/api/v2/ai/decisions/${decisionId}/explanation`,
+        actionPlan: `/api/v2/ai/decisions/${decisionId}/action-plan`,
+        similarDetections: `/api/v2/ai/decisions/${decisionId}/similar-detections`,
+        evidenceSources: `/api/v2/ai/decisions/${decisionId}/evidence-sources`,
+        overrideClosure: `/api/v2/ai/decisions/${decisionId}/override-closure`,
       },
     }
   }
 
-  async getAiAdjudicationResult(adjudicationId: string, _signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
+  async getAiDecisionResult(decisionId: string, _signal?: AbortSignal): Promise<AiDecisionResultResponse> {
     consume(_signal)
     const now = new Date().toISOString()
     return {
-      adjudicationId,
+      decisionId,
       status: "Completed",
       submittedAtUtc: now,
       startedAtUtc: now,
@@ -1010,23 +1010,23 @@ export class MockGateway implements Gateway {
     }
   }
 
-  async getLatestAiDecisionForDetection(detectionId: string, _signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
-    return this.getAiAdjudicationResult(detectionId, _signal)
+  async getLatestAiDecisionForDetection(detectionId: string, _signal?: AbortSignal): Promise<AiDecisionResultResponse> {
+    return this.getAiDecisionResult(detectionId, _signal)
   }
 
   async getLatestAiDecisionForIoc(iocId: string, _signal?: AbortSignal) {
     return {
       iocId,
       detectionId: iocId,
-      result: await this.getAiAdjudicationResult(iocId, _signal),
+      result: await this.getAiDecisionResult(iocId, _signal),
     }
   }
 
   async generateAiDecisionForIoc(
     _iocId: string,
     input: { submittedByUserId: string },
-  ): Promise<SubmitAiAdjudicationAcceptedResponse> {
-    return this.submitAiAdjudication({
+  ): Promise<SubmitAiDecisionAcceptedResponse> {
+    return this.submitAiDecision({
       caseId: _iocId,
       detectionId: `legacy-ioc:${_iocId}`,
       iocType: "artifact",
@@ -1037,16 +1037,16 @@ export class MockGateway implements Gateway {
     })
   }
 
-  async getAiAdjudicationExplanation(
-    adjudicationId: string,
+  async getAiDecisionExplanation(
+    decisionId: string,
     _signal?: AbortSignal,
-  ): Promise<AiAdjudicationExplanationOrPendingResponse> {
+  ): Promise<AiDecisionExplanationOrPendingResponse> {
     consume(_signal)
     const now = new Date().toISOString()
     return {
-      adjudicationId,
+      decisionId,
       status: "Completed",
-      summary: "Mock deterministic explanation for adjudication review.",
+      summary: "Mock deterministic explanation for decision review.",
       decisionState: "monitor",
       recommendedAction: "monitor",
       rationale: ["Evidence supports monitoring while collecting corroboration."],
@@ -1068,14 +1068,14 @@ export class MockGateway implements Gateway {
     }
   }
 
-  async getAiAdjudicationActionPlan(
-    adjudicationId: string,
+  async getAiDecisionActionPlan(
+    decisionId: string,
     _signal?: AbortSignal,
-  ): Promise<AiAdjudicationActionPlanOrPendingResponse> {
+  ): Promise<AiDecisionActionPlanOrPendingResponse> {
     consume(_signal)
     const now = new Date().toISOString()
     return {
-      adjudicationId,
+      decisionId,
       status: "Completed",
       summary: "Manual-only recommendations derived from deterministic policy gates.",
       recommendedActions: [
@@ -1110,14 +1110,14 @@ export class MockGateway implements Gateway {
     }
   }
 
-  async listAiAdjudicationEvidenceSources(
-    adjudicationId: string,
-    query: AiAdjudicationCursorQuery = {},
+  async listAiDecisionEvidenceSources(
+    decisionId: string,
+    query: AiDecisionCursorQuery = {},
     _signal?: AbortSignal,
   ): Promise<AiEvidenceSourcesResponse> {
     consume(_signal, query)
     return {
-      adjudicationId,
+      decisionId,
       limit: query.limit ?? 20,
       nextCursor: null,
       items: [
@@ -1138,14 +1138,14 @@ export class MockGateway implements Gateway {
     }
   }
 
-  async listAiAdjudicationSimilarDetections(
-    adjudicationId: string,
-    query: AiAdjudicationCursorQuery = {},
+  async listAiDecisionSimilarDetections(
+    decisionId: string,
+    query: AiDecisionCursorQuery = {},
     _signal?: AbortSignal,
   ): Promise<AiSimilarDetectionsResponse> {
     consume(_signal, query)
     return {
-      adjudicationId,
+      decisionId,
       limit: query.limit ?? 20,
       nextCursor: null,
       items: [
@@ -1168,13 +1168,13 @@ export class MockGateway implements Gateway {
     }
   }
 
-  async submitAiAdjudicationOverrideOrClosure(
-    adjudicationId: string,
-    input: SubmitAiAdjudicationOverrideOrClosureInput,
+  async submitAiDecisionOverrideOrClosure(
+    decisionId: string,
+    input: SubmitAiDecisionOverrideOrClosureInput,
   ): Promise<AiOverrideOrClosureResponse> {
     const submittedAtUtc = new Date().toISOString()
     return {
-      adjudicationId,
+      decisionId,
       overrideId: nextUserId(),
       actionType: input.actionType,
       previousStatus: "Completed",
@@ -1315,3 +1315,4 @@ export class MockGateway implements Gateway {
     throw new Error("Coverage pain analysis is not available in mock gateway.")
   }
 }
+

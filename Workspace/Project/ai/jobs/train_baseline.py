@@ -12,12 +12,12 @@ from _bootstrap import bootstrap_service_path
 
 bootstrap_service_path()
 
-from cti_service.calibration import train_logistic_calibrator
-from cti_service.dataset_registry import DatasetRegistryStore
-from cti_service.evaluator import evaluate_examples
-from cti_service.registry import ModelRegistryEntry, ModelRegistryStore
-from cti_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
-from cti_service.snapshots import SnapshotLoader, build_training_examples
+from decision_service.calibration import train_logistic_calibrator
+from decision_service.dataset_registry import DatasetRegistryStore
+from decision_service.evaluator import evaluate_examples
+from decision_service.registry import ModelRegistryEntry, ModelRegistryStore
+from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
+from decision_service.snapshots import SnapshotLoader, build_training_examples
 
 
 def parse_args() -> argparse.Namespace:
@@ -221,3 +221,4 @@ def _sha256_file(path: Path) -> str:
 
 if __name__ == "__main__":
     main()
+

@@ -18,7 +18,7 @@ SCHEMA_FILES = {
     "yara": "yara-package.schema.json",
     "sigma": "sigma-package.schema.json",
     "snort": "snort-package.schema.json",
-    "adjudication": "adjudication-result.schema.json",
+    "decision": "decision-result.schema.json",
     "action_plan": "action-plan.schema.json",
 }
 
@@ -27,7 +27,7 @@ FIXTURE_FILES = {
     "yara": FIXTURES_DIR / "yara" / "yara-package.example.json",
     "sigma": FIXTURES_DIR / "sigma" / "sigma-package.example.json",
     "snort": FIXTURES_DIR / "snort" / "snort-package.example.json",
-    "adjudication": FIXTURES_DIR / "labels" / "adjudication-result.example.json",
+    "decision": FIXTURES_DIR / "labels" / "decision-result.example.json",
     "action_plan": FIXTURES_DIR / "labels" / "action-plan.example.json",
 }
 
@@ -84,19 +84,19 @@ def test_family_schema_rejects_mismatched_family_payload() -> None:
         _validator("yara").validate(sigma_payload)
 
 
-def test_adjudication_rejects_out_of_range_confidence_and_fp_risk() -> None:
-    payload = _read_json(FIXTURE_FILES["adjudication"])
+def test_decision_rejects_out_of_range_confidence_and_fp_risk() -> None:
+    payload = _read_json(FIXTURE_FILES["decision"])
     payload["confidence"] = 1.4
     payload["false_positive_risk"] = -0.1
     with pytest.raises(ValidationError):
-        _validator("adjudication").validate(payload)
+        _validator("decision").validate(payload)
 
 
-def test_adjudication_rejects_invalid_decision_state() -> None:
-    payload = _read_json(FIXTURE_FILES["adjudication"])
+def test_decision_rejects_invalid_decision_state() -> None:
+    payload = _read_json(FIXTURE_FILES["decision"])
     payload["promotion_decision"]["state"] = "approve_now"
     with pytest.raises(ValidationError):
-        _validator("adjudication").validate(payload)
+        _validator("decision").validate(payload)
 
 
 def test_action_plan_requires_never_auto_executes_field() -> None:
@@ -208,3 +208,4 @@ def test_detection_package_rejects_out_of_range_historical_contribution() -> Non
     }
     with pytest.raises(ValidationError):
         _validator("detection").validate(payload)
+

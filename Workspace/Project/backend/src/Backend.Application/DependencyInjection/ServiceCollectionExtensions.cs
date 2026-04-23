@@ -15,7 +15,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICaseService, CaseService>();
         services.AddScoped<ICoveragePainAnalysisService, CoveragePainAnalysisService>();
         services.AddScoped<ICtiPolicyService, CtiPolicyService>();
-        services.AddScoped<IAiAdjudicationService, AiAdjudicationService>();
+        services.AddScoped<IAiDecisionService, AiDecisionService>();
         services.AddScoped<IEvidenceService, EvidenceService>();
         services.AddScoped<IDecisionService, DecisionService>();
         services.AddScoped<IRuleService, RuleService>();
@@ -28,3 +28,4 @@ public static class ServiceCollectionExtensions
         return services;
     }
 }
+

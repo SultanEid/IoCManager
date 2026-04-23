@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { WorkbenchInspectorProvider } from "@/components/workbench/workbench-inspector"

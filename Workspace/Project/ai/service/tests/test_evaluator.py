@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cti_service.calibration import LogisticCalibrator
-from cti_service.evaluator import evaluate_snapshot
-from cti_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
-from cti_service.snapshots import SnapshotLoader
+from decision_service.calibration import LogisticCalibrator
+from decision_service.evaluator import evaluate_snapshot
+from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
+from decision_service.snapshots import SnapshotLoader
 
 
 def test_evaluator_respects_time_window(snapshot_root: Path) -> None:
@@ -48,3 +48,4 @@ def test_evaluator_respects_time_window(snapshot_root: Path) -> None:
     assert overall_all.brier_score is not None
     assert "analyst_override_rate" not in overall_all.unavailable_metrics
     assert "rollback_rate" in overall_all.unavailable_metrics
+

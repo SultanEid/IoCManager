@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next"
+import type { Metadata } from "next"
 import { JetBrains_Mono, Manrope } from "next/font/google"
 import { AppProviders } from "@/app/providers"
 import "./globals.css"

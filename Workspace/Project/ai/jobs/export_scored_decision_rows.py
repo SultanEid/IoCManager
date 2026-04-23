@@ -23,7 +23,7 @@ bootstrap_service_path()
 
 from fastapi.testclient import TestClient
 
-from cti_service.api import create_app
+from decision_service.api import create_app
 
 POSITIVE_VERDICTS = {"malicious", "likely_malicious", "suspicious"}
 NEGATIVE_VERDICTS = {"benign", "likely_benign", "false_positive", "stale_or_revoked"}
@@ -144,7 +144,7 @@ def _target_verdict(row: dict[str, Any]) -> str | None:
     target_payload = row.get("target_payload")
     if not isinstance(target_payload, dict):
         return None
-    decision = target_payload.get("adjudication")
+    decision = target_payload.get("decision")
     if not isinstance(decision, dict):
         return None
     verdict = decision.get("verdict")
@@ -342,7 +342,7 @@ def _source_trust(row: dict[str, Any]) -> float:
 
 def _contradictory_items(row: dict[str, Any]) -> list[dict[str, Any]]:
     target_payload = _coerce_dict(row.get("target_payload"))
-    decision = _coerce_dict(target_payload.get("adjudication"))
+    decision = _coerce_dict(target_payload.get("decision"))
     items = decision.get("contradictory_evidence")
     return [item for item in _coerce_list(items) if isinstance(item, dict)]
 
@@ -695,3 +695,5 @@ def _clip01(value: float) -> float:
 
 if __name__ == "__main__":
     main()
+
+

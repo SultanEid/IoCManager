@@ -1,6 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from cti_service.evidence_fusion import fuse_evidence
+from decision_service.evidence_fusion import fuse_evidence
 
 
 def _full_detection_package() -> dict[str, object]:
@@ -138,3 +138,4 @@ def test_fusion_output_is_deterministic_for_identical_input() -> None:
     assert [item.summary for item in first.positive_evidence] == [item.summary for item in second.positive_evidence]
     assert [item.summary for item in first.contradictory_evidence] == [item.summary for item in second.contradictory_evidence]
     assert first.explanation_lines == second.explanation_lines
+

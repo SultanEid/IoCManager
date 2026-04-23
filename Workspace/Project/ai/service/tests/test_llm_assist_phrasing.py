@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from cti_service.llm_assist_phrasing import (
+from decision_service.llm_assist_phrasing import (
     ActionPlanPhrasingAction,
     ActionPlanPhrasingEvidence,
     ExplanationPhrasingEvidence,
@@ -240,3 +240,4 @@ def test_explanation_lexical_only_guard_rejects_strong_malicious_claim(monkeypat
     assert result.summary == evidence.deterministic_summary
     assert result.rationale == evidence.deterministic_rationale
     assert result.diagnostics["status"] == "guardrail_rejected"
+

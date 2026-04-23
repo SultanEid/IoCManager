@@ -8,10 +8,10 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from cti_service.api import create_app
-from cti_service.calibration import LogisticCalibrator
-from cti_service.config import ServiceSettings
-from cti_service.registry import ModelRegistryEntry, ModelRegistryStore
+from decision_service.api import create_app
+from decision_service.calibration import LogisticCalibrator
+from decision_service.config import ServiceSettings
+from decision_service.registry import ModelRegistryEntry, ModelRegistryStore
 
 
 @pytest.fixture()
@@ -162,3 +162,4 @@ def settings(tmp_path: Path, snapshot_root: Path) -> ServiceSettings:
 def client(settings: ServiceSettings) -> TestClient:
     app = create_app(settings)
     return TestClient(app)
+

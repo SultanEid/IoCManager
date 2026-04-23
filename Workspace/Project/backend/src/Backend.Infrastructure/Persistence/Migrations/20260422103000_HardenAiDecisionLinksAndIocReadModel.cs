@@ -13,7 +13,7 @@ namespace Backend.Infrastructure.Persistence.Migrations
         {
             migrationBuilder.AddColumn<Guid>(
                 name: "DetectionRecordId",
-                table: "ai_adjudication_requests",
+                table: "ai_decision_requests",
                 type: "uniqueidentifier",
                 nullable: true);
 
@@ -21,25 +21,25 @@ namespace Backend.Infrastructure.Persistence.Migrations
                 """
                 UPDATE ar
                 SET [DetectionRecordId] = sr.[Id]
-                FROM [dbo].[ai_adjudication_requests] ar
+                FROM [dbo].[ai_decision_requests] ar
                 INNER JOIN [dbo].[scan_results] sr
                     ON TRY_CONVERT(uniqueidentifier, ar.[DetectionId]) = sr.[Id]
                 WHERE ar.[DetectionRecordId] IS NULL;
                 """);
 
             migrationBuilder.CreateIndex(
-                name: "IX_ai_adjudication_requests_DetectionId_SubmittedAtUtc",
-                table: "ai_adjudication_requests",
+                name: "IX_ai_decision_requests_DetectionId_SubmittedAtUtc",
+                table: "ai_decision_requests",
                 columns: new[] { "DetectionId", "SubmittedAtUtc" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_ai_adjudication_requests_DetectionRecordId_SubmittedAtUtc",
-                table: "ai_adjudication_requests",
+                name: "IX_ai_decision_requests_DetectionRecordId_SubmittedAtUtc",
+                table: "ai_decision_requests",
                 columns: new[] { "DetectionRecordId", "SubmittedAtUtc" });
 
             migrationBuilder.AddForeignKey(
-                name: "FK_ai_adjudication_requests_scan_results_DetectionRecordId",
-                table: "ai_adjudication_requests",
+                name: "FK_ai_decision_requests_scan_results_DetectionRecordId",
+                table: "ai_decision_requests",
                 column: "DetectionRecordId",
                 principalTable: "scan_results",
                 principalColumn: "Id",
@@ -54,13 +54,13 @@ namespace Backend.Infrastructure.Persistence.Migrations
                     SELECT
                         sr.[IocId],
                         ar.[DetectionRecordId] AS [DetectionId],
-                        ar.[Id] AS [AdjudicationRequestId],
+                        ar.[Id] AS [DecisionRequestId],
                         ar.[SubmittedAtUtc],
                         ROW_NUMBER() OVER (
                             PARTITION BY sr.[IocId]
                             ORDER BY ar.[SubmittedAtUtc] DESC, ar.[Id] DESC
                         ) AS [rn]
-                    FROM [dbo].[ai_adjudication_requests] ar
+                    FROM [dbo].[ai_decision_requests] ar
                     INNER JOIN [dbo].[scan_results] sr
                         ON sr.[Id] = ar.[DetectionRecordId]
                     WHERE sr.[IocId] IS NOT NULL
@@ -68,7 +68,7 @@ namespace Backend.Infrastructure.Persistence.Migrations
                 SELECT
                     [IocId],
                     [DetectionId],
-                    [AdjudicationRequestId],
+                    [DecisionRequestId],
                     [SubmittedAtUtc]
                 FROM ranked
                 WHERE [rn] = 1;
@@ -84,20 +84,21 @@ namespace Backend.Infrastructure.Persistence.Migrations
                 """);
 
             migrationBuilder.DropForeignKey(
-                name: "FK_ai_adjudication_requests_scan_results_DetectionRecordId",
-                table: "ai_adjudication_requests");
+                name: "FK_ai_decision_requests_scan_results_DetectionRecordId",
+                table: "ai_decision_requests");
 
             migrationBuilder.DropIndex(
-                name: "IX_ai_adjudication_requests_DetectionId_SubmittedAtUtc",
-                table: "ai_adjudication_requests");
+                name: "IX_ai_decision_requests_DetectionId_SubmittedAtUtc",
+                table: "ai_decision_requests");
 
             migrationBuilder.DropIndex(
-                name: "IX_ai_adjudication_requests_DetectionRecordId_SubmittedAtUtc",
-                table: "ai_adjudication_requests");
+                name: "IX_ai_decision_requests_DetectionRecordId_SubmittedAtUtc",
+                table: "ai_decision_requests");
 
             migrationBuilder.DropColumn(
                 name: "DetectionRecordId",
-                table: "ai_adjudication_requests");
+                table: "ai_decision_requests");
         }
     }
 }
+

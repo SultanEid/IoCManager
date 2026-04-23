@@ -8,7 +8,7 @@ from _bootstrap import bootstrap_service_path
 
 bootstrap_service_path()
 
-from cti_service.registry import ModelRegistryStore
+from decision_service.registry import ModelRegistryStore
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,4 +36,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 

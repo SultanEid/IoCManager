@@ -5,7 +5,7 @@ Define the manual-only response recommendation policy used after a decision in I
 
 Related documents:
 
-- [AI Decision Overview](./ai-adjudication-overview.md)
+- [AI Decision Overview](./ai-decision-overview.md)
 - [Verdict Taxonomy](./verdict-taxonomy.md)
 
 ## What The Action Plan Is
@@ -160,3 +160,4 @@ These operator outcomes feed historical learning and offline evaluation. The act
 - stronger backend and UI rendering of `machine_readable.selection`
 - finer-grained safety-cap reasoning per action category
 - broader family-specific policy tuning if IoC Manager adds new supported families
+

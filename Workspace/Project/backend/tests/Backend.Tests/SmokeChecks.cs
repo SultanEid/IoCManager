@@ -24,7 +24,7 @@ internal static class SmokeChecks
             new SmokeCase("scan dispatch prefers legacy scripts before connector fallback", ScanDispatch_PrefersLegacyScriptsAsync),
             new SmokeCase("legacy Azure compatibility reader is available for incremental fallback", LegacyAzureCompatibilityReader_IsAvailableAsync),
             new SmokeCase("controllers fall back to legacy Azure reads for mapped surfaces", Controllers_UseLegacyAzureFallbackAsync),
-            new SmokeCase("ai adjudication contracts carry safety diagnostics end to end", AiAdjudicationContracts_CarrySafetyDiagnosticsAsync),
+            new SmokeCase("ai decision contracts carry safety diagnostics end to end", AiDecisionContracts_CarrySafetyDiagnosticsAsync),
             new SmokeCase("obsolete ai decision parser has been removed", ObsoleteAiDecisionParser_IsRemovedAsync),
             new SmokeCase("authorization policy catalog enforces admin it analyst dev scopes", AuthorizationPolicies_EnforceRoleScopesAsync),
             new SmokeCase("v2 controllers use updated role policies for alerts retention audit and infrastructure", V2Controllers_UseUpdatedRolePoliciesAsync),
@@ -215,22 +215,22 @@ internal static class SmokeChecks
         return Task.CompletedTask;
     }
 
-    private static Task AiAdjudicationContracts_CarrySafetyDiagnosticsAsync()
+    private static Task AiDecisionContracts_CarrySafetyDiagnosticsAsync()
     {
-        var contractSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Contracts", "V2", "AiAdjudicationContracts.cs"));
-        Expect.Contains("SafetyDiagnosticsDto", contractSource, "AI adjudication contracts should expose the safety diagnostics DTO.");
-        Expect.Contains("SafetyDiagnostics", contractSource, "Adjudication decision DTO should include safety diagnostics.");
+        var contractSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Contracts", "V2", "AiDecisionContracts.cs"));
+        Expect.Contains("SafetyDiagnosticsDto", contractSource, "AI decision contracts should expose the safety diagnostics DTO.");
+        Expect.Contains("SafetyDiagnostics", contractSource, "Decision decision DTO should include safety diagnostics.");
 
-        var serviceSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Application", "Services", "AiAdjudicationService.cs"));
-        Expect.Contains("ParseSafetyDiagnostics", serviceSource, "AI adjudication service should parse safety diagnostics from stored raw payloads.");
-        Expect.Contains("groundedDecision", serviceSource, "AI adjudication service should inspect groundedDecision payloads.");
+        var serviceSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Application", "Services", "AiDecisionService.cs"));
+        Expect.Contains("ParseSafetyDiagnostics", serviceSource, "AI decision service should parse safety diagnostics from stored raw payloads.");
+        Expect.Contains("groundedDecision", serviceSource, "AI decision service should inspect groundedDecision payloads.");
         return Task.CompletedTask;
     }
 
     private static Task ObsoleteAiDecisionParser_IsRemovedAsync()
     {
         var parserPath = Path.Combine(
-            Path.GetDirectoryName(ResolveRepoPath("Project", "backend", "src", "Backend.Application", "Services", "AiAdjudicationService.cs"))!,
+            Path.GetDirectoryName(ResolveRepoPath("Project", "backend", "src", "Backend.Application", "Services", "AiDecisionService.cs"))!,
             "..",
             "..",
             "Backend.Infrastructure",
@@ -326,3 +326,4 @@ internal static class SmokeChecks
         }
     }
 }
+

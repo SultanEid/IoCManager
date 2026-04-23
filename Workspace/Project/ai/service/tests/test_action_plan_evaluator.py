@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cti_service.action_plan_evaluator import evaluate_canonical_action_plan_rows
+from decision_service.action_plan_evaluator import evaluate_canonical_action_plan_rows
 
 
 def _canonical_row(
@@ -45,7 +45,7 @@ def _canonical_row(
             },
         },
         "target_payload": {
-            "adjudication": {
+            "decision": {
                 "verdict": verdict,
                 "confidence": 0.82 if verdict != "false_positive" else 0.3,
                 "false_positive_risk": 0.18 if verdict != "false_positive" else 0.78,
@@ -139,3 +139,5 @@ def test_action_plan_evaluator_marks_acceptance_unavailable_without_feedback() -
     assert sample_size == 1
     assert overall.analyst_acceptance_rate is None
     assert "analyst_acceptance_rate" in overall.unavailable_metrics
+
+

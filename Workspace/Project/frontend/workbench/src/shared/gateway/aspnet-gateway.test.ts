@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
-  aiAdjudicationActionPlanOrPendingResponseSchema,
-  aiAdjudicationExplanationOrPendingResponseSchema,
-  aiAdjudicationResultResponseSchema,
+  aiDecisionActionPlanOrPendingResponseSchema,
+  aiDecisionExplanationOrPendingResponseSchema,
+  aiDecisionResultResponseSchema,
   aiEvidenceSourcesResponseSchema,
   iocLatestAiDecisionResponseSchema,
   aiOverrideOrClosureResponseSchema,
@@ -19,7 +19,7 @@ import {
   scanJobResponseSchema,
   scanPlanResponseSchema,
   scannerResponseSchema,
-  submitAiAdjudicationAcceptedResponseSchema,
+  submitAiDecisionAcceptedResponseSchema,
 } from "@/shared/api/schemas"
 import { ApiError } from "@/shared/api/error"
 import { AspNetGateway } from "@/shared/gateway/aspnet-gateway"
@@ -331,7 +331,7 @@ describe("AspNetGateway", () => {
     ]).success).toBe(true)
   })
 
-  it("routes detection detail and adjudication endpoints through typed schemas", async () => {
+  it("routes detection detail and decision endpoints through typed schemas", async () => {
     mockedRequestJson.mockResolvedValue({})
 
     const gateway = new AspNetGateway()
@@ -341,7 +341,7 @@ describe("AspNetGateway", () => {
       submittedByUserId: "lead-1",
     })
     await gateway.getLatestAiDecisionForDetection("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
-    await gateway.submitAiAdjudication({
+    await gateway.submitAiDecision({
       caseId: "case-1",
       detectionId: "5a8bff58-46f4-4f1c-acf0-a31ea2dad77c",
       iocType: "domain",
@@ -350,12 +350,12 @@ describe("AspNetGateway", () => {
       detectionPackage: {},
       submittedByUserId: "lead-1",
     })
-    await gateway.getAiAdjudicationResult("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
-    await gateway.getAiAdjudicationExplanation("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
-    await gateway.getAiAdjudicationActionPlan("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
-    await gateway.listAiAdjudicationEvidenceSources("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", { limit: 10, cursor: "abc" })
-    await gateway.listAiAdjudicationSimilarDetections("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", { limit: 10, cursor: "abc" })
-    await gateway.submitAiAdjudicationOverrideOrClosure("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", {
+    await gateway.getAiDecisionResult("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.getAiDecisionExplanation("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.getAiDecisionActionPlan("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c")
+    await gateway.listAiDecisionEvidenceSources("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", { limit: 10, cursor: "abc" })
+    await gateway.listAiDecisionSimilarDetections("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", { limit: 10, cursor: "abc" })
+    await gateway.submitAiDecisionOverrideOrClosure("5a8bff58-46f4-4f1c-acf0-a31ea2dad77c", {
       actionType: "Close",
       reason: "Accepted",
       closureDisposition: "accepted_recommendation",
@@ -368,24 +368,24 @@ describe("AspNetGateway", () => {
     expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/ai/decisions/iocs/17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a/latest")
     expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(iocLatestAiDecisionResponseSchema)
     expect(mockedRequestJson.mock.calls[2]?.[0]).toBe("/api/v2/ai/decisions/iocs/17f37d2d-b2b7-49b6-aa8f-3f42031f0a0a/generate")
-    expect(mockedRequestJson.mock.calls[2]?.[1]).toBe(submitAiAdjudicationAcceptedResponseSchema)
+    expect(mockedRequestJson.mock.calls[2]?.[1]).toBe(submitAiDecisionAcceptedResponseSchema)
     expect(mockedRequestJson.mock.calls[3]?.[0]).toBe("/api/v2/ai/decisions/detections/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/latest")
-    expect(mockedRequestJson.mock.calls[3]?.[1]).toBe(aiAdjudicationResultResponseSchema)
-    expect(mockedRequestJson.mock.calls[4]?.[0]).toBe("/api/v2/ai/adjudications")
-    expect(mockedRequestJson.mock.calls[4]?.[1]).toBe(submitAiAdjudicationAcceptedResponseSchema)
-    expect(mockedRequestJson.mock.calls[5]?.[1]).toBe(aiAdjudicationResultResponseSchema)
-    expect(mockedRequestJson.mock.calls[6]?.[1]).toBe(aiAdjudicationExplanationOrPendingResponseSchema)
-    expect(mockedRequestJson.mock.calls[7]?.[1]).toBe(aiAdjudicationActionPlanOrPendingResponseSchema)
+    expect(mockedRequestJson.mock.calls[3]?.[1]).toBe(aiDecisionResultResponseSchema)
+    expect(mockedRequestJson.mock.calls[4]?.[0]).toBe("/api/v2/ai/decisions")
+    expect(mockedRequestJson.mock.calls[4]?.[1]).toBe(submitAiDecisionAcceptedResponseSchema)
+    expect(mockedRequestJson.mock.calls[5]?.[1]).toBe(aiDecisionResultResponseSchema)
+    expect(mockedRequestJson.mock.calls[6]?.[1]).toBe(aiDecisionExplanationOrPendingResponseSchema)
+    expect(mockedRequestJson.mock.calls[7]?.[1]).toBe(aiDecisionActionPlanOrPendingResponseSchema)
     expect(mockedRequestJson.mock.calls[8]?.[0]).toBe(
-      "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/evidence-sources?limit=10&cursor=abc",
+      "/api/v2/ai/decisions/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/evidence-sources?limit=10&cursor=abc",
     )
     expect(mockedRequestJson.mock.calls[8]?.[1]).toBe(aiEvidenceSourcesResponseSchema)
     expect(mockedRequestJson.mock.calls[9]?.[0]).toBe(
-      "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/similar-detections?limit=10&cursor=abc",
+      "/api/v2/ai/decisions/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/similar-detections?limit=10&cursor=abc",
     )
     expect(mockedRequestJson.mock.calls[9]?.[1]).toBe(aiSimilarDetectionsResponseSchema)
     expect(mockedRequestJson.mock.calls[10]?.[0]).toBe(
-      "/api/v2/ai/adjudications/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/override-closure",
+      "/api/v2/ai/decisions/5a8bff58-46f4-4f1c-acf0-a31ea2dad77c/override-closure",
     )
     expect(mockedRequestJson.mock.calls[10]?.[1]).toBe(aiOverrideOrClosureResponseSchema)
   })
@@ -542,3 +542,4 @@ describe("AspNetGateway", () => {
     await expect(gateway.listScanners()).rejects.toBe(compatibilityError)
   })
 })
+

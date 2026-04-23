@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/decision-evaluation-report.schema.json",
+  "title": "Decision Evaluation Report",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "generatedAtUtc",
+    "inputFile",
+    "sampleSize",
+    "overall",
+    "slices"
+  ],
+  "properties": {
+    "generatedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "inputFile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sampleSize": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "overall": {
+      "type": "object",
+      "required": [
+        "precision",
+        "recall",
+        "f1",
+        "calibrationError",
+        "brierScore",
+        "falsePositiveRate",
+        "falseNegativeRate",
+        "confusionMatrix",
+        "calibrationBins",
+        "unavailableMetrics"
+      ]
+    },
+    "slices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sliceField",
+          "sliceValue",
+          "sampleSize"
+        ]
+      }
+    }
+  }
+}
+

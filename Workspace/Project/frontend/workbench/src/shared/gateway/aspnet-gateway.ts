@@ -5,9 +5,9 @@ import {
   alertResponseSchema,
   alertListResponseSchema,
   v2AlertDetailResponseSchema,
-  aiAdjudicationActionPlanOrPendingResponseSchema,
-  aiAdjudicationExplanationOrPendingResponseSchema,
-  aiAdjudicationResultResponseSchema,
+  aiDecisionActionPlanOrPendingResponseSchema,
+  aiDecisionExplanationOrPendingResponseSchema,
+  aiDecisionResultResponseSchema,
   aiEvidenceSourcesResponseSchema,
   iocLatestAiDecisionResponseSchema,
   aiOverrideOrClosureResponseSchema,
@@ -60,7 +60,7 @@ import {
   ruleResponseSchema,
   ruleSimulationResultResponseSchema,
   subnetResponseSchema,
-  submitAiAdjudicationAcceptedResponseSchema,
+  submitAiDecisionAcceptedResponseSchema,
   targetGroupMemberResponseSchema,
   targetGroupResponseSchema,
   targetServerResponseSchema,
@@ -68,9 +68,9 @@ import {
   userResponseSchema,
   type AlertListResponse,
   type AlertResponse,
-  type AiAdjudicationActionPlanOrPendingResponse,
-  type AiAdjudicationExplanationOrPendingResponse,
-  type AiAdjudicationResultResponse,
+  type AiDecisionActionPlanOrPendingResponse,
+  type AiDecisionExplanationOrPendingResponse,
+  type AiDecisionResultResponse,
   type AiEvidenceSourcesResponse,
   type IocLatestAiDecisionResponse,
   type AiOverrideOrClosureResponse,
@@ -128,12 +128,12 @@ import {
   type TargetGroupResponse,
   type TargetServerResponse,
   type TokenResponse,
-  type SubmitAiAdjudicationAcceptedResponse,
+  type SubmitAiDecisionAcceptedResponse,
   type UserResponse,
 } from "@/shared/api/schemas"
 import type {
   AdvanceRolloutStageInput,
-  AiAdjudicationCursorQuery,
+  AiDecisionCursorQuery,
   AlertListQuery,
   ArchiveRuleInput,
   AuditLogListQuery,
@@ -150,8 +150,8 @@ import type {
   CreateRuleProposalInput,
   DetectionListQuery,
   ExecuteRetentionPolicyInput,
-  SubmitAiAdjudicationInput,
-  SubmitAiAdjudicationOverrideOrClosureInput,
+  SubmitAiDecisionInput,
+  SubmitAiDecisionOverrideOrClosureInput,
   IocListQuery,
   ManagedServerInventoryFilters,
   PromoteDiscoveredHostInput,
@@ -1232,8 +1232,8 @@ export class AspNetGateway {
   async generateAiDecisionForIoc(
     iocId: string,
     input: { submittedByUserId: string },
-  ): Promise<SubmitAiAdjudicationAcceptedResponse> {
-    return requestJson(`/api/v2/ai/decisions/iocs/${iocId}/generate`, submitAiAdjudicationAcceptedResponseSchema, {
+  ): Promise<SubmitAiDecisionAcceptedResponse> {
+    return requestJson(`/api/v2/ai/decisions/iocs/${iocId}/generate`, submitAiDecisionAcceptedResponseSchema, {
       method: "POST",
       body: {
         submittedByUserId: input.submittedByUserId,
@@ -1241,12 +1241,12 @@ export class AspNetGateway {
     })
   }
 
-  async getLatestAiDecisionForDetection(detectionId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
-    return requestJson(`/api/v2/ai/decisions/detections/${detectionId}/latest`, aiAdjudicationResultResponseSchema, { signal })
+  async getLatestAiDecisionForDetection(detectionId: string, signal?: AbortSignal): Promise<AiDecisionResultResponse> {
+    return requestJson(`/api/v2/ai/decisions/detections/${detectionId}/latest`, aiDecisionResultResponseSchema, { signal })
   }
 
-  async submitAiAdjudication(input: SubmitAiAdjudicationInput): Promise<SubmitAiAdjudicationAcceptedResponse> {
-    return requestJson("/api/v2/ai/adjudications", submitAiAdjudicationAcceptedResponseSchema, {
+  async submitAiDecision(input: SubmitAiDecisionInput): Promise<SubmitAiDecisionAcceptedResponse> {
+    return requestJson("/api/v2/ai/decisions", submitAiDecisionAcceptedResponseSchema, {
       method: "POST",
       body: {
         caseId: input.caseId,
@@ -1260,35 +1260,35 @@ export class AspNetGateway {
     })
   }
 
-  async getAiAdjudicationResult(adjudicationId: string, signal?: AbortSignal): Promise<AiAdjudicationResultResponse> {
-    return requestJson(`/api/v2/ai/adjudications/${adjudicationId}`, aiAdjudicationResultResponseSchema, { signal })
+  async getAiDecisionResult(decisionId: string, signal?: AbortSignal): Promise<AiDecisionResultResponse> {
+    return requestJson(`/api/v2/ai/decisions/${decisionId}`, aiDecisionResultResponseSchema, { signal })
   }
 
-  async getAiAdjudicationExplanation(
-    adjudicationId: string,
+  async getAiDecisionExplanation(
+    decisionId: string,
     signal?: AbortSignal,
-  ): Promise<AiAdjudicationExplanationOrPendingResponse> {
+  ): Promise<AiDecisionExplanationOrPendingResponse> {
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/explanation`,
-      aiAdjudicationExplanationOrPendingResponseSchema,
+      `/api/v2/ai/decisions/${decisionId}/explanation`,
+      aiDecisionExplanationOrPendingResponseSchema,
       { signal },
     )
   }
 
-  async getAiAdjudicationActionPlan(
-    adjudicationId: string,
+  async getAiDecisionActionPlan(
+    decisionId: string,
     signal?: AbortSignal,
-  ): Promise<AiAdjudicationActionPlanOrPendingResponse> {
+  ): Promise<AiDecisionActionPlanOrPendingResponse> {
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/action-plan`,
-      aiAdjudicationActionPlanOrPendingResponseSchema,
+      `/api/v2/ai/decisions/${decisionId}/action-plan`,
+      aiDecisionActionPlanOrPendingResponseSchema,
       { signal },
     )
   }
 
-  async listAiAdjudicationEvidenceSources(
-    adjudicationId: string,
-    query: AiAdjudicationCursorQuery = {},
+  async listAiDecisionEvidenceSources(
+    decisionId: string,
+    query: AiDecisionCursorQuery = {},
     signal?: AbortSignal,
   ): Promise<AiEvidenceSourcesResponse> {
     const params = new URLSearchParams()
@@ -1300,15 +1300,15 @@ export class AspNetGateway {
     }
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/evidence-sources${suffix}`,
+      `/api/v2/ai/decisions/${decisionId}/evidence-sources${suffix}`,
       aiEvidenceSourcesResponseSchema,
       { signal },
     )
   }
 
-  async listAiAdjudicationSimilarDetections(
-    adjudicationId: string,
-    query: AiAdjudicationCursorQuery = {},
+  async listAiDecisionSimilarDetections(
+    decisionId: string,
+    query: AiDecisionCursorQuery = {},
     signal?: AbortSignal,
   ): Promise<AiSimilarDetectionsResponse> {
     const params = new URLSearchParams()
@@ -1320,17 +1320,17 @@ export class AspNetGateway {
     }
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
     return requestJson(
-      `/api/v2/ai/adjudications/${adjudicationId}/similar-detections${suffix}`,
+      `/api/v2/ai/decisions/${decisionId}/similar-detections${suffix}`,
       aiSimilarDetectionsResponseSchema,
       { signal },
     )
   }
 
-  async submitAiAdjudicationOverrideOrClosure(
-    adjudicationId: string,
-    input: SubmitAiAdjudicationOverrideOrClosureInput,
+  async submitAiDecisionOverrideOrClosure(
+    decisionId: string,
+    input: SubmitAiDecisionOverrideOrClosureInput,
   ): Promise<AiOverrideOrClosureResponse> {
-    return requestJson(`/api/v2/ai/adjudications/${adjudicationId}/override-closure`, aiOverrideOrClosureResponseSchema, {
+    return requestJson(`/api/v2/ai/decisions/${decisionId}/override-closure`, aiOverrideOrClosureResponseSchema, {
       method: "POST",
       body: {
         actionType: input.actionType,
@@ -1514,3 +1514,4 @@ export class AspNetGateway {
     return rollbacksSchema.parse(merged)
   }
 }
+

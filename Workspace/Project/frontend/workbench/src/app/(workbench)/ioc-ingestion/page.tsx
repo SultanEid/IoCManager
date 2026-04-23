@@ -395,7 +395,7 @@ export default function IocsExplorerPage() {
             : `Decision analysis in progress (${attempt}/${IOC_DECISION_POLL_MAX_ATTEMPTS})`,
         )
 
-        const result = await gateway.getAiAdjudicationResult(submitted.adjudicationId)
+        const result = await gateway.getAiDecisionResult(submitted.decisionId)
         const normalizedStatus = result.status.trim().toLowerCase()
         if (
           normalizedStatus === "completed"
@@ -590,7 +590,7 @@ export default function IocsExplorerPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
           {findingsLoading ? <p>Loading findings for the current query.</p> : null}
           <p className={findingsLoading ? "hidden" : undefined}>
-            Page {currentPage} of {totalPages} · {totalCount} matching findings
+            Page {currentPage} of {totalPages} Â· {totalCount} matching findings
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-2">
@@ -1074,3 +1074,4 @@ export default function IocsExplorerPage() {
     </section>
   )
 }
+

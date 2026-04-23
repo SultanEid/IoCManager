@@ -101,14 +101,14 @@ public static class ServiceCollectionExtensions
             .Validate(options => !string.IsNullOrWhiteSpace(options.WorkerActorUserId), "Infrastructure:Scanning:WorkerActorUserId must be configured.")
             .ValidateOnStart();
         services
-            .AddOptions<AiAdjudicationExecutionOptions>()
-            .Bind(configuration.GetSection(AiAdjudicationExecutionOptions.SectionName))
-            .Validate(options => options.SchedulerIntervalSeconds is >= 1 and <= 300, "Infrastructure:AiAdjudication:SchedulerIntervalSeconds must be between 1 and 300.")
-            .Validate(options => options.MaxAttempts is >= 1 and <= 10, "Infrastructure:AiAdjudication:MaxAttempts must be between 1 and 10.")
-            .Validate(options => options.HistoricalTopK is >= 1 and <= 100, "Infrastructure:AiAdjudication:HistoricalTopK must be between 1 and 100.")
-            .Validate(options => options.HistoricalLookbackDays is >= 1 and <= 3650, "Infrastructure:AiAdjudication:HistoricalLookbackDays must be between 1 and 3650.")
-            .Validate(options => options.BackoffSeconds is { Length: > 0 } && options.BackoffSeconds.All(x => x > 0), "Infrastructure:AiAdjudication:BackoffSeconds must contain positive values.")
-            .Validate(options => !string.IsNullOrWhiteSpace(options.WorkerActorUserId), "Infrastructure:AiAdjudication:WorkerActorUserId must be configured.")
+            .AddOptions<AiDecisionExecutionOptions>()
+            .Bind(configuration.GetSection(AiDecisionExecutionOptions.SectionName))
+            .Validate(options => options.SchedulerIntervalSeconds is >= 1 and <= 300, "Infrastructure:AiDecision:SchedulerIntervalSeconds must be between 1 and 300.")
+            .Validate(options => options.MaxAttempts is >= 1 and <= 10, "Infrastructure:AiDecision:MaxAttempts must be between 1 and 10.")
+            .Validate(options => options.HistoricalTopK is >= 1 and <= 100, "Infrastructure:AiDecision:HistoricalTopK must be between 1 and 100.")
+            .Validate(options => options.HistoricalLookbackDays is >= 1 and <= 3650, "Infrastructure:AiDecision:HistoricalLookbackDays must be between 1 and 3650.")
+            .Validate(options => options.BackoffSeconds is { Length: > 0 } && options.BackoffSeconds.All(x => x > 0), "Infrastructure:AiDecision:BackoffSeconds must contain positive values.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.WorkerActorUserId), "Infrastructure:AiDecision:WorkerActorUserId must be configured.")
             .ValidateOnStart();
         services
             .AddOptions<PowerBiVisualizationOptions>()
@@ -136,8 +136,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDiscoveryRunQueue, DiscoveryRunQueue>();
         services.AddSingleton<IRuleDistributionJobQueue, RuleDistributionJobQueue>();
         services.AddSingleton<IScanJobQueue, ScanJobQueue>();
-        services.AddSingleton<IAiAdjudicationQueue, AiAdjudicationQueue>();
-        services.AddSingleton<IAiAdjudicationOrchestrator, AiAdjudicationOrchestrator>();
+        services.AddSingleton<IAiDecisionQueue, AiDecisionQueue>();
+        services.AddSingleton<IAiDecisionOrchestrator, AiDecisionOrchestrator>();
         services.AddSingleton<IIcmpProbe, SystemIcmpProbe>();
         services.AddSingleton<IRuleDistributionCommandRunner, RuleDistributionCommandRunner>();
         services.AddSingleton<IRuleDistributionTransportDispatcher, RuleDistributionTransportDispatcher>();
@@ -146,7 +146,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<DiscoveryRunWorker>();
         services.AddHostedService<RuleDistributionWorker>();
         services.AddHostedService<ScanPlanExecutionWorker>();
-        services.AddHostedService<AiAdjudicationWorker>();
+        services.AddHostedService<AiDecisionWorker>();
         services.AddHostedService<LegacyScanPipelineWorker>();
         services.AddApiRateLimiting(configuration);
 
@@ -267,3 +267,4 @@ public static class ServiceCollectionExtensions
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", path));
     }
 }
+
