@@ -389,6 +389,10 @@ export class AspNetGateway {
     })
   }
 
+  async deleteReport(reportId: string): Promise<void> {
+    await requestJson(`/api/v2/reports/${encodeURIComponent(reportId)}`, z.null(), { method: "DELETE" })
+  }
+
   async getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse> {
     return requestJson("/api/v2/reports/power-bi", powerBiVisualizationCatalogResponseSchema, { signal })
   }

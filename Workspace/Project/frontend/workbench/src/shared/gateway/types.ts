@@ -757,6 +757,7 @@ export interface Gateway {
   updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
   listReports(query?: ReportListQuery, signal?: AbortSignal): Promise<ReportListResponse>
   generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>
+  deleteReport(reportId: string): Promise<void>
   getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse>
   listAuditLogs(query?: AuditLogListQuery, signal?: AbortSignal): Promise<AuditLogListResponse>
   listFeedSources(signal?: AbortSignal): Promise<FeedSourceResponse[]>

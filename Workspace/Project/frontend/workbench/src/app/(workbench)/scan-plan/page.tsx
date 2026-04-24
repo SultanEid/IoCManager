@@ -244,7 +244,7 @@ function hydrateFormFromPlan(plan: LegacyPipelineScanPlan) {
 
 export default function ScanPlanPage() {
   const { session } = useAuth()
-  const actorUserId = session?.userId ?? session?.username ?? "team-dev"
+  const actorUserId = session?.userId ?? session?.username ?? "system"
   const [refreshKey, setRefreshKey] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)

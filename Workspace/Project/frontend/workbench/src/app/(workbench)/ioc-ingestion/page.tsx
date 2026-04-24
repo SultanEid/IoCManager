@@ -447,7 +447,7 @@ export default function IocsExplorerPage() {
             <span>{formatPainLevelLabel(parsedFilters.painLevel)}</span>
           </div>
         ) : null}
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Loaded Findings</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{findingsLoading ? "..." : findings.length}</p>

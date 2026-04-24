@@ -187,7 +187,10 @@ public sealed partial class LegacyScanPipelineService
             }
         }
 
-        LegacyScanPipelineHelpers.CleanupTempDirectory(scope.TempDirectory);
+        if (await ShouldCleanupTempDirectoryAsync(job, scope.TempDirectory, cancellationToken))
+        {
+            LegacyScanPipelineHelpers.CleanupTempDirectory(scope.TempDirectory);
+        }
 
         job.FinishedAt = DateTimeOffset.UtcNow.UtcDateTime;
         job.Status = failed switch
@@ -207,6 +210,41 @@ public sealed partial class LegacyScanPipelineService
             job.Summary = job.Summary[..255];
         }
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<bool> ShouldCleanupTempDirectoryAsync(
+        LegacyPipelineScanJobEntity currentJob,
+        string? tempDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(tempDirectory))
+        {
+            return false;
+        }
+
+        if (currentJob.BatchId is null)
+        {
+            return true;
+        }
+
+        var activeSiblingScopes = await _dbContext.ScanJobs
+            .AsNoTracking()
+            .Where(job => job.JobId != currentJob.JobId
+                          && job.BatchId == currentJob.BatchId
+                          && (job.Status == "Queued" || job.Status == "Running"))
+            .Select(job => job.ExecutionScopeJson)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var scopeJson in activeSiblingScopes)
+        {
+            var siblingScope = LegacyScanPipelineSerializer.DeserializeExecutionScope(scopeJson);
+            if (string.Equals(siblingScope?.TempDirectory, tempDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     internal async Task FinalizeSnortQuarantineJobAsync(

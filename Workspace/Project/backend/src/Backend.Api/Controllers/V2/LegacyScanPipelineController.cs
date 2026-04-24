@@ -239,6 +239,7 @@ public sealed class LegacyScanPipelineController : ControllerBase
                 ParseStringArray(form["scannerFamiliesJson"].ToString()),
                 form["ruleInputMode"].ToString(),
                 NullIfEmpty(form["rulePath"].ToString()),
+                ParseDictionary(form["rulePathsByFamilyJson"].ToString()),
                 ParseStringArray(form["networkIdsJson"].ToString()),
                 ParseStringArray(form["targetIdsJson"].ToString()),
                 ParseDictionary(form["optionsJson"].ToString()),
@@ -379,6 +380,11 @@ public sealed class LegacyScanPipelineController : ControllerBase
         [FromBody] LegacyPipelineGenerateReportRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.Persist)
+        {
+            return BadRequest("Legacy report persistence is disabled. Use /api/v2/reports/generate to save reports in reports_v2.");
+        }
+
         try
         {
             return Ok(await _service.GenerateReportAsync(request, cancellationToken));

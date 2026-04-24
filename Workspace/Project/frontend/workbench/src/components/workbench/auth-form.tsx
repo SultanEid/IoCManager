@@ -81,11 +81,11 @@ export function AuthForm() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
           <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">IoC Manager</p>
-            <h1 className="mt-2 text-2xl font-semibold">Open a design/demo workspace</h1>
-            <p className="mt-1 text-sm text-muted-foreground">This mode is isolated for UX review only and does not represent live operational data.</p>
+            <h1 className="mt-2 text-2xl font-semibold">Open a sample workspace</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Use a guided workspace with representative roles and sample operational data.</p>
           </div>
           <Badge variant="outline" className="rounded-full border-primary/35 bg-primary/10 text-primary">
-            Design / Demo Mode
+            Sample Data
           </Badge>
         </div>
 
@@ -120,7 +120,7 @@ export function AuthForm() {
                   }
                 }}
               >
-                {busyPersona === persona.id ? "Opening..." : "Open design shell"}
+                {busyPersona === persona.id ? "Opening..." : "Open workspace"}
               </Button>
             </article>
           ))}

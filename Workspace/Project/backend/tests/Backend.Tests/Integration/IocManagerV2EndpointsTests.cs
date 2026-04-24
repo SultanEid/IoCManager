@@ -2,6 +2,7 @@ using Backend.Contracts.Cases;
 using Backend.Contracts.V2;
 using Backend.Api.Infrastructure;
 using Backend.Domain.IocManager;
+using Backend.Infrastructure.Compatibility.LegacyAzure;
 using Backend.Infrastructure.Persistence;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -165,6 +166,60 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
         var cases = await leadClient.GetFromJsonAsync<IReadOnlyList<CaseResponse>>("/api/cases", JsonOptions);
         cases.Should().NotBeNull();
         cases!.Should().ContainSingle(x => x.Id == alert.Id);
+    }
+
+    [Fact]
+    public async Task CreateReport_WithUnknownAlertId_ReturnsBadRequestWithoutPartialReport()
+    {
+        using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
+        var unknownAlertId = Guid.NewGuid();
+
+        var response = await leadClient.PostAsJsonAsync("/api/v2/reports", new CreateReportRequest(
+            Title: "Invalid Alert Report",
+            ReportType: "Operational",
+            SummaryJson: "{\"alerts\":1}",
+            AlertIds: [unknownAlertId],
+            ActorUserId: "lead-1"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadAsStringAsync();
+        error.Should().Contain(unknownAlertId.ToString("D"));
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
+        (await dbContext.ReportsV2.CountAsync()).Should().Be(0);
+        (await dbContext.ReportAlerts.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task LegacyReportGenerate_WithPersistTrue_ReturnsBadRequestWithoutLegacyReport()
+    {
+        using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var legacyDbContext = scope.ServiceProvider.GetRequiredService<LegacyScanPipelineDbContext>();
+        var initialLegacyReportCount = await legacyDbContext.Reports.CountAsync();
+
+        var response = await leadClient.PostAsJsonAsync(
+            "/api/v2/legacy-pipeline/reports/generate",
+            new LegacyPipelineGenerateReportRequest(
+                ReportType: "ExecutiveSummary",
+                Title: "Legacy persisted report",
+                JobId: null,
+                TargetId: null,
+                NetworkId: null,
+                FromUtc: null,
+                ToUtc: null,
+                ScannerFamily: null,
+                Severity: null,
+                Status: null,
+                Persist: true,
+                ActorUserId: "lead-1"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadAsStringAsync();
+        error.Should().Contain("Legacy report persistence is disabled");
+        (await legacyDbContext.Reports.CountAsync()).Should().Be(initialLegacyReportCount);
     }
 
     [Fact]
@@ -426,6 +481,48 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
             $"/api/v2/alerts/{alert!.Id:D}/scan-results",
             new LinkAlertScanResultRequest(detection.Id, "lead-1"));
         linkResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var alertDetail = await leadClient.GetFromJsonAsync<AlertDetailResponse>(
+            $"/api/v2/alerts/{alert.Id:D}",
+            JsonOptions);
+        alertDetail.Should().NotBeNull();
+        var expectedScanJobId = detection.ScanJobId.HasValue ? detection.ScanJobId.Value.ToString("D") : null;
+        alertDetail!.LinkedScanResults.Should().ContainSingle(x =>
+            x.ResultId == detection.Id.ToString("D")
+            && x.JobId == expectedScanJobId
+            && x.Status == detection.Disposition
+            && x.FindingsCount == detection.OccurrenceCount
+            && x.StartedAtUtc == detection.FirstObservedAtUtc
+            && x.FinishedAtUtc == detection.LastObservedAtUtc);
+
+        var reportResponse = await leadClient.PostAsJsonAsync(
+            "/api/v2/reports/generate",
+            new GenerateReportRequest(
+                ReportType: "ExecutiveSummary",
+                Title: null,
+                FromUtc: observedAtUtc.AddMinutes(-5).ToString("O"),
+                ToUtc: observedAtUtc.AddMinutes(5).ToString("O"),
+                TargetServerId: server.Id,
+                ScannerFamily: "yara",
+                Severity: null,
+                Status: null,
+                IocType: null,
+                Source: null,
+                Persist: false,
+                ActorUserId: "lead-1"));
+        reportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var report = await reportResponse.Content.ReadFromJsonAsync<GeneratedReportResponse>(JsonOptions);
+        report.Should().NotBeNull();
+        report!.Sections.Select(x => x.Title).Should().ContainInOrder(
+            "Executive Assessment",
+            "Top Risks",
+            "Affected Assets",
+            "IOC And Rule Evidence",
+            "Scan Activity Timeline",
+            "Recommended Actions",
+            "Scope And Analytics Appendix");
+        report.Sections.Should().OnlyContain(x => x.Tables != null);
+        report.Sections.First(x => x.Title == "IOC And Rule Evidence").Tables!.Should().ContainSingle(x => x.Title == "Evidence table");
 
         var detail = await leadClient.GetFromJsonAsync<DetectionDetailResponse>(
             $"/api/v2/scanning/results/{detection.Id}",

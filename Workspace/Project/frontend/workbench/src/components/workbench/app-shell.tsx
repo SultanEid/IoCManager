@@ -303,11 +303,11 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="grid min-h-screen grid-cols-1 md:grid-cols-[auto_1fr]">
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[auto_1fr]">
         <motion.aside
           animate={{ width: collapsed ? 96 : 292 }}
           transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-          className="hidden border-r border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--shell-sidebar)_94%,transparent),color-mix(in_srgb,var(--background)_86%,transparent))] shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent),18px_0_42px_color-mix(in_srgb,var(--foreground)_24%,transparent)] backdrop-blur md:flex md:flex-col"
+          className="hidden border-r border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--shell-sidebar)_94%,transparent),color-mix(in_srgb,var(--background)_86%,transparent))] shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent),18px_0_42px_color-mix(in_srgb,var(--foreground)_24%,transparent)] backdrop-blur lg:flex lg:flex-col"
         >
           <div className={cn("px-3", collapsed ? "flex flex-col items-center gap-2 py-3" : "flex h-16 items-center justify-between")}>
             <div className={cn("flex items-center gap-2", collapsed && "w-full justify-center")}>
@@ -347,7 +347,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             <div className="flex min-h-16 items-center gap-2 px-3 py-2 sm:px-4 md:px-6">
               <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
                 <SheetTrigger
-                  className="inline-flex size-8 items-center justify-center rounded-lg border border-border bg-surface-1 text-foreground md:hidden"
+                  className="inline-flex size-8 items-center justify-center rounded-lg border border-border bg-surface-1 text-foreground lg:hidden"
                   aria-label="Open sidebar"
                 >
                   <Menu className="h-4 w-4" />
@@ -394,7 +394,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                 className="hidden h-8 min-w-64 items-center gap-2 rounded-lg border border-border/70 bg-surface-2/70 px-2.5 text-left text-xs text-muted-foreground transition-colors hover:border-primary/35 hover:text-foreground lg:inline-flex"
               >
                 <Search className="h-3.5 w-3.5" />
-                <span className="flex-1">Global search across routes, queue, and alerts</span>
+                <span className="flex-1">Search workspace</span>
                 <kbd className="rounded border border-border/80 bg-surface-1/80 px-1.5 py-0.5 text-[10px]">Ctrl+K</kbd>
               </button>
 
@@ -419,7 +419,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                 <SheetContent side="right" className="w-full max-w-md border-border bg-surface-1 p-0">
                   <div className="border-b border-border/70 px-4 py-3">
                     <p className="text-sm font-semibold tracking-tight">Notification Center</p>
-                    <p className="text-xs text-muted-foreground">Queue pressure and recent system activity</p>
+                    <p className="text-xs text-muted-foreground">Recent activity and queue pressure</p>
                   </div>
                   <ShellNotifications
                     items={notificationItems}

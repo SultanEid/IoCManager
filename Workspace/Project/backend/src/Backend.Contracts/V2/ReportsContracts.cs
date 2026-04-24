@@ -21,11 +21,20 @@ public sealed record GeneratedReportMetricResponse(
     string Value,
     string Detail);
 
+public sealed record GeneratedReportTableColumnResponse(string Key, string Label);
+public sealed record GeneratedReportTableRowResponse(IReadOnlyDictionary<string, string> Values);
+public sealed record GeneratedReportTableResponse(
+    string Title,
+    IReadOnlyList<GeneratedReportTableColumnResponse> Columns,
+    IReadOnlyList<GeneratedReportTableRowResponse> Rows);
+
 public sealed record GeneratedReportSectionResponse(
     string Title,
     string Summary,
     IReadOnlyList<GeneratedReportMetricResponse> Metrics,
-    IReadOnlyList<string> Highlights);
+    IReadOnlyList<string> Highlights,
+    string? Narrative = null,
+    IReadOnlyList<GeneratedReportTableResponse>? Tables = null);
 
 public sealed record GeneratedReportResponse(
     string RequestedReportType,

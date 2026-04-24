@@ -393,9 +393,22 @@ public sealed partial class LegacyScanPipelineService
 
             ruleFilesByFamily[family] = familyFiles;
 
+            if (string.Equals(family, "sigma", StringComparison.OrdinalIgnoreCase))
+            {
+                var sigmaDirectory = Path.Combine(tempDirectory, $"{family}_{Guid.NewGuid():N}");
+                Directory.CreateDirectory(sigmaDirectory);
+                foreach (var path in familyFiles)
+                {
+                    var stagedRulePath = Path.Combine(sigmaDirectory, $"{Guid.NewGuid():N}{Path.GetExtension(path)}");
+                    File.Copy(path, stagedRulePath, overwrite: true);
+                }
+
+                bundledFiles[family] = sigmaDirectory;
+                continue;
+            }
+
             var bundleExtension = family switch
             {
-                "sigma" => ".yml",
                 "yara" => ".yar",
                 _ => ".rules",
             };
@@ -407,7 +420,6 @@ public sealed partial class LegacyScanPipelineService
                 builder.AppendLine(await LegacyScanPipelineHelpers.ReadTextFileWithEncodingDetectionAsync(path, cancellationToken));
                 builder.AppendLine();
             }
-
             await File.WriteAllTextAsync(bundlePath, builder.ToString(), new UTF8Encoding(false), cancellationToken);
             bundledFiles[family] = bundlePath;
         }

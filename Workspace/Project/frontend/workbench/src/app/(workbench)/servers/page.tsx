@@ -33,7 +33,7 @@ export default function ServersPage() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { session } = useAuth()
-  const actorUserId = session?.userId ?? session?.username ?? "team-dev"
+  const actorUserId = session?.userId ?? session?.username ?? "system"
 
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedNetworkId, setSelectedNetworkId] = useState<string>("")

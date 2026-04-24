@@ -150,15 +150,15 @@ export function CompactErrorState({ label }: { label: string }) {
 
 export function SimulatedBadge() {
   return (
-    <span className="inline-flex items-center rounded-full border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-200">
-      Design / Demo Mode
+    <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700 dark:text-amber-200">
+      Sample Data
     </span>
   )
 }
 
 export function FrontendPhaseLockNotice({
-  label = "Frontend-only phase lock",
-  description = "Mutation actions are disabled in normal mode for this phase. Use design/demo mode only for isolated UX review.",
+  label = "Read-only workflow",
+  description = "Mutation actions are unavailable for this workspace state.",
 }: {
   label?: string
   description?: string

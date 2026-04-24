@@ -5,30 +5,22 @@ import {
   BarChart3,
   Clock3,
   Database,
-  Download,
   Eye,
   FileText,
   Filter,
   FolderOpen,
+  Printer,
   LayoutTemplate,
-  Sparkles,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { requestBlob } from "@/shared/api/client"
 import { classifyUiError } from "@/shared/api/error-classification"
+import type { GeneratedReportResponse, GeneratedReportSectionResponse, ReportResponse, RuleFamily, TargetServerResponse } from "@/shared/api/schemas"
 import { useAuth } from "@/shared/auth/auth-provider"
-import {
-  downloadLegacyReportArtifact,
-  type LegacyPipelineGeneratedReport,
-  type LegacyPipelineReportDetail,
-  deleteLegacyReport,
-  generateLegacyReport,
-  getLegacyReportDetail,
-  listLegacyJobs,
-  listLegacyNetworks,
-  listLegacyReports,
-  listLegacyTargets,
-} from "@/shared/gateway/legacy-scan-pipeline"
+import { gateway } from "@/shared/gateway"
+import type { GenerateReportInput, ReportGenerationType } from "@/shared/gateway/types"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
@@ -57,7 +49,7 @@ const REPORT_TEMPLATES = [
 ] as const
 
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"] as const
-const STATUS_OPTIONS = ["Succeeded", "NoFindings", "Failed"] as const
+const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
 
 const REPORT_TYPE_LABELS: Record<string, string> = {
   ExecutiveSummary: "Executive Summary",
@@ -92,22 +84,23 @@ function formatReportType(reportType: string | null | undefined) {
 }
 
 function summarizeQuery(query: {
-  jobId?: string | null
-  targetId?: string | null
-  networkId?: string | null
+  targetServerId?: string | null
+  targetLabel?: string | null
   scannerFamily?: string | null
   fromUtc?: string | null
   toUtc?: string | null
   severity?: string | null
   status?: string | null
+  iocType?: string | null
+  source?: string | null
 }) {
   const parts: string[] = []
-  if (query.jobId) parts.push(`Job ${query.jobId}`)
-  if (query.targetId) parts.push(`Target ${query.targetId}`)
-  if (query.networkId) parts.push(`Subnet ${query.networkId}`)
+  if (query.targetLabel ?? query.targetServerId) parts.push(`Target ${query.targetLabel ?? query.targetServerId}`)
   if (query.scannerFamily) parts.push(query.scannerFamily.toUpperCase())
   if (query.severity) parts.push(`${query.severity} severity`)
-  if (query.status) parts.push(`${query.status} results`)
+  if (query.status) parts.push(`${query.status} alerts`)
+  if (query.iocType) parts.push(`${query.iocType} IOCs`)
+  if (query.source) parts.push(`Source ${query.source}`)
   if (query.fromUtc || query.toUtc) {
     parts.push(`${query.fromUtc ?? "..."} to ${query.toUtc ?? "..."}`)
   }
@@ -115,9 +108,122 @@ function summarizeQuery(query: {
   return parts.length > 0 ? parts.join(" | ") : "Global scope"
 }
 
+type SnapshotQuery = {
+  targetServerId?: string | null
+  targetLabel?: string | null
+  scannerFamily?: string | null
+  fromUtc?: string | null
+  toUtc?: string | null
+  severity?: string | null
+  status?: string | null
+  iocType?: string | null
+  source?: string | null
+}
+
+type ReportSnapshot = {
+  scope: string
+  query: SnapshotQuery
+  sections: GeneratedReportSectionResponse[]
+}
+
 type ReportPreviewState =
-  | { kind: "generated"; report: LegacyPipelineGeneratedReport }
-  | { kind: "saved"; report: LegacyPipelineReportDetail }
+  | { kind: "generated"; report: GeneratedReportResponse }
+  | { kind: "saved"; report: ReportResponse; snapshot: ReportSnapshot }
+
+function isSectionArray(value: unknown): value is GeneratedReportSectionResponse[] {
+  return Array.isArray(value) && value.every((section) => {
+    if (typeof section !== "object" || section === null) {
+      return false
+    }
+
+    const candidate = section as Record<string, unknown>
+    return (
+      typeof candidate.title === "string"
+      && typeof candidate.summary === "string"
+      && Array.isArray(candidate.metrics)
+      && Array.isArray(candidate.highlights)
+    )
+  })
+}
+
+function normalizeReportSection(section: GeneratedReportSectionResponse): GeneratedReportSectionResponse {
+  return {
+    ...section,
+    narrative: section.narrative ?? null,
+    tables: section.tables ?? [],
+  }
+}
+
+function readOptionalString(source: Record<string, unknown>, key: string) {
+  const value = source[key]
+  return typeof value === "string" && value.trim().length > 0 ? value : null
+}
+
+function buildScope(query: SnapshotQuery) {
+  return summarizeQuery(query)
+}
+
+function parseReportSnapshot(report: ReportResponse, targets: TargetServerResponse[]): ReportSnapshot {
+  try {
+    const parsed = JSON.parse(report.summaryJson) as unknown
+    if (typeof parsed === "object" && parsed !== null) {
+      const record = parsed as Record<string, unknown>
+      const filters = (typeof record.filters === "object" && record.filters !== null ? record.filters : record.query) as Record<string, unknown> | undefined
+      const query: SnapshotQuery = filters
+        ? {
+            targetServerId: readOptionalString(filters, "targetServerId"),
+            scannerFamily: readOptionalString(filters, "scannerFamily") ?? readOptionalString(filters, "ScannerFamily"),
+            fromUtc: readOptionalString(filters, "fromUtc") ?? readOptionalString(filters, "FromUtc"),
+            toUtc: readOptionalString(filters, "toUtc") ?? readOptionalString(filters, "ToUtc"),
+            severity: readOptionalString(filters, "severity"),
+            status: readOptionalString(filters, "status"),
+            iocType: readOptionalString(filters, "iocType"),
+            source: readOptionalString(filters, "source"),
+          }
+        : {}
+
+      if (query.targetServerId) {
+        const target = targets.find((item) => item.id === query.targetServerId)
+        query.targetLabel = target ? target.hostname || target.ipAddress : query.targetServerId
+      }
+
+      const sections = isSectionArray(record.sections) ? record.sections.map(normalizeReportSection) : []
+      if (sections.length === 0) {
+        return buildFallbackSnapshot(report)
+      }
+
+      return {
+        scope: readOptionalString(record, "scope") ?? buildScope(query),
+        query,
+        sections,
+      }
+    }
+  } catch {
+    // Fall back to a raw snapshot panel below.
+  }
+
+  return buildFallbackSnapshot(report)
+}
+
+function buildFallbackSnapshot(report: ReportResponse): ReportSnapshot {
+  return {
+    scope: "Stored snapshot",
+    query: {},
+    sections: [
+      {
+        title: report.title,
+        summary: "This report was migrated without structured sections. The raw stored summary is preserved below.",
+        metrics: [
+          { label: "Report type", value: formatReportType(report.reportType), detail: "Persisted report classification." },
+          { label: "Linked alerts", value: String(report.alertIds.length), detail: "Alerts associated with this report." },
+        ],
+        highlights: [report.summaryJson],
+        narrative: null,
+        tables: [],
+      },
+    ],
+  }
+}
 
 function BuilderMetric({
   icon: Icon,
@@ -148,13 +254,15 @@ function BuilderMetric({
 
 export default function ReportsPage() {
   const { session } = useAuth()
-  const actorUserId = session?.userId ?? session?.username ?? "team-dev"
+  const actorUserId = session?.userId ?? session?.username ?? "system"
   const [refreshKey, setRefreshKey] = useState(0)
   const [generating, setGenerating] = useState(false)
-  const [loadingSavedReportId, setLoadingSavedReportId] = useState<string | null>(null)
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
-  const [downloadingKey, setDownloadingKey] = useState<string | null>(null)
   const [preview, setPreview] = useState<ReportPreviewState | null>(null)
+  const [review, setReview] = useState<ReportPreviewState | null>(null)
+  const [reviewPdfUrl, setReviewPdfUrl] = useState<string | null>(null)
+  const [reviewPdfLoading, setReviewPdfLoading] = useState(false)
+  const [reviewPdfError, setReviewPdfError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
   const [form, setForm] = useState(() => {
@@ -162,9 +270,7 @@ export default function ReportsPage() {
     return {
       reportType: "ExecutiveSummary",
       title: "",
-      jobId: "",
       targetId: "",
-      networkId: "",
       scannerFamily: "",
       severity: "",
       status: "",
@@ -174,30 +280,27 @@ export default function ReportsPage() {
     }
   })
 
-  const jobsQuery = useWorkbenchQuery(["legacy-pipeline", "report-jobs", refreshKey], (signal) => listLegacyJobs(signal))
-  const targetsQuery = useWorkbenchQuery(["legacy-pipeline", "report-targets"], (signal) => listLegacyTargets(undefined, signal))
-  const networksQuery = useWorkbenchQuery(["legacy-pipeline", "report-networks"], (signal) => listLegacyNetworks(signal))
-  const reportsQuery = useWorkbenchQuery(["legacy-pipeline", "report-history", refreshKey], (signal) => listLegacyReports(signal))
+  const targetsQuery = useWorkbenchQuery(["reports", "servers"], (signal) => gateway.listTargetServers(undefined, signal))
+  const reportsQuery = useWorkbenchQuery(["reports", "library", refreshKey], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
 
   const generate = async () => {
     setGenerating(true)
     setErrorText(null)
     setMessage(null)
     try {
-      const response = await generateLegacyReport({
-        reportType: form.reportType,
-        title: form.title || null,
-        jobId: form.jobId || null,
-        targetId: form.targetId || null,
-        networkId: form.networkId || null,
-        fromUtc: form.fromUtc || null,
-        toUtc: form.toUtc || null,
-        scannerFamily: form.scannerFamily || null,
-        severity: form.severity || null,
-        status: form.status || null,
+      const payload: GenerateReportInput = {
+        reportType: form.reportType as ReportGenerationType,
+        title: form.title || undefined,
+        targetServerId: form.targetId || undefined,
+        fromUtc: form.fromUtc || undefined,
+        toUtc: form.toUtc || undefined,
+        scannerFamily: form.scannerFamily ? (form.scannerFamily as RuleFamily) : undefined,
+        severity: form.severity || undefined,
+        status: form.status || undefined,
         persist: form.persist,
         actorUserId,
-      })
+      }
+      const response = await gateway.generateReport(payload)
       setPreview({ kind: "generated", report: response })
       setMessage(form.persist ? "Report generated and saved to the library." : "Preview generated without saving.")
       if (response.persistedReport) {
@@ -211,20 +314,41 @@ export default function ReportsPage() {
     }
   }
 
-  const openSavedReport = async (reportId: string) => {
-    setLoadingSavedReportId(reportId)
+  const clearReviewPdf = () => {
+    setReviewPdfUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current)
+      }
+
+      return null
+    })
+    setReviewPdfLoading(false)
+    setReviewPdfError(null)
+  }
+
+  const openSavedReport = async (report: ReportResponse, targets: TargetServerResponse[]) => {
     setErrorText(null)
     setMessage(null)
+    const nextReview = { kind: "saved", report, snapshot: parseReportSnapshot(report, targets) } as const
+    setPreview(nextReview)
+    setReview(nextReview)
+    setMessage("Saved report opened in review mode.")
+    clearReviewPdf()
+    setReviewPdfLoading(true)
     try {
-      const detail = await getLegacyReportDetail(reportId)
-      setPreview({ kind: "saved", report: detail })
-      setMessage("Saved report snapshot loaded.")
+      const pdf = await requestBlob(`/api/v2/reports/${report.id}/pdf`)
+      setReviewPdfUrl(URL.createObjectURL(pdf.blob))
     } catch (error) {
-      const failure = classifyUiError(error)
-      setErrorText(failure.message)
+      setReviewPdfError(classifyUiError(error).message)
     } finally {
-      setLoadingSavedReportId(null)
+      setReviewPdfLoading(false)
     }
+  }
+
+  const closeReview = () => {
+    setReview(null)
+    setPreview(null)
+    clearReviewPdf()
   }
 
   const deleteSavedReport = async (reportId: string, title: string) => {
@@ -236,16 +360,21 @@ export default function ReportsPage() {
     setErrorText(null)
     setMessage(null)
     try {
-      const response = await deleteLegacyReport(reportId)
+      await gateway.deleteReport(reportId)
       if (preview?.kind === "saved" && preview.report.id === reportId) {
         setPreview(null)
+      }
+
+      if (review?.kind === "saved" && review.report.id === reportId) {
+        setReview(null)
+        clearReviewPdf()
       }
 
       if (preview?.kind === "generated" && preview.report.persistedReport?.id === reportId) {
         setPreview(null)
       }
 
-      setMessage(`Deleted "${response.title}" from the saved library.`)
+      setMessage(`Deleted "${title}" from the saved library.`)
       setRefreshKey((value) => value + 1)
     } catch (error) {
       const failure = classifyUiError(error)
@@ -264,87 +393,68 @@ export default function ReportsPage() {
     }))
   }
 
-  const downloadReport = async (path: string | null, title: string, format: "pdf" | "csv") => {
-    if (!path) {
-      return
-    }
-
-    const downloadId = `${title}:${format}`
-    setDownloadingKey(downloadId)
-    setErrorText(null)
-    try {
-      await downloadLegacyReportArtifact(path, `${title}.${format}`)
-    } catch (error) {
-      const failure = classifyUiError(error)
-      setErrorText(failure.message)
-    } finally {
-      setDownloadingKey(null)
-    }
-  }
-
-  if (jobsQuery.isLoading || targetsQuery.isLoading || networksQuery.isLoading || reportsQuery.isLoading) {
+  if (targetsQuery.isLoading || reportsQuery.isLoading) {
     return <LoadingState label="Loading reports workspace" />
   }
 
-  if (jobsQuery.isError || targetsQuery.isError || networksQuery.isError || reportsQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(jobsQuery.error ?? targetsQuery.error ?? networksQuery.error ?? reportsQuery.error)} fallbackTitle="Reports unavailable" />
+  if (targetsQuery.isError || reportsQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(targetsQuery.error ?? reportsQuery.error)} fallbackTitle="Reports unavailable" />
   }
 
-  const jobs = jobsQuery.data ?? []
   const targets = targetsQuery.data ?? []
-  const networks = networksQuery.data ?? []
-  const reports = reportsQuery.data ?? []
-  const previewTitle = preview?.kind === "saved" ? preview.report.title : preview?.report.title
-  const previewReportType = formatReportType(preview?.kind === "saved" ? preview.report.reportType : preview?.report.reportType)
-  const previewScope = preview?.kind === "saved" ? preview.report.scope : preview?.report.scope
-  const previewSections = preview?.kind === "saved" ? preview.report.sections : preview?.report.sections
-  const previewQuery = preview?.kind === "saved" ? preview.report.query : preview?.report.query
-  const previewGeneratedAt = preview?.kind === "saved" ? preview.report.createdAtUtc : preview?.report.generatedAtUtc
-  const previewPdf = preview?.kind === "saved" ? preview.report.pdfDownloadPath : preview?.report.persistedReport?.pdfDownloadPath ?? null
-  const previewCsv = preview?.kind === "saved" ? preview.report.csvDownloadPath : preview?.report.persistedReport?.csvDownloadPath ?? null
-  const previewDownloadBase = previewTitle ?? `${previewReportType ?? "report"}-${previewGeneratedAt ?? "download"}`
+  const reports = reportsQuery.data?.items ?? []
+  const generatedQuery: SnapshotQuery = {
+    targetServerId: form.targetId || null,
+    targetLabel: targets.find((item) => item.id === form.targetId)?.hostname ?? targets.find((item) => item.id === form.targetId)?.ipAddress ?? null,
+    scannerFamily: form.scannerFamily || null,
+    fromUtc: form.fromUtc || null,
+    toUtc: form.toUtc || null,
+    severity: form.severity || null,
+    status: form.status || null,
+  }
+  const previewTitle = preview?.report.title
+  const previewReportType = formatReportType(preview?.kind === "saved" ? preview.report.reportType : preview?.report.requestedReportType)
+  const previewScope = preview?.kind === "saved" ? preview.snapshot.scope : buildScope(generatedQuery)
+  const previewSections = (preview?.kind === "saved" ? preview.snapshot.sections : preview?.report.sections)?.map(normalizeReportSection)
+  const previewQuery = preview?.kind === "saved" ? preview.snapshot.query : generatedQuery
+  const previewGeneratedAt = preview?.kind === "saved" ? preview.report.generatedAtUtc : preview?.report.generatedAtUtc
+  const reviewTitle = review?.report.title
+  const reviewReportType = formatReportType(review?.kind === "saved" ? review.report.reportType : review?.report.requestedReportType)
+  const reviewScope = review?.kind === "saved" ? review.snapshot.scope : buildScope(generatedQuery)
+  const reviewSections = (review?.kind === "saved" ? review.snapshot.sections : review?.report.sections)?.map(normalizeReportSection)
+  const reviewQuery = review?.kind === "saved" ? review.snapshot.query : generatedQuery
+  const reviewGeneratedAt = review?.kind === "saved" ? review.report.generatedAtUtc : review?.report.generatedAtUtc
+  const printReport = () => window.print()
 
   return (
     <section className="wb-page">
       <header className="wb-page-header">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl">
-            <p className="wb-kicker">Reports</p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[var(--shadow-soft)]">
-                <FileText className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight md:text-2xl">Presentation-ready reporting from stored operational evidence</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Generate management and analyst reports across jobs, targets, subnets, scanner families, and time range, then keep only the snapshots worth preserving.
-                </p>
-              </div>
+        <div className="max-w-3xl">
+          <p className="wb-kicker">Reports</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[var(--shadow-soft)]">
+              <FileText className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight md:text-2xl">Report workspace</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Build, review, and preserve executive and analyst-ready snapshots from stored operational evidence.
+              </p>
             </div>
-          </div>
-          <div className="wb-insight max-w-sm">
-            <div className="mb-2 flex items-center gap-2 text-foreground">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <p className="text-sm font-semibold tracking-tight">Reader Mode</p>
-            </div>
-            <p>
-              Preview stays transient until you choose to save it, while persisted reports reopen as stored briefing snapshots instead of regenerating from live data.
-            </p>
           </div>
         </div>
       </header>
 
       <article className="wb-hero space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <p className="wb-kicker">Report Builder</p>
-            <p className="text-sm text-muted-foreground">Pick a template, shape the scope, and decide whether the output stays transient or becomes a saved library snapshot.</p>
-          </div>
-          <div className="grid min-w-[240px] gap-2 sm:grid-cols-3">
-            <BuilderMetric icon={LayoutTemplate} label="Templates" value={String(REPORT_TEMPLATES.length)} description="Executive, IOC, target, and scan-focused report modes." />
-            <BuilderMetric icon={FolderOpen} label="Saved Reports" value={String(reports.length)} description="Persisted briefing snapshots currently in the library." />
-            <BuilderMetric icon={Clock3} label="Default Window" value="7 days" description="Global UTC builder default before custom override." />
-          </div>
+        <div className="space-y-1">
+          <p className="wb-kicker">Report Builder</p>
+          <p className="text-sm text-muted-foreground">Choose a report type, set scope, generate a preview, then save the snapshot when it is ready.</p>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          <BuilderMetric icon={LayoutTemplate} label="Templates" value={String(REPORT_TEMPLATES.length)} description="Executive, IOC, target, and scan-focused modes." />
+          <BuilderMetric icon={FolderOpen} label="Saved Reports" value={String(reports.length)} description="Stored snapshots in the library." />
+          <BuilderMetric icon={Clock3} label="Default Window" value="7 days" description="UTC scope before custom filtering." />
         </div>
 
         <div className="grid gap-3 xl:grid-cols-2">
@@ -413,30 +523,14 @@ export default function ReportsPage() {
           </label>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.jobId}
-            onChange={(event) => setForm((current) => ({ ...current, jobId: event.target.value }))}
-          >
-            <option value="">All jobs</option>
-            {jobs.map((job) => <option key={job.id} value={job.id}>{job.scannerFamily.toUpperCase()} #{job.id}</option>)}
-          </select>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <select
             className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
             value={form.targetId}
             onChange={(event) => setForm((current) => ({ ...current, targetId: event.target.value }))}
           >
             <option value="">All targets</option>
-            {targets.map((target) => <option key={target.id} value={target.id}>{target.hostname ?? target.displayName ?? target.ipAddress}</option>)}
-          </select>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.networkId}
-            onChange={(event) => setForm((current) => ({ ...current, networkId: event.target.value }))}
-          >
-            <option value="">All subnets</option>
-            {networks.map((network) => <option key={network.id} value={network.id}>{network.name}</option>)}
+            {targets.map((target) => <option key={target.id} value={target.id}>{target.hostname || target.ipAddress}</option>)}
           </select>
           <select
             className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
@@ -464,7 +558,7 @@ export default function ReportsPage() {
             value={form.status}
             onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
           >
-            <option value="">All result statuses</option>
+            <option value="">All alert statuses</option>
             {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
           </div>
@@ -489,35 +583,15 @@ export default function ReportsPage() {
             <p className="text-sm text-muted-foreground">Inspect the transient preview or reopen a persisted snapshot from the saved library.</p>
           </div>
           {preview ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {previewPdf ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-2/60 px-3 py-2 text-sm text-foreground transition hover:border-primary/35 disabled:cursor-not-allowed disabled:text-muted-foreground"
-                  onClick={() => downloadReport(previewPdf, previewDownloadBase, "pdf")}
-                  disabled={downloadingKey === `${previewDownloadBase}:pdf`}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  {downloadingKey === `${previewDownloadBase}:pdf` ? "Downloading PDF..." : "Download PDF"}
-                </button>
-              ) : null}
-              {previewCsv ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-2/60 px-3 py-2 text-sm text-foreground transition hover:border-primary/35 disabled:cursor-not-allowed disabled:text-muted-foreground"
-                  onClick={() => downloadReport(previewCsv, previewDownloadBase, "csv")}
-                  disabled={downloadingKey === `${previewDownloadBase}:csv`}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  {downloadingKey === `${previewDownloadBase}:csv` ? "Downloading CSV..." : "Download CSV"}
-                </button>
-              ) : null}
-            </div>
+            <Button type="button" variant="outline" onClick={printReport}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print / Export
+            </Button>
           ) : null}
         </div>
 
         {!preview ? (
-          <EmptyState title="No preview yet" description="Generate a report or open a saved snapshot to inspect the report sections and export links." />
+          <EmptyState title="No preview yet" description="Generate a report or open a saved snapshot to inspect the report sections." />
         ) : (
           <div className="space-y-4">
             <div className="relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--primary)_10%,transparent),color-mix(in_srgb,var(--surface-2)_88%,transparent)_30%,color-mix(in_srgb,var(--surface-1)_86%,transparent))] p-5 shadow-[var(--shadow-panel)]">
@@ -548,6 +622,12 @@ export default function ReportsPage() {
                   </div>
                 </div>
 
+                {section.narrative ? (
+                  <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
+                    {section.narrative}
+                  </div>
+                ) : null}
+
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   {section.metrics.map((metric) => (
                     <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
@@ -563,6 +643,44 @@ export default function ReportsPage() {
                     {section.highlights.map((highlight) => (
                       <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm text-muted-foreground">
                         {highlight}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {section.tables.length > 0 ? (
+                  <div className="mt-4 space-y-4">
+                    {section.tables.map((table) => (
+                      <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
+                        <div className="border-b border-border/55 px-4 py-3">
+                          <p className="text-sm font-semibold">{table.title}</p>
+                        </div>
+                        {table.rows.length === 0 ? (
+                          <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[720px] text-sm">
+                              <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                                <tr>
+                                  {table.columns.map((column) => (
+                                    <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {table.rows.map((row, rowIndex) => (
+                                  <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0">
+                                    {table.columns.map((column) => (
+                                      <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
+                                        {row.values[column.key] ?? "n/a"}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -586,24 +704,22 @@ export default function ReportsPage() {
         </div>
 
         {reports.length === 0 ? (
-          <EmptyState title="No saved reports" description="Persisted report snapshots and export links will appear here after generation." />
+          <EmptyState title="No saved reports" description="Persisted report snapshots will appear here after generation." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[820px] text-sm">
               <thead className="text-left text-xs uppercase tracking-[0.18em] text-muted-foreground">
                 <tr>
                   <th className="pb-3">Title</th>
                   <th className="pb-3">Type</th>
                   <th className="pb-3">Scope</th>
                   <th className="pb-3">Created</th>
-                  <th className="pb-3">Formats</th>
-                  <th className="pb-3">Status</th>
                   <th className="pb-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {reports.map((report) => {
-                  const opening = loadingSavedReportId === report.id
+                  const snapshot = parseReportSnapshot(report, targets)
                   const deleting = deletingReportId === report.id
                   return (
                     <tr key={report.id} className="border-t border-border/50 align-top">
@@ -614,41 +730,14 @@ export default function ReportsPage() {
                         </div>
                       </td>
                       <td className="py-3">{formatReportType(report.reportType)}</td>
-                      <td className="py-3 text-muted-foreground">{report.scope}</td>
+                      <td className="py-3 text-muted-foreground">{snapshot.scope}</td>
                       <td className="py-3 text-muted-foreground">{formatUtc(report.createdAtUtc)}</td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2">
-                          {report.pdfDownloadPath ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 rounded-full border border-border/65 bg-surface-2/70 px-2.5 py-1 text-xs text-foreground transition hover:border-primary/35 disabled:cursor-not-allowed disabled:text-muted-foreground"
-                              onClick={() => downloadReport(report.pdfDownloadPath, report.title, "pdf")}
-                              disabled={downloadingKey === `${report.title}:pdf`}
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              {downloadingKey === `${report.title}:pdf` ? "Downloading PDF..." : "PDF"}
-                            </button>
-                          ) : <span className="text-muted-foreground">PDF missing</span>}
-                          {report.csvDownloadPath ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 rounded-full border border-border/65 bg-surface-2/70 px-2.5 py-1 text-xs text-foreground transition hover:border-primary/35 disabled:cursor-not-allowed disabled:text-muted-foreground"
-                              onClick={() => downloadReport(report.csvDownloadPath, report.title, "csv")}
-                              disabled={downloadingKey === `${report.title}:csv`}
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              {downloadingKey === `${report.title}:csv` ? "Downloading CSV..." : "CSV"}
-                            </button>
-                          ) : <span className="text-muted-foreground">CSV missing</span>}
-                        </div>
-                      </td>
-                      <td className="py-3">{report.status}</td>
-                      <td className="py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Button type="button" variant="outline" onClick={() => openSavedReport(report.id)} disabled={opening || deleting}>
-                            {opening ? "Opening..." : "Open"}
+                          <Button type="button" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
+                            Open
                           </Button>
-                          <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={opening || deleting}>
+                          <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={deleting}>
                             {deleting ? "Deleting..." : "Delete"}
                           </Button>
                         </div>
@@ -661,6 +750,135 @@ export default function ReportsPage() {
           </div>
         )}
       </article>
+
+      {review ? (
+        <div className="report-review-modal fixed inset-0 z-50 bg-background/88 p-4 backdrop-blur-xl md:p-8" role="dialog" aria-modal="true" aria-label="Report review">
+          <div className="mx-auto flex h-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-border/70 bg-surface-1 shadow-[var(--shadow-panel)]">
+            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-5 py-4">
+              <div>
+                <p className="wb-kicker">Report Review</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-tight">{reviewTitle}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{reviewReportType} | {reviewScope}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatUtc(reviewGeneratedAt)}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={printReport}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print / Export
+                </Button>
+                <Button type="button" variant="outline" onClick={closeReview} aria-label="Close report review">
+                  <X className="mr-2 h-4 w-4" />
+                  Close
+                </Button>
+              </div>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+              <div className="mb-4 rounded-2xl border border-border/65 bg-surface-2/50 px-4 py-3 text-sm text-muted-foreground">
+                {summarizeQuery(reviewQuery ?? {})}
+              </div>
+
+              {review.kind === "saved" ? (
+                <section className="mb-5 overflow-hidden rounded-2xl border border-border/65 bg-surface-2/45">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/55 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold">PDF Preview</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Rendered from the stored report snapshot.</p>
+                    </div>
+                    {reviewPdfLoading ? <span className="text-xs text-muted-foreground">Rendering PDF...</span> : null}
+                  </div>
+                  {reviewPdfError ? (
+                    <div className="px-4 py-4 text-sm text-rose-700 dark:text-rose-300">{reviewPdfError}</div>
+                  ) : reviewPdfUrl ? (
+                    <iframe
+                      title={`${reviewTitle ?? "Report"} PDF preview`}
+                      src={reviewPdfUrl}
+                      className="h-[72vh] w-full bg-white"
+                    />
+                  ) : (
+                    <div className="px-4 py-4 text-sm text-muted-foreground">Preparing PDF preview.</div>
+                  )}
+                </section>
+              ) : null}
+
+              <div className="space-y-4">
+                {reviewSections?.map((section) => (
+                  <div key={section.title} className="wb-section-frame">
+                    <div>
+                      <p className="text-base font-semibold">{section.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
+                    </div>
+
+                    {section.narrative ? (
+                      <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
+                        {section.narrative}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {section.metrics.map((metric) => (
+                        <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
+                          <p className="wb-kicker">{metric.label}</p>
+                          <p className="mt-1 text-lg font-semibold">{metric.value}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {section.highlights.length > 0 ? (
+                      <div className="mt-4 grid gap-2">
+                        {section.highlights.map((highlight) => (
+                          <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm text-muted-foreground">
+                            {highlight}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {section.tables.length > 0 ? (
+                      <div className="mt-4 space-y-4">
+                        {section.tables.map((table) => (
+                          <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
+                            <div className="border-b border-border/55 px-4 py-3">
+                              <p className="text-sm font-semibold">{table.title}</p>
+                            </div>
+                            {table.rows.length === 0 ? (
+                              <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <table className="w-full min-w-[720px] text-sm">
+                                  <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                                    <tr>
+                                      {table.columns.map((column) => (
+                                        <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {table.rows.map((row, rowIndex) => (
+                                      <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0">
+                                        {table.columns.map((column) => (
+                                          <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
+                                            {row.values[column.key] ?? "n/a"}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
