@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react"
 import {
   Activity,
+  Bot,
   Clock3,
   FileSearch,
   FileText,
@@ -128,6 +129,17 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     subtitle: "Reusable scan configurations with cadence, rule selection, run-now execution, and last-run posture.",
     icon: Clock3,
     commandAliases: ["Scan Plan", "Scan Plans", "Plan Scheduler", "Scheduled Scans"],
+  },
+  {
+    id: "scan-analyst",
+    href: "/scan-analyst",
+    aliases: [],
+    module: "Operations",
+    label: "Zira",
+    title: "Zira",
+    subtitle: "AI agent workspace for chat-driven scan planning, editable proposals, and autonomous activity.",
+    icon: Bot,
+    commandAliases: ["Zira", "AI Agent", "Scan Analyst", "Agent Workspace"],
   },
   {
     id: "rules",

@@ -401,3 +401,6 @@ FodyWeavers.xsd
 
 # AI local test scratch space
 /Workspace/Project/ai/service/tests/_tmp_*/
+/Workspace/Project/ai/service/.env
+/Workspace/Project/backend/.dotnet-cli/
+/Workspace/Project/backend/.nuget-packages/

@@ -21,6 +21,8 @@ public sealed class ScanAnalystPocOptions
     public string QuietHours { get; init; } = "01:00-05:00 UTC";
     public bool WatchForNewHosts { get; init; } = true;
     public bool WatchForFailedRecentJobs { get; init; } = true;
+    public bool WatchForRecentAlerts { get; init; } = true;
+    public int RecentAlertWindowMinutes { get; init; } = 30;
     public bool RequireMatchingRuleFamily { get; init; } = true;
 }
 
@@ -97,12 +99,14 @@ public static class ScanAnalystPocMockConditions
     public const string NewHostsFound = "new_hosts_found";
     public const string FailedRecentJob = "failed_recent_job";
     public const string StaleCoverage = "stale_coverage";
+    public const string RecentAlertDetected = "recent_alert_detected";
 
     public static readonly string[] All =
     [
         NewHostsFound,
         FailedRecentJob,
         StaleCoverage,
+        RecentAlertDetected,
     ];
 }
 

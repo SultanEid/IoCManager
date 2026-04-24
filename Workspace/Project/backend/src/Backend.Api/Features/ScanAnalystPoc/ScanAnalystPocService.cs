@@ -182,22 +182,35 @@ public sealed class ScanAnalystPocService
             }
 
             simulatedConditions.Add(ScanAnalystPocMockConditions.StaleCoverage);
+            if (_options.WatchForRecentAlerts)
+            {
+                simulatedConditions.Add(ScanAnalystPocMockConditions.RecentAlertDetected);
+            }
         }
 
-        var triggerParts = new List<string>();
-        if (_options.WatchForNewHosts)
+        var context = await GetContextSnapshotAsync(
+            subnetId: null,
+            simulatedConditions,
+            cancellationToken);
+
+        var activeTriggers = context.ActiveTriggers;
+        if (activeTriggers.Count == 0 && context.OperatingMode == ScanAnalystPocModes.LiveData)
         {
-            triggerParts.Add("new hosts");
+            return null;
         }
 
-        if (_options.WatchForFailedRecentJobs)
-        {
-            triggerParts.Add("failed recent jobs");
-        }
+        var triggerParts = activeTriggers.Count == 0
+            ? BuildFallbackTriggerParts()
+            : activeTriggers
+                .Select(x => x.TriggerLabel)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToList();
 
         if (triggerParts.Count == 0)
         {
-            triggerParts.Add("coverage drift");
+            return null;
         }
 
         var objective =
@@ -274,6 +287,7 @@ public sealed class ScanAnalystPocService
             Action: action,
             OperatingMode: context.OperatingMode,
             Summary: recommendation.Summary,
+            PlannerMode: string.IsNullOrWhiteSpace(recommendation.PlannerMode) ? "local" : recommendation.PlannerMode,
             Observations: recommendation.Observations,
             Reasoning: recommendation.Reasoning,
             ValidationWarnings: validationWarnings,
@@ -383,12 +397,17 @@ public sealed class ScanAnalystPocService
             .ToListAsync(cancellationToken);
 
         var targetServerIds = targetServers.Select(x => x.Id).ToArray();
-        var scannerIds = await _dbContext.TargetServerScannerAssignments
-            .AsNoTracking()
-            .Where(x => targetServerIds.Contains(x.TargetServerId) && x.IsEnabled)
+        var assignments = targetServerIds.Length == 0
+            ? new List<TargetServerScannerAssignment>()
+            : await _dbContext.TargetServerScannerAssignments
+                .AsNoTracking()
+                .Where(x => targetServerIds.Contains(x.TargetServerId) && x.IsEnabled)
+                .ToListAsync(cancellationToken);
+
+        var scannerIds = assignments
             .Select(x => x.ScannerId)
             .Distinct()
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         var capabilityBindings = scannerIds.Count == 0
             ? new List<ScannerCapabilityBinding>()
@@ -397,18 +416,15 @@ public sealed class ScanAnalystPocService
                 .Where(x => scannerIds.Contains(x.ScannerId))
                 .ToListAsync(cancellationToken);
 
-        var assignments = targetServerIds.Length == 0
-            ? new List<TargetServerScannerAssignment>()
-            : await _dbContext.TargetServerScannerAssignments
-                .AsNoTracking()
-                .Where(x => targetServerIds.Contains(x.TargetServerId) && x.IsEnabled)
-                .ToListAsync(cancellationToken);
-
         var capabilitiesByScannerId = capabilityBindings
             .GroupBy(x => x.ScannerId)
             .ToDictionary(
                 x => x.Key,
                 x => x.Select(y => y.Capability.ToString()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(y => y).ToArray());
+
+        var assignmentsByTargetServerId = assignments
+            .GroupBy(x => x.TargetServerId)
+            .ToDictionary(x => x.Key, x => x.ToList());
 
         var managedServers = targetServers
             .Select(x => new AiScanAnalystManagedServerContext(
@@ -420,13 +436,73 @@ public sealed class ScanAnalystPocService
                 x.Environment,
                 x.Status.ToString(),
                 x.ConnectivityStatus.ToString(),
-                assignments
-                    .Where(y => y.TargetServerId == x.Id)
+                assignmentsByTargetServerId.TryGetValue(x.Id, out var serverAssignments)
+                    ? serverAssignments
+                        .SelectMany(y => capabilitiesByScannerId.TryGetValue(y.ScannerId, out var capabilities) ? capabilities : Array.Empty<string>())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(y => y)
+                        .ToArray()
+                    : Array.Empty<string>(),
+                x.LastContactUtc))
+            .ToList();
+
+        var externalServerFacts = targetServers
+            .Select(x =>
+            {
+                var serverAssignments = assignmentsByTargetServerId.TryGetValue(x.Id, out var groupedAssignments)
+                    ? groupedAssignments
+                    : [];
+                var healthyScannerCapabilities = serverAssignments
+                    .Where(y => y.ConnectivityStatus == ConnectivityStatus.Online || y.ConnectivityStatus == ConnectivityStatus.Degraded)
                     .SelectMany(y => capabilitiesByScannerId.TryGetValue(y.ScannerId, out var capabilities) ? capabilities : Array.Empty<string>())
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(y => y)
-                    .ToArray(),
-                x.LastContactUtc))
+                    .ToArray();
+
+                var notes = new List<string>();
+                if (x.ConnectionProtocol.HasValue && !string.IsNullOrWhiteSpace(x.ConnectionHost))
+                {
+                    notes.Add($"Remote connection metadata is available via {x.ConnectionProtocol} on {x.ConnectionHost}.");
+                }
+                else
+                {
+                    notes.Add("Remote connection metadata is incomplete.");
+                }
+
+                if (serverAssignments.Count == 0)
+                {
+                    notes.Add("No enabled scanner assignment is attached to this server.");
+                }
+                else if (healthyScannerCapabilities.Length == 0)
+                {
+                    notes.Add("Scanner assignments exist but none are currently healthy.");
+                }
+                else
+                {
+                    notes.Add($"Healthy scanner coverage currently includes {string.Join(", ", healthyScannerCapabilities)}.");
+                }
+
+                return new AiScanAnalystServerFactContext(
+                    x.Id,
+                    x.Hostname,
+                    x.IpAddress,
+                    x.ConnectionProtocol?.ToString(),
+                    string.IsNullOrWhiteSpace(x.ConnectionHost) ? null : x.ConnectionHost,
+                    x.ConnectionPort,
+                    x.LastHeartbeatUtc,
+                    serverAssignments
+                        .Where(y => y.LastHeartbeatUtc.HasValue)
+                        .OrderByDescending(y => y.LastHeartbeatUtc)
+                        .Select(y => y.LastHeartbeatUtc)
+                        .FirstOrDefault(),
+                    serverAssignments
+                        .OrderByDescending(y => y.LastContactUtc ?? y.LastHeartbeatUtc)
+                        .Select(y => y.ConnectivityStatus.ToString())
+                        .FirstOrDefault(),
+                    x.ConnectionProtocol.HasValue || !string.IsNullOrWhiteSpace(x.ConnectionHost),
+                    healthyScannerCapabilities,
+                    notes);
+            })
             .ToList();
 
         var scanPlanIds = await _dbContext.ScanPlans
@@ -520,6 +596,99 @@ public sealed class ScanAnalystPocService
                 .ToListAsync(cancellationToken);
         var artifactById = artifacts.ToDictionary(x => x.Id);
 
+        var recentAlertCutoffUtc = DateTimeOffset.UtcNow.AddMinutes(-Math.Max(5, _options.RecentAlertWindowMinutes));
+        var recentAlertRows = await _dbContext.AlertsV2
+            .AsNoTracking()
+            .Where(x => !_options.WatchForRecentAlerts || x.LastDetectedAtUtc >= recentAlertCutoffUtc)
+            .OrderByDescending(x => x.LastDetectedAtUtc)
+            .Take(subnetId.HasValue ? 40 : 20)
+            .ToListAsync(cancellationToken);
+
+        var scopedAlertKeys = targetServers
+            .SelectMany(x => new[] { x.Hostname.Trim(), x.IpAddress.Trim() })
+            .Where(x => x.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var recentAlerts = recentAlertRows
+            .Where(x => !subnetId.HasValue || scopedAlertKeys.Contains(x.TargetDisplay.Trim()))
+            .Take(20)
+            .ToList();
+
+        var recentAlertIds = recentAlerts.Select(x => x.Id).ToArray();
+        var linkedAlertDetectionCounts = recentAlertIds.Length == 0
+            ? new Dictionary<Guid, int>()
+            : await _dbContext.AlertScanResults
+                .AsNoTracking()
+                .Where(x => recentAlertIds.Contains(x.AlertId))
+                .GroupBy(x => x.AlertId)
+                .Select(x => new { AlertId = x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.AlertId, x => x.Count, cancellationToken);
+
+        var managedServerByKey = managedServers
+            .SelectMany(x => new[]
+            {
+                new KeyValuePair<string, AiScanAnalystManagedServerContext>(x.Hostname.Trim().ToLowerInvariant(), x),
+                new KeyValuePair<string, AiScanAnalystManagedServerContext>(x.IpAddress.Trim().ToLowerInvariant(), x),
+            })
+            .GroupBy(x => x.Key)
+            .ToDictionary(x => x.Key, x => x.First().Value);
+
+        var alertContexts = recentAlerts
+            .Select(x =>
+            {
+                var lookupKey = x.TargetDisplay.Trim().ToLowerInvariant();
+                managedServerByKey.TryGetValue(lookupKey, out var matchedServer);
+                var suggestedCapability = NormalizePreferredCapability(x.ScannerFamily)
+                    ?? InferScannerCapabilityFromAlert(x.RuleName, x.Title, x.Summary)
+                    ?? "Sigma";
+
+                return new AiScanAnalystAlertContext(
+                    x.Id,
+                    x.Title,
+                    x.Summary,
+                    x.Severity.ToString(),
+                    x.Status.ToString(),
+                    x.ScannerFamily,
+                    x.TargetId,
+                    x.TargetDisplay,
+                    x.RuleName,
+                    x.FirstDetectedAtUtc,
+                    x.LastDetectedAtUtc,
+                    linkedAlertDetectionCounts.TryGetValue(x.Id, out var count) ? count : 0,
+                    matchedServer?.TargetServerId.ToString("D"),
+                    matchedServer?.Hostname,
+                    matchedServer?.IpAddress,
+                    suggestedCapability);
+            })
+            .ToList();
+
+        var recentJobContexts = recentJobs
+            .Select(x =>
+            {
+                var counts = executionCounts.TryGetValue(x.Id, out var value)
+                    ? value
+                    : (0, 0, 0);
+                return new AiScanAnalystJobContext(
+                    x.Id,
+                    x.ScanPlanId,
+                    x.TriggerSource,
+                    x.Status.ToString(),
+                    counts.Item1,
+                    counts.Item2,
+                    counts.Item3,
+                    detectionCounts.TryGetValue(x.Id, out var detectionCount) ? detectionCount : 0,
+                    x.Summary,
+                    x.QueuedAtUtc,
+                    x.CompletedAtUtc);
+            })
+            .ToList();
+
+        var triggerContexts = BuildLiveTriggers(
+            discoveredHosts,
+            managedServers,
+            alertContexts,
+            recentJobContexts,
+            recentAlertCutoffUtc);
+
         return new ScanAnalystPocContextSnapshot(
             OperatingMode: ScanAnalystPocModes.LiveData,
             ActiveMockConditions: Array.Empty<string>(),
@@ -557,26 +726,10 @@ public sealed class ScanAnalystPocService
                     null,
                     x.UpdatedAtUtc))
                 .ToList(),
-            RecentJobs: recentJobs
-                .Select(x =>
-                {
-                    var counts = executionCounts.TryGetValue(x.Id, out var value)
-                        ? value
-                        : (0, 0, 0);
-                    return new AiScanAnalystJobContext(
-                        x.Id,
-                        x.ScanPlanId,
-                        x.TriggerSource,
-                        x.Status.ToString(),
-                        counts.Item1,
-                        counts.Item2,
-                        counts.Item3,
-                        detectionCounts.TryGetValue(x.Id, out var detectionCount) ? detectionCount : 0,
-                        x.Summary,
-                        x.QueuedAtUtc,
-                        x.CompletedAtUtc);
-                })
-                .ToList());
+            RecentJobs: recentJobContexts,
+            RecentAlerts: alertContexts,
+            ExternalServerFacts: externalServerFacts,
+            ActiveTriggers: triggerContexts);
     }
 
     private ScanAnalystPocContextSnapshot BuildMockContext(Guid? subnetId, IReadOnlyList<string> activeConditions)
@@ -730,6 +883,81 @@ public sealed class ScanAnalystPocService
                     DateTimeOffset.UtcNow.AddMinutes(-63)));
         }
 
+        var recentAlerts = new List<AiScanAnalystAlertContext>();
+        if (conditions.Contains(ScanAnalystPocMockConditions.RecentAlertDetected))
+        {
+            recentAlerts.Add(
+                new AiScanAnalystAlertContext(
+                    Guid.Parse("91000000-0000-4000-8000-000000000001"),
+                    "Critical suspicious PowerShell execution",
+                    "Recent high-confidence alert on lab-win-21 suggests follow-up host telemetry collection.",
+                    "Critical",
+                    "Open",
+                    "Sigma",
+                    null,
+                    "lab-win-21",
+                    "Suspicious PowerShell Blocks",
+                    DateTimeOffset.UtcNow.AddMinutes(-40),
+                    DateTimeOffset.UtcNow.AddMinutes(-6),
+                    2,
+                    managedServers[0].TargetServerId.ToString("D"),
+                    managedServers[0].Hostname,
+                    managedServers[0].IpAddress,
+                    "Sigma"));
+        }
+
+        var externalServerFacts = new List<AiScanAnalystServerFactContext>
+        {
+            new(
+                managedServers[0].TargetServerId,
+                managedServers[0].Hostname,
+                managedServers[0].IpAddress,
+                "WinRm",
+                managedServers[0].IpAddress,
+                5985,
+                DateTimeOffset.UtcNow.AddMinutes(-12),
+                DateTimeOffset.UtcNow.AddMinutes(-8),
+                "Online",
+                true,
+                ["Sigma", "Yara"],
+                ["Remote Windows management is available for focused host follow-up."]),
+            new(
+                managedServers[1].TargetServerId,
+                managedServers[1].Hostname,
+                managedServers[1].IpAddress,
+                "Ssh",
+                managedServers[1].IpAddress,
+                22,
+                DateTimeOffset.UtcNow.AddMinutes(-18),
+                DateTimeOffset.UtcNow.AddMinutes(-11),
+                "Online",
+                true,
+                ["Yara", "Suricata"],
+                ["Linux host is reachable and supports both file and network-oriented follow-up scans."]),
+            new(
+                managedServers[2].TargetServerId,
+                managedServers[2].Hostname,
+                managedServers[2].IpAddress,
+                "Ssh",
+                managedServers[2].IpAddress,
+                22,
+                DateTimeOffset.UtcNow.AddMinutes(-44),
+                DateTimeOffset.UtcNow.AddMinutes(-35),
+                conditions.Contains(ScanAnalystPocMockConditions.StaleCoverage) ? "Degraded" : "Online",
+                true,
+                managedServers[2].ScannerCapabilities,
+                conditions.Contains(ScanAnalystPocMockConditions.StaleCoverage)
+                    ? ["Recent sensor heartbeat is degraded, so scan choices should stay compact."]
+                    : ["Network sensor path is healthy for follow-up packet inspection."]),
+        };
+
+        var triggerContexts = BuildMockTriggers(
+            conditions,
+            focusSubnet,
+            managedServers,
+            recentJobs,
+            recentAlerts);
+
         return new ScanAnalystPocContextSnapshot(
             OperatingMode: ScanAnalystPocModes.MockFallback,
             ActiveMockConditions: activeConditions,
@@ -739,7 +967,10 @@ public sealed class ScanAnalystPocService
             ManagedServers: managedServers,
             CandidateRules: rules,
             ExistingPlans: existingPlans,
-            RecentJobs: recentJobs);
+            RecentJobs: recentJobs,
+            RecentAlerts: recentAlerts,
+            ExternalServerFacts: externalServerFacts,
+            ActiveTriggers: triggerContexts);
     }
 
     private static AiScanAnalystContextRequest CreateAgentRequest(
@@ -760,7 +991,10 @@ public sealed class ScanAnalystPocService
             context.ManagedServers,
             context.CandidateRules,
             context.ExistingPlans,
-            context.RecentJobs);
+            context.RecentJobs,
+            context.RecentAlerts,
+            context.ExternalServerFacts,
+            context.ActiveTriggers);
     }
 
     private async Task<MaterializationResult> MaterializeLiveAsync(
@@ -981,6 +1215,202 @@ public sealed class ScanAnalystPocService
             GeneratedAtUtc: DateTimeOffset.UtcNow,
             TargetExecutions: targetExecutions,
             Detections: detections);
+    }
+
+    private List<string> BuildFallbackTriggerParts()
+    {
+        var triggerParts = new List<string>();
+        if (_options.WatchForRecentAlerts)
+        {
+            triggerParts.Add("recent alerts");
+        }
+
+        if (_options.WatchForNewHosts)
+        {
+            triggerParts.Add("new hosts");
+        }
+
+        if (_options.WatchForFailedRecentJobs)
+        {
+            triggerParts.Add("failed recent jobs");
+        }
+
+        if (triggerParts.Count == 0)
+        {
+            triggerParts.Add("coverage drift");
+        }
+
+        return triggerParts;
+    }
+
+    private List<AiScanAnalystTriggerContext> BuildLiveTriggers(
+        IReadOnlyList<AiScanAnalystDiscoveredHostContext> discoveredHosts,
+        IReadOnlyList<AiScanAnalystManagedServerContext> managedServers,
+        IReadOnlyList<AiScanAnalystAlertContext> recentAlerts,
+        IReadOnlyList<AiScanAnalystJobContext> recentJobs,
+        DateTimeOffset recentAlertCutoffUtc)
+    {
+        var triggers = new List<AiScanAnalystTriggerContext>();
+
+        if (_options.WatchForRecentAlerts)
+        {
+            triggers.AddRange(recentAlerts
+                .Where(x => x.LastDetectedAtUtc >= recentAlertCutoffUtc)
+                .Select(x => new AiScanAnalystTriggerContext(
+                    "recent_alert",
+                    $"{x.Severity} alert on {x.TargetDisplay}",
+                    $"{x.Title} triggered at {x.LastDetectedAtUtc:u}. {x.Summary}",
+                    x.Severity,
+                    x.MatchedTargetServerId,
+                    x.MatchedTargetHostname ?? x.TargetDisplay,
+                    x.MatchedTargetIpAddress,
+                    x.SuggestedScannerCapability,
+                    x.LastDetectedAtUtc)));
+        }
+
+        if (_options.WatchForNewHosts)
+        {
+            triggers.AddRange(discoveredHosts
+                .Where(x => !x.AlreadyPromoted)
+                .OrderByDescending(x => x.LastCheckedAtUtc)
+                .Take(2)
+                .Select(x => new AiScanAnalystTriggerContext(
+                    "new_host",
+                    $"new host {x.Hostname}",
+                    $"Discovered host {x.Hostname} ({x.IpAddress}) is reachable and has not been promoted yet.",
+                    "Medium",
+                    null,
+                    x.Hostname,
+                    x.IpAddress,
+                    null,
+                    x.LastCheckedAtUtc)));
+        }
+
+        if (_options.WatchForFailedRecentJobs)
+        {
+            triggers.AddRange(recentJobs
+                .Where(x => x.FailedTargets > 0 || x.Status.Contains("failed", StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .Select(x => new AiScanAnalystTriggerContext(
+                    "failed_job",
+                    $"failed job {x.ScanJobId:D}",
+                    x.Summary,
+                    "High",
+                    null,
+                    null,
+                    null,
+                    null,
+                    x.CompletedAtUtc ?? x.QueuedAtUtc)));
+        }
+
+        triggers.AddRange(managedServers
+            .Where(x =>
+                x.ConnectivityStatus.Equals("Degraded", StringComparison.OrdinalIgnoreCase)
+                || x.ConnectivityStatus.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+                || x.LastContactUtc is null
+                || DateTimeOffset.UtcNow - x.LastContactUtc > TimeSpan.FromHours(6))
+            .Take(2)
+            .Select(x => new AiScanAnalystTriggerContext(
+                "stale_coverage",
+                $"coverage drift on {x.Hostname}",
+                $"{x.Hostname} has stale or degraded connectivity state, so coverage should be refreshed carefully.",
+                "Medium",
+                x.TargetServerId.ToString("D"),
+                x.Hostname,
+                x.IpAddress,
+                x.ScannerCapabilities.FirstOrDefault(),
+                x.LastContactUtc ?? DateTimeOffset.UtcNow.AddHours(-8))));
+
+        return triggers
+            .OrderByDescending(x => x.ObservedAtUtc)
+            .Take(8)
+            .ToList();
+    }
+
+    private static List<AiScanAnalystTriggerContext> BuildMockTriggers(
+        ISet<string> conditions,
+        AiScanAnalystFocusSubnetContext focusSubnet,
+        IReadOnlyList<AiScanAnalystManagedServerContext> managedServers,
+        IReadOnlyList<AiScanAnalystJobContext> recentJobs,
+        IReadOnlyList<AiScanAnalystAlertContext> recentAlerts)
+    {
+        var triggers = new List<AiScanAnalystTriggerContext>();
+
+        if (conditions.Contains(ScanAnalystPocMockConditions.RecentAlertDetected) && recentAlerts.Count > 0)
+        {
+            var alert = recentAlerts[0];
+            triggers.Add(new AiScanAnalystTriggerContext(
+                "recent_alert",
+                $"{alert.Severity} alert on {alert.TargetDisplay}",
+                alert.Summary,
+                alert.Severity,
+                alert.MatchedTargetServerId,
+                alert.MatchedTargetHostname,
+                alert.MatchedTargetIpAddress,
+                alert.SuggestedScannerCapability,
+                alert.LastDetectedAtUtc));
+        }
+
+        if (conditions.Contains(ScanAnalystPocMockConditions.NewHostsFound))
+        {
+            var host = managedServers.Last();
+            triggers.Add(new AiScanAnalystTriggerContext(
+                "new_host",
+                $"new host in {focusSubnet.Name}",
+                $"{host.Hostname} was discovered recently and should receive first-pass coverage.",
+                "Medium",
+                host.TargetServerId.ToString("D"),
+                host.Hostname,
+                host.IpAddress,
+                host.ScannerCapabilities.FirstOrDefault(),
+                DateTimeOffset.UtcNow.AddMinutes(-10)));
+        }
+
+        if (conditions.Contains(ScanAnalystPocMockConditions.FailedRecentJob))
+        {
+            var failedJob = recentJobs.First(x => x.FailedTargets > 0 || x.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase));
+            triggers.Add(new AiScanAnalystTriggerContext(
+                "failed_job",
+                "failed recent job",
+                failedJob.Summary,
+                "High",
+                null,
+                null,
+                null,
+                null,
+                failedJob.CompletedAtUtc ?? failedJob.QueuedAtUtc));
+        }
+
+        if (conditions.Contains(ScanAnalystPocMockConditions.StaleCoverage))
+        {
+            var server = managedServers[2];
+            triggers.Add(new AiScanAnalystTriggerContext(
+                "stale_coverage",
+                $"coverage drift on {server.Hostname}",
+                $"{server.Hostname} is degraded, so the next plan should stay compact and validated.",
+                "Medium",
+                server.TargetServerId.ToString("D"),
+                server.Hostname,
+                server.IpAddress,
+                server.ScannerCapabilities.FirstOrDefault(),
+                DateTimeOffset.UtcNow.AddMinutes(-35)));
+        }
+
+        return triggers;
+    }
+
+    private static string? InferScannerCapabilityFromAlert(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            var capability = NormalizePreferredCapability(value);
+            if (!string.IsNullOrWhiteSpace(capability))
+            {
+                return capability;
+            }
+        }
+
+        return null;
     }
 
     private static string BuildNarrativeSummary(
@@ -1234,7 +1664,10 @@ public sealed class ScanAnalystPocService
         IReadOnlyList<AiScanAnalystManagedServerContext> ManagedServers,
         IReadOnlyList<AiScanAnalystRuleContext> CandidateRules,
         IReadOnlyList<AiScanAnalystPlanContext> ExistingPlans,
-        IReadOnlyList<AiScanAnalystJobContext> RecentJobs);
+        IReadOnlyList<AiScanAnalystJobContext> RecentJobs,
+        IReadOnlyList<AiScanAnalystAlertContext> RecentAlerts,
+        IReadOnlyList<AiScanAnalystServerFactContext> ExternalServerFacts,
+        IReadOnlyList<AiScanAnalystTriggerContext> ActiveTriggers);
 
     private sealed record MaterializationResult(
         ScanPlanResponse? CreatedPlan,

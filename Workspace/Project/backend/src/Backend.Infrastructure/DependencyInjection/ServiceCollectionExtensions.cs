@@ -72,6 +72,7 @@ public static class ServiceCollectionExtensions
             .AddOptions<AiSidecarOptions>()
             .Bind(configuration.GetSection(AiSidecarOptions.SectionName))
             .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _), "AiSidecar:BaseUrl must be a valid absolute URI.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ScanAnalystPath), "AiSidecar:ScanAnalystPath must be configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ReportExtractionPath), "AiSidecar:ReportExtractionPath must be configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ScoreCasePath), "AiSidecar:ScoreCasePath must be configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ExplainCasePath), "AiSidecar:ExplainCasePath must be configured.")
@@ -171,6 +172,12 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
         });
         services.AddHttpClient<IAiDecisionClient, AiDecisionClient>((sp, client) =>
+        {
+            var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
+            client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
+        });
+        services.AddHttpClient<IAiScanAnalystClient, AiScanAnalystClient>((sp, client) =>
         {
             var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);

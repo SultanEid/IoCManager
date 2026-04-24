@@ -1005,6 +1005,7 @@ ScanAnalystAction = Literal["RecommendOnly", "CreatePlan", "CreateAndRun"]
 ScanAnalystScannerCapability = Literal["Yara", "Sigma", "Snort", "Suricata"]
 ScanAnalystRuleSelectionMode = Literal["RuleSet", "RuleScope"]
 ScanAnalystCadenceType = Literal["Manual", "Interval", "Daily", "Weekly"]
+ScanAnalystPlannerMode = Literal["local", "openai_refined", "openai_fallback"]
 
 
 class ScanAnalystFocusSubnetInput(ApiModel):
@@ -1049,6 +1050,40 @@ class ScanAnalystManagedServerInput(ApiModel):
     last_contact_utc: datetime | None = None
 
 
+class ScanAnalystAlertInput(ApiModel):
+    alert_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    summary: str = ""
+    severity: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    scanner_family: str = Field(min_length=1)
+    target_id: int | None = None
+    target_display: str = Field(min_length=1)
+    rule_name: str = Field(min_length=1)
+    first_detected_at_utc: datetime
+    last_detected_at_utc: datetime
+    linked_detection_count: int = Field(ge=0)
+    matched_target_server_id: str | None = None
+    matched_target_hostname: str | None = None
+    matched_target_ip_address: str | None = None
+    suggested_scanner_capability: ScanAnalystScannerCapability | None = None
+
+
+class ScanAnalystServerFactInput(ApiModel):
+    target_server_id: str = Field(min_length=1)
+    hostname: str = Field(min_length=1)
+    ip_address: str = Field(min_length=1)
+    connection_protocol: str | None = None
+    connection_host: str | None = None
+    connection_port: int | None = Field(default=None, ge=1, le=65535)
+    last_heartbeat_utc: datetime | None = None
+    last_scanner_heartbeat_utc: datetime | None = None
+    preferred_scanner_connectivity: str | None = None
+    has_remote_connection_metadata: bool = False
+    healthy_scanner_capabilities: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class ScanAnalystRuleInput(ApiModel):
     rule_revision_id: str = Field(min_length=1)
     rule_artifact_id: str = Field(min_length=1)
@@ -1088,6 +1123,18 @@ class ScanAnalystJobInput(ApiModel):
     completed_at_utc: datetime | None = None
 
 
+class ScanAnalystTriggerInput(ApiModel):
+    trigger_type: str = Field(min_length=1)
+    trigger_label: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    severity: str = Field(min_length=1)
+    target_server_id: str | None = None
+    target_hostname: str | None = None
+    target_ip_address: str | None = None
+    scanner_capability: ScanAnalystScannerCapability | None = None
+    observed_at_utc: datetime
+
+
 class ScanAnalystRequest(ApiModel):
     objective: str = Field(min_length=1)
     action: ScanAnalystAction = "RecommendOnly"
@@ -1100,6 +1147,9 @@ class ScanAnalystRequest(ApiModel):
     candidate_rules: list[ScanAnalystRuleInput] = Field(default_factory=list)
     existing_plans: list[ScanAnalystPlanInput] = Field(default_factory=list)
     recent_jobs: list[ScanAnalystJobInput] = Field(default_factory=list)
+    recent_alerts: list[ScanAnalystAlertInput] = Field(default_factory=list)
+    external_server_facts: list[ScanAnalystServerFactInput] = Field(default_factory=list)
+    active_triggers: list[ScanAnalystTriggerInput] = Field(default_factory=list)
 
 
 class ScanAnalystTargetResponse(ApiModel):
@@ -1155,6 +1205,7 @@ class ScanAnalystPlanProposalResponse(ApiModel):
 
 class ScanAnalystResponse(ApiModel):
     summary: str = Field(min_length=1)
+    planner_mode: ScanAnalystPlannerMode = "local"
     observations: list[str] = Field(default_factory=list)
     reasoning: list[str] = Field(default_factory=list)
     validation_warnings: list[str] = Field(default_factory=list)
