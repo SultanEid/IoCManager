@@ -951,7 +951,7 @@ public sealed class ScanningController : ControllerBase
             provenanceByResultId = new Dictionary<Guid, IReadOnlyList<DetectionHistoryProvenanceResponse>>();
         }
 
-        var sourceByResultId = await (
+        var sourceRows = await (
             from provenance in _dbContext.ScanResultProvenances.AsNoTracking()
             join ingestionRun in _dbContext.ScanResultIngestionRuns.AsNoTracking() on provenance.IngestionRunId equals ingestionRun.Id
             where resultIds.Contains(provenance.ScanResultId)
@@ -961,8 +961,11 @@ public sealed class ScanningController : ControllerBase
                 provenance.ScanResultId,
                 ingestionRun.Source,
             })
+            .ToArrayAsync(cancellationToken);
+
+        var sourceByResultId = sourceRows
             .GroupBy(x => x.ScanResultId)
-            .ToDictionaryAsync(group => group.Key, group => group.Select(x => x.Source).FirstOrDefault(), cancellationToken);
+            .ToDictionary(group => group.Key, group => group.Select(x => x.Source).FirstOrDefault());
 
         var items = rows.Select(row => new DetectionHistoryItemResponse(
                 row.Id,

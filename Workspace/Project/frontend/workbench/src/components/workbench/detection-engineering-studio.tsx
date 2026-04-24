@@ -71,6 +71,11 @@ function RulesRolloutReadOnly({
 }: {
   subpageKey: DetectionStudioSubpageKey
 }) {
+  const { session } = useAuth()
+  const canOperate = canAccessLeadActions(session)
+  const alertsQuery = useWorkbenchQuery(["rules-rollout", "alerts"], (signal) => gateway.listAlerts(signal))
+  const jobsQuery = useWorkbenchQuery(["rules-rollout", "jobs"], (signal) => gateway.listJobRuns(signal))
+
   if (subpageKey === "feed-explorer") {
     return (
       <UnavailableState
@@ -79,11 +84,6 @@ function RulesRolloutReadOnly({
       />
     )
   }
-
-  const { session } = useAuth()
-  const canOperate = canAccessLeadActions(session)
-  const alertsQuery = useWorkbenchQuery(["rules-rollout", "alerts"], (signal) => gateway.listAlerts(signal))
-  const jobsQuery = useWorkbenchQuery(["rules-rollout", "jobs"], (signal) => gateway.listJobRuns(signal))
 
   if (alertsQuery.isLoading || jobsQuery.isLoading) {
     return <LoadingState label="Loading rules and rollout posture" />
@@ -179,6 +179,10 @@ export function DetectionEngineeringStudio({ subpageKey = "catalog" }: Detection
     return <RulesRolloutReadOnly subpageKey={subpageKey} />
   }
 
+  return <DetectionEngineeringStudioMock subpageKey={subpageKey} />
+}
+
+function DetectionEngineeringStudioMock({ subpageKey = "catalog" }: DetectionEngineeringStudioProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedRuleId, setSelectedRuleId] = useState<string>(RULES[0]?.id ?? "")
   const [familyFilter, setFamilyFilter] = useState<DetectionFamily | "All">("All")

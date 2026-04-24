@@ -176,12 +176,16 @@ public sealed class IocManagerEntityTests
             severity: AlertSeverity.Medium,
             ownerUserId: "analyst-1",
             approvalTierRequired: "Lead",
+            scannerFamily: "yara",
+            targetId: 1,
+            targetDisplay: "srv-lab-01",
+            ruleName: "IOC hit rule",
             detectedAtUtc: first,
             actorUserId: "analyst-1",
             nowUtc: nowUtc);
 
-        item.TouchDetection(first.AddHours(1), "analyst-1", nowUtc.AddMinutes(1));
-        item.TouchDetection(first.AddMinutes(30), "analyst-1", nowUtc.AddMinutes(2));
+        item.RefreshDetection("IOC hit", "Malicious domain seen", AlertSeverity.Medium, first.AddHours(1), "analyst-1", nowUtc.AddMinutes(1));
+        item.RefreshDetection("IOC hit", "Malicious domain seen", AlertSeverity.Medium, first.AddMinutes(30), "analyst-1", nowUtc.AddMinutes(2));
 
         item.LastDetectedAtUtc.Should().Be(first.AddHours(1));
     }

@@ -21,12 +21,12 @@ import type {
   PowerBiVisualizationCatalogResponse,
   GeneratedReportResponse,
   ReportListResponse,
+  ScanJobResponse,
+  ScanJobTargetExecutionResponse,
   ScanAnalystAgentStatusResponse,
   ScanAnalystChatResponse,
   ScanAnalystPlanProposalResponse,
   ScanAnalystRunSummaryResponse,
-  ScanJobResponse,
-  ScanJobTargetExecutionResponse,
   ScanPlanResponse,
   RuleDistributionAttemptResponse,
   RuleDistributionJobResponse,
@@ -93,7 +93,6 @@ import type {
   RotateManagedServerConnectionSecretInput,
   ReportsIngestionVM,
   ReviewRuleProposalInput,
-  SendScanAnalystChatTurnInput,
   SettingsAdminVM,
   SimulateRuleProposalInput,
   SubmitAiDecisionInput,
@@ -101,6 +100,7 @@ import type {
   TriggerRollbackInput,
   AssignWorkbenchRolePermissionInput,
   RetryDistributionJobInput,
+  SendScanAnalystChatTurnInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
@@ -195,6 +195,200 @@ const MOCK_PERMISSIONS: PermissionResponse[] = [
   },
 ]
 
+const MOCK_RULE_BY_CAPABILITY = {
+  Yara: { family: "yara", name: "Suspicious Archive Loader" },
+  Sigma: { family: "sigma", name: "Encoded PowerShell Child Process" },
+  Snort: { family: "snort", name: "Suspicious TCP Egress Pattern" },
+  Suricata: { family: "suricata", name: "Suspicious TLS Egress Pattern" },
+} as const
+
+function formatScannerCapabilityForNarrative(capability: ScanAnalystPlanProposalResponse["scannerCapability"]) {
+  return capability === "Yara" ? "YARA" : capability
+}
+
+function inferScannerCapability(message: string): ScanAnalystPlanProposalResponse["scannerCapability"] {
+  const normalized = message.toLowerCase()
+  if (normalized.includes("yara")) {
+    return "Yara"
+  }
+  if (normalized.includes("snort")) {
+    return "Snort"
+  }
+  if (normalized.includes("suricata")) {
+    return "Suricata"
+  }
+  return "Sigma"
+}
+
+function buildMockScanAnalystPlan(capability: ScanAnalystPlanProposalResponse["scannerCapability"]): ScanAnalystPlanProposalResponse {
+  const rule = MOCK_RULE_BY_CAPABILITY[capability]
+  const targetId = nextUserId()
+  const ruleRevisionId = nextUserId()
+
+  return {
+    name: `zira-${capability.toLowerCase()}-follow-up`,
+    description: `Focused ${capability} follow-up for the current demo context.`,
+    scannerCapability: capability,
+    ruleSelectionMode: "RuleSet",
+    ruleScopeType: null,
+    ruleScopeValue: null,
+    cadenceType: "Manual",
+    intervalMinutes: null,
+    runAtHourUtc: null,
+    runAtMinuteUtc: null,
+    weeklyDayOfWeek: null,
+    operatorNotes: "Demo recommendation. Human approval remains required before operational use.",
+    status: "Draft",
+    targetServerIds: [targetId],
+    ruleRevisionIds: [ruleRevisionId],
+    targets: [
+      {
+        targetServerId: targetId,
+        hostname: "demo-host-01",
+        ipAddress: "10.0.10.21",
+        operatingSystem: "Windows",
+        environment: "Lab",
+        status: "Online",
+        connectivityStatus: "Reachable",
+        scannerCapabilities: [capability],
+        reason: "Selected because it has matching scanner coverage and recent demo context.",
+      },
+    ],
+    rules: [
+      {
+        ruleRevisionId,
+        ruleArtifactId: nextUserId(),
+        ruleName: rule.name,
+        ruleFamily: rule.family,
+        revisionNumber: 1,
+        versionLabel: "v1",
+        lifecycleStatus: "Approved",
+        scopeType: "global",
+        scopeValue: null,
+        reason: "Rule family matches the requested scan capability.",
+      },
+    ],
+  }
+}
+
+function buildCreatedScanPlan(plan: ScanAnalystPlanProposalResponse): ScanPlanResponse {
+  const now = new Date().toISOString()
+  return {
+    id: nextUserId(),
+    name: plan.name,
+    description: plan.description,
+    scannerCapability: plan.scannerCapability,
+    ruleSelectionMode: plan.ruleSelectionMode,
+    ruleScopeType: plan.ruleScopeType,
+    ruleScopeValue: plan.ruleScopeValue,
+    cadenceType: plan.cadenceType,
+    intervalMinutes: plan.intervalMinutes,
+    runAtHourUtc: plan.runAtHourUtc,
+    runAtMinuteUtc: plan.runAtMinuteUtc,
+    weeklyDayOfWeek: plan.weeklyDayOfWeek,
+    operatorNotes: plan.operatorNotes,
+    status: "Draft",
+    nextRunAtUtc: null,
+    lastQueuedAtUtc: null,
+    lastCompletedAtUtc: null,
+    lastResultStatus: null,
+    lastResultSummary: null,
+    targetServerIds: plan.targetServerIds,
+    ruleRevisionIds: plan.ruleRevisionIds,
+    targetServers: plan.targets.map((target) => ({
+      targetServerId: target.targetServerId,
+      hostname: target.hostname,
+      ipAddress: target.ipAddress,
+    })),
+    rules: plan.rules.map((rule) => ({
+      ruleRevisionId: rule.ruleRevisionId,
+      ruleArtifactId: rule.ruleArtifactId,
+      ruleName: rule.ruleName,
+      ruleFamily: rule.ruleFamily,
+      revisionNumber: rule.revisionNumber,
+      versionLabel: rule.versionLabel,
+    })),
+    createdAtUtc: now,
+    updatedAtUtc: now,
+  }
+}
+
+function buildQueuedScanJob(scanPlanId: string, actorUserId: string): ScanJobResponse {
+  const now = new Date().toISOString()
+  return {
+    id: nextUserId(),
+    scanPlanId,
+    triggerSource: "ScanAnalystDemo",
+    status: "Completed",
+    queuedAtUtc: now,
+    startedAtUtc: now,
+    completedAtUtc: now,
+    triggeredByUserId: actorUserId,
+    summary: "Demo scan job completed.",
+    cancellationRequested: false,
+    cancellationRequestedAtUtc: null,
+    cancellationReason: null,
+    totalTargets: 1,
+    completedTargets: 1,
+    failedTargets: 0,
+    cancelledTargets: 0,
+    partiallyCompletedTargets: 0,
+    createdAtUtc: now,
+    updatedAtUtc: now,
+  }
+}
+
+function buildMockRunSummary(scanJobId: string, plan: ScanAnalystPlanProposalResponse): ScanAnalystRunSummaryResponse {
+  const observedAtUtc = new Date().toISOString()
+  const target = plan.targets[0]
+  const rule = plan.rules[0]
+  return {
+    scanJobId,
+    isSimulated: true,
+    narrativeSummary: `The simulated ${formatScannerCapabilityForNarrative(plan.scannerCapability)} run completed with one demo detection.`,
+    jobStatus: "Completed",
+    totalTargets: plan.targets.length,
+    completedTargets: plan.targets.length,
+    failedTargets: 0,
+    detectionCount: 1,
+    generatedAtUtc: observedAtUtc,
+    targetExecutions: [
+      {
+        targetHostname: target?.hostname ?? "demo-host",
+        targetIpAddress: target?.ipAddress ?? "10.0.10.21",
+        status: "Completed",
+        summary: "Demo target scan completed.",
+        errorMessage: null,
+      },
+    ],
+    detections: [
+      {
+        detectionId: nextUserId(),
+        ruleName: rule?.ruleName ?? "Demo Rule",
+        serverHostname: target?.hostname ?? "demo-host",
+        disposition: "Suspicious",
+        observedAtUtc,
+      },
+    ],
+  }
+}
+
+function buildMockAgentMessage(
+  action: SendScanAnalystChatTurnInput["action"],
+  capability: ScanAnalystPlanProposalResponse["scannerCapability"],
+  runSummary: ScanAnalystRunSummaryResponse | null,
+) {
+  if (action === "RecommendOnly") {
+    return `Prepared a ${capability} recommendation for review.`
+  }
+
+  if (action === "CreatePlan") {
+    return `Created a draft ${capability} scan plan in demo mode.`
+  }
+
+  return `Created and ran a simulated ${capability} scan plan. ${runSummary?.narrativeSummary ?? ""}`.trim()
+}
+
 export class MockGateway implements Gateway {
   private users: UserResponse[] = listMockPersonas().map((persona, index) => ({
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
@@ -256,6 +450,8 @@ export class MockGateway implements Gateway {
     },
   ]
   private generatedReports: ReportListResponse["items"] = []
+  private scanAnalystSessions = new Map<string, ScanAnalystChatResponse>()
+  private scanAnalystRunSummaries = new Map<string, ScanAnalystRunSummaryResponse>()
 
   async login(username: string, _password: string): Promise<TokenResponse> {
     consume(_password)
@@ -780,307 +976,134 @@ export class MockGateway implements Gateway {
 
   async getScanAnalystStatus(_signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse> {
     consume(_signal)
+    const now = new Date()
+
     return {
       agentEnabled: true,
       autonomyEnabled: true,
       databaseAvailable: false,
       operatingMode: "MockFallback",
-      indicatorLabel: "Demo autonomy",
-      degradedReason: "Live database is not connected, so Zira is using the frontend-safe mock scenario.",
-      activeSessionCount: 1,
-      availableMockConditions: ["new_hosts_found", "failed_recent_job", "stale_coverage", "recent_alert_detected"],
+      indicatorLabel: "Demo mode",
+      degradedReason: "Live SQL data is unavailable for the demo scan-plan assistant.",
+      activeSessionCount: this.scanAnalystSessions.size,
+      availableMockConditions: ["new_hosts_found", "failed_recent_job", "stale_coverage"],
       activeMockConditions: ["new_hosts_found"],
       parameters: {
         enabled: true,
-        allowedSubnets: [],
-        allowedEnvironments: ["Production", "Lab"],
+        allowedSubnets: ["demo-lab"],
+        allowedEnvironments: ["Lab"],
         maxTargetsPerRun: 5,
         preferredScannerFamily: "Auto",
-        autoRun: false,
-        quietHours: "disabled",
+        autoRun: true,
+        quietHours: "none",
         watchForNewHosts: true,
         watchForFailedRecentJobs: true,
         requireMatchingRuleFamily: true,
       },
-      lastAutonomousActivity: {
-        summary: "Zira prepared a demo follow-up scan for newly discovered hosts.",
-        trigger: "new hosts",
-        action: "RecommendOnly",
-        operatingMode: "MockFallback",
-        occurredAtUtc: new Date(Date.now() - 3 * 60_000).toISOString(),
-      },
       personaName: "Zira",
-      currentActivity: "Monitoring scan coverage and waiting for the next analyst request.",
-      latestActionSummary: "Zira is in demo mode because the live database is unavailable.",
+      currentActivity: "Monitoring demo scan coverage and ready to draft a focused plan.",
+      latestActionSummary: "Zira prepared a safe first-pass recommendation for newly observed hosts.",
       recentActions: [
         {
-          id: "mock-zira-recent-action",
-          title: "Prepared demo coverage review",
-          summary: "Zira selected candidate targets and matching rules from the local mock context.",
-          occurredAtUtc: new Date(Date.now() - 5 * 60_000).toISOString(),
+          id: "mock-recent-action",
+          title: "Prepared new-host follow-up",
+          summary: "Scoped a compact demo scan plan for new hosts.",
+          occurredAtUtc: new Date(now.getTime() - 3 * 60_000).toISOString(),
           status: "Completed",
         },
       ],
       completedPlans: [
         {
-          id: "mock-zira-completed-plan",
-          name: "zira-demo-coverage-review",
-          scannerCapability: "Yara",
+          id: "mock-completed-plan",
+          name: "zira-demo-follow-up",
+          scannerCapability: "Sigma",
           targetCount: 3,
           detectionCount: 1,
-          outcome: "Demo run completed",
-          completedAtUtc: new Date(Date.now() - 12 * 60_000).toISOString(),
+          outcome: "Completed",
+          completedAtUtc: new Date(now.getTime() - 8 * 60_000).toISOString(),
         },
       ],
+      lastAutonomousActivity: {
+        summary: "Zira noticed new hosts and prepared a follow-up scan automatically.",
+        trigger: "new hosts",
+        action: "CreateAndRun",
+        operatingMode: "MockFallback",
+        occurredAtUtc: new Date(now.getTime() - 4 * 60_000).toISOString(),
+      },
     }
   }
 
   async sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse> {
-    const now = new Date().toISOString()
-    const sessionId = input.sessionId ?? "11111111-2222-4333-8444-555555555555"
-    const scanJobId = "99999999-9999-4999-8999-999999999991"
-    const capability = input.preferredScannerCapability ?? input.editedPlan?.scannerCapability ?? "Yara"
-    const proposedPlan: ScanAnalystPlanProposalResponse =
-      input.editedPlan ?? {
-        name: "zira-demo-follow-up-scan",
-        description: "Demo scan proposal drafted from the current Zira conversation.",
-        scannerCapability: capability,
-        ruleSelectionMode: "RuleSet",
-        ruleScopeType: null,
-        ruleScopeValue: null,
-        cadenceType: "Manual",
-        intervalMinutes: null,
-        runAtHourUtc: null,
-        runAtMinuteUtc: null,
-        weeklyDayOfWeek: null,
-        operatorNotes: `Objective: ${input.message}`,
-        status: "Draft",
-        targetServerIds: [
-          "77777777-7777-4777-8777-777777777771",
-          "77777777-7777-4777-8777-777777777772",
-          "77777777-7777-4777-8777-777777777773",
-        ],
-        ruleRevisionIds: ["88888888-8888-4888-8888-888888888881"],
-        targets: [
-          {
-            targetServerId: "77777777-7777-4777-8777-777777777771",
-            hostname: "demo-app-01",
-            ipAddress: "10.20.4.11",
-            operatingSystem: "Windows Server",
-            environment: "Production",
-            status: "Active",
-            connectivityStatus: "Healthy",
-            scannerCapabilities: [capability],
-            reason: "Representative production host selected from the demo context.",
-          },
-          {
-            targetServerId: "77777777-7777-4777-8777-777777777772",
-            hostname: "demo-app-02",
-            ipAddress: "10.20.4.12",
-            operatingSystem: "Linux",
-            environment: "Production",
-            status: "Active",
-            connectivityStatus: "Healthy",
-            scannerCapabilities: [capability],
-            reason: "Second host keeps the proposed scan narrow while still checking peer exposure.",
-          },
-          {
-            targetServerId: "77777777-7777-4777-8777-777777777773",
-            hostname: "demo-edge-01",
-            ipAddress: "10.20.4.21",
-            operatingSystem: "Linux",
-            environment: "DMZ",
-            status: "Active",
-            connectivityStatus: "Degraded",
-            scannerCapabilities: [capability],
-            reason: "Included because alert-driven planning should account for exposed edge systems.",
-          },
-        ],
-        rules: [
-          {
-            ruleRevisionId: "88888888-8888-4888-8888-888888888881",
-            ruleArtifactId: "88888888-8888-4888-8888-888888888880",
-            ruleName: "demo-zira-suspicious-tooling",
-            ruleFamily: capability,
-            revisionNumber: 1,
-            versionLabel: "v1",
-            lifecycleStatus: "Active",
-            scopeType: "Global",
-            scopeValue: null,
-            reason: "Rule family matches the requested or inferred scanner capability.",
-          },
-        ],
-      }
+    const sessionId = input.sessionId ?? nextUserId()
+    const previous = this.scanAnalystSessions.get(sessionId)
+    const capability = input.preferredScannerCapability ?? input.editedPlan?.scannerCapability ?? inferScannerCapability(input.message)
+    const proposedPlan = input.editedPlan ?? buildMockScanAnalystPlan(capability)
+    const createdPlan = input.action === "RecommendOnly" ? null : buildCreatedScanPlan(proposedPlan)
+    const queuedJob = input.action === "CreateAndRun" && createdPlan ? buildQueuedScanJob(createdPlan.id, input.actorUserId) : null
+    const runSummary = queuedJob ? buildMockRunSummary(queuedJob.id, proposedPlan) : null
 
-    const createdPlan: ScanPlanResponse | null =
-      input.action === "RecommendOnly"
-        ? null
-        : {
-            id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-            name: proposedPlan.name,
-            description: proposedPlan.description,
-            scannerCapability: proposedPlan.scannerCapability,
-            ruleSelectionMode: proposedPlan.ruleSelectionMode,
-            ruleScopeType: proposedPlan.ruleScopeType,
-            ruleScopeValue: proposedPlan.ruleScopeValue,
-            cadenceType: proposedPlan.cadenceType,
-            intervalMinutes: proposedPlan.intervalMinutes,
-            runAtHourUtc: proposedPlan.runAtHourUtc,
-            runAtMinuteUtc: proposedPlan.runAtMinuteUtc,
-            weeklyDayOfWeek: proposedPlan.weeklyDayOfWeek,
-            operatorNotes: proposedPlan.operatorNotes,
-            status: "Draft",
-            nextRunAtUtc: null,
-            lastQueuedAtUtc: input.action === "CreateAndRun" ? now : null,
-            lastCompletedAtUtc: null,
-            lastResultStatus: null,
-            lastResultSummary: null,
-            targetServerIds: proposedPlan.targetServerIds,
-            ruleRevisionIds: proposedPlan.ruleRevisionIds,
-            targetServers: proposedPlan.targets.map((target) => ({
-              targetServerId: target.targetServerId,
-              hostname: target.hostname,
-              ipAddress: target.ipAddress,
-            })),
-            rules: proposedPlan.rules.map((rule) => ({
-              ruleRevisionId: rule.ruleRevisionId,
-              ruleArtifactId: rule.ruleArtifactId,
-              ruleName: rule.ruleName,
-              ruleFamily: "yara",
-              revisionNumber: rule.revisionNumber,
-              versionLabel: rule.versionLabel,
-            })),
-            createdAtUtc: now,
-            updatedAtUtc: now,
-          }
+    if (queuedJob && runSummary) {
+      this.scanAnalystRunSummaries.set(queuedJob.id, runSummary)
+    }
 
-    const queuedJob: ScanJobResponse | null =
-      input.action === "CreateAndRun"
-        ? {
-            id: scanJobId,
-            scanPlanId: createdPlan?.id ?? null,
-            triggerSource: "ZiraAgent",
-            status: "Completed",
-            queuedAtUtc: now,
-            startedAtUtc: now,
-            completedAtUtc: now,
-            triggeredByUserId: input.actorUserId,
-            summary: "Demo Zira run completed with one simulated detection.",
-            cancellationRequested: false,
-            cancellationRequestedAtUtc: null,
-            cancellationReason: null,
-            totalTargets: proposedPlan.targetServerIds.length,
-            completedTargets: proposedPlan.targetServerIds.length,
-            failedTargets: 0,
-            cancelledTargets: 0,
-            partiallyCompletedTargets: 0,
-            createdAtUtc: now,
-            updatedAtUtc: now,
-          }
-        : null
-
-    const latestRunSummary: ScanAnalystRunSummaryResponse | null =
-      input.action === "CreateAndRun"
-        ? await this.getScanAnalystRunSummary(scanJobId)
-        : null
-
-    return {
+    const response: ScanAnalystChatResponse = {
       sessionId,
-      agentStatusLine: "Zira drafted a demo scan plan from your request.",
+      agentStatusLine: "Zira is running in demo mode.",
       operatingMode: "MockFallback",
       databaseAvailable: false,
       activeMockConditions: input.simulatedConditions ?? ["new_hosts_found"],
       messages: [
+        ...(previous?.messages ?? []),
         {
           role: "user",
           content: input.message,
-          timestampUtc: now,
+          timestampUtc: new Date().toISOString(),
         },
         {
-          role: "assistant",
-          content: `I drafted a ${proposedPlan.scannerCapability} scan plan for ${proposedPlan.targetServerIds.length} targets.`,
-          timestampUtc: now,
+          role: "agent",
+          content: buildMockAgentMessage(input.action, capability, runSummary),
+          timestampUtc: new Date().toISOString(),
         },
       ],
       latestAnalysis: {
         action: input.action,
         operatingMode: "MockFallback",
-        summary: `Zira prepared a bounded ${proposedPlan.scannerCapability} plan from the current request.`,
+        summary: buildMockAgentMessage(input.action, capability, runSummary),
         plannerMode: "local",
-        observations: [
-          "Live database context is unavailable in mock mode, so the plan uses deterministic demo assets.",
-          "The request was still converted into structured targets, rules, scanner capability, and action intent.",
-        ],
-        reasoning: [
-          "Keep the first autonomous action bounded to a small target count.",
-          "Match the scanner family to the requested capability when one is provided.",
-        ],
-        validationWarnings: ["Demo mode does not execute against real infrastructure."],
-        recommendedScannerCapability: proposedPlan.scannerCapability,
+        observations: ["Demo context is available.", `${capability} coverage is suitable for this request.`],
+        reasoning: ["The selected scanner family matches the requested follow-up and available demo evidence."],
+        validationWarnings: [],
+        recommendedScannerCapability: capability,
         contextSummary: {
           focusSubnetId: input.subnetId ?? null,
           focusSubnetName: input.subnetId ? "Selected subnet" : null,
           discoveryRunCount: 1,
           discoveredHostCount: 3,
-          managedServerCount: 3,
-          candidateRuleCount: 1,
-          existingPlanCount: 1,
+          managedServerCount: proposedPlan.targets.length,
+          candidateRuleCount: proposedPlan.rules.length,
+          existingPlanCount: 0,
           recentJobCount: queuedJob ? 1 : 0,
         },
         proposedPlan,
         createdPlan,
         queuedJob,
-        runSummary: latestRunSummary,
+        runSummary,
       },
-      latestRunSummary,
+      latestRunSummary: runSummary,
     }
+
+    this.scanAnalystSessions.set(sessionId, response)
+    return copy(response)
   }
 
   async getScanAnalystRunSummary(scanJobId: string, _signal?: AbortSignal): Promise<ScanAnalystRunSummaryResponse> {
     consume(_signal)
-    return {
-      scanJobId,
-      isSimulated: true,
-      narrativeSummary: "Demo run completed across three targets with one simulated detection.",
-      jobStatus: "Completed",
-      totalTargets: 3,
-      completedTargets: 3,
-      failedTargets: 0,
-      detectionCount: 1,
-      generatedAtUtc: new Date().toISOString(),
-      targetExecutions: [
-        {
-          targetHostname: "demo-app-01",
-          targetIpAddress: "10.20.4.11",
-          status: "Completed",
-          summary: "No suspicious artifacts found.",
-          errorMessage: null,
-        },
-        {
-          targetHostname: "demo-app-02",
-          targetIpAddress: "10.20.4.12",
-          status: "Completed",
-          summary: "One suspicious tooling indicator matched.",
-          errorMessage: null,
-        },
-        {
-          targetHostname: "demo-edge-01",
-          targetIpAddress: "10.20.4.21",
-          status: "Completed",
-          summary: "Connectivity degraded, but lightweight checks completed.",
-          errorMessage: null,
-        },
-      ],
-      detections: [
-        {
-          detectionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
-          ruleName: "demo-zira-suspicious-tooling",
-          serverHostname: "demo-app-02",
-          disposition: "Needs review",
-          observedAtUtc: new Date().toISOString(),
-        },
-      ],
+    const summary = this.scanAnalystRunSummaries.get(scanJobId)
+    if (!summary) {
+      throw new Error("Scan analyst run summary was not found.")
     }
+
+    return copy(summary)
   }
 
   async listManagedServers(

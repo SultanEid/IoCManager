@@ -22,7 +22,8 @@ public sealed class DiscoveryTargetRangeParserTests
         result.RequestedCidr.Should().Be("10.20.30.0/30");
         result.RangeStartIp.Should().BeNull();
         result.RangeEndIp.Should().BeNull();
-        result.Targets.Select(x => x.ToString()).Should().Equal("10.20.30.1", "10.20.30.2");
+        result.Targets.Select(x => x.ToString()).Should().Equal("10.20.30.2");
+        result.ExcludedTargets.Select(x => x.ToString()).Should().Equal("10.20.30.1");
     }
 
     [Fact]

@@ -19,6 +19,11 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
+        if (!_dbContext.Database.IsRelational())
+        {
+            return;
+        }
+
         var commands = new[]
         {
             """

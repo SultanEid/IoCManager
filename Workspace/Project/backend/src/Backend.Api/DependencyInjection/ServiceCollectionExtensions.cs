@@ -24,6 +24,9 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
+        var skipHostedWorkers = configuration.GetValue<bool>("AppStartup:SkipHostedWorkers");
+        var enableAiDecisionWorker = configuration.GetValue<bool>("AppStartup:EnableAiDecisionWorker");
+
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
         {
@@ -130,6 +133,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthSensitiveAuditService, AuthSensitiveAuditService>();
         services.AddScoped<IAlertRegistrySchemaInitializer, AlertRegistrySchemaInitializer>();
         services.AddScoped<ILegacyScanPipelineSchemaInitializer, LegacyScanPipelineSchemaInitializer>();
+        services.AddScoped<IOperationalStoreSchemaInitializer, OperationalStoreSchemaInitializer>();
         services.AddScoped<LegacyScanPipelineService>();
         services.AddScoped<ILegacyScanPipelineService>(provider => provider.GetRequiredService<LegacyScanPipelineService>());
         services.AddSingleton<IPowerBiVisualizationCatalogService, PowerBiVisualizationCatalogService>();
@@ -156,12 +160,19 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IScanExecutionDispatcher, ScanExecutionDispatcher>();
         services.AddScoped<IScanAnalystPocAgentAdapter, HeuristicScanAnalystPocAgentAdapter>();
         services.AddScoped<ScanAnalystPocService>();
-        services.AddHostedService<DiscoveryRunWorker>();
-        services.AddHostedService<RuleDistributionWorker>();
-        services.AddHostedService<ScanPlanExecutionWorker>();
-        services.AddHostedService<AiDecisionWorker>();
-        services.AddHostedService<ScanAnalystPocAutonomyWorker>();
-        services.AddHostedService<LegacyScanPipelineWorker>();
+        if (!skipHostedWorkers)
+        {
+            services.AddHostedService<DiscoveryRunWorker>();
+            services.AddHostedService<RuleDistributionWorker>();
+            services.AddHostedService<ScanPlanExecutionWorker>();
+            services.AddHostedService<ScanAnalystPocAutonomyWorker>();
+            services.AddHostedService<LegacyScanPipelineWorker>();
+        }
+
+        if (!skipHostedWorkers || enableAiDecisionWorker)
+        {
+            services.AddHostedService<AiDecisionWorker>();
+        }
         services.AddApiRateLimiting(configuration);
 
         services.AddApplication();

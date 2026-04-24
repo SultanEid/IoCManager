@@ -220,7 +220,10 @@ export function ScanPlanManagementPage() {
     const [message, setMessage] = useState<string | null>(null)
     const [formError, setFormError] = useState<string | null>(null)
 
-    useEffect(() => setFilters(parsedFilters), [parsedFilters])
+    useEffect(() => {
+        // Keep editable filter controls synchronized with URL navigation.
+        setFilters(parsedFilters)
+    }, [parsedFilters])
 
     const plansQuery = useWorkbenchQuery(
         ["scanning", "plans"],

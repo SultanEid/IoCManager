@@ -660,7 +660,7 @@ export const scanAnalystRuleProposalResponseSchema = z.object({
   ruleRevisionId: z.string().uuid(),
   ruleArtifactId: z.string().uuid(),
   ruleName: z.string(),
-  ruleFamily: z.string(),
+  ruleFamily: ruleFamilySchema,
   revisionNumber: z.number().int(),
   versionLabel: z.string(),
   lifecycleStatus: z.string(),
@@ -687,6 +687,17 @@ export const scanAnalystPlanProposalResponseSchema = z.object({
   ruleRevisionIds: z.array(z.string().uuid()),
   targets: z.array(scanAnalystTargetProposalResponseSchema),
   rules: z.array(scanAnalystRuleProposalResponseSchema),
+})
+
+export const scanAnalystContextSummaryResponseSchema = z.object({
+  focusSubnetId: z.string().uuid().nullable(),
+  focusSubnetName: z.string().nullable(),
+  discoveryRunCount: z.number().int(),
+  discoveredHostCount: z.number().int(),
+  managedServerCount: z.number().int(),
+  candidateRuleCount: z.number().int(),
+  existingPlanCount: z.number().int(),
+  recentJobCount: z.number().int(),
 })
 
 export const scanAnalystRunTargetExecutionResponseSchema = z.object({
@@ -717,17 +728,6 @@ export const scanAnalystRunSummaryResponseSchema = z.object({
   generatedAtUtc: z.string(),
   targetExecutions: z.array(scanAnalystRunTargetExecutionResponseSchema),
   detections: z.array(scanAnalystRunDetectionResponseSchema),
-})
-
-export const scanAnalystContextSummaryResponseSchema = z.object({
-  focusSubnetId: z.string().uuid().nullable(),
-  focusSubnetName: z.string().nullable(),
-  discoveryRunCount: z.number().int(),
-  discoveredHostCount: z.number().int(),
-  managedServerCount: z.number().int(),
-  candidateRuleCount: z.number().int(),
-  existingPlanCount: z.number().int(),
-  recentJobCount: z.number().int(),
 })
 
 export const scanAnalystResponseSchema = z.object({

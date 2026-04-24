@@ -165,7 +165,7 @@ public sealed class CtiRecommendationPersistenceRepositoryTests
             ctiCase.Id,
             decision.Id,
             "Append Rule Proposal",
-            "network",
+            "sigma",
             "rule body append",
             "v1",
             "analyst-append",
@@ -187,7 +187,8 @@ public sealed class CtiRecommendationPersistenceRepositoryTests
         var feedback = CtiFeedback.Create(
             ctiCase.Id,
             decision.Id,
-            Backend.Domain.Common.FeedbackVerdict.ConfirmedThreat,
+            Backend.Domain.Common.FeedbackVerdict.Malicious,
+            Backend.Domain.Common.FeedbackAuxiliaryOutputs.CreateDefaults(Backend.Domain.Common.FeedbackVerdict.Malicious),
             "Post-action evidence confirms threat.",
             "lead-append",
             nowUtc.AddMinutes(-35));

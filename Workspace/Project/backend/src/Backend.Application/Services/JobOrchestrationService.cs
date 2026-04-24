@@ -16,6 +16,8 @@ public sealed class JobOrchestrationService : IJobOrchestrationService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ILogger<JobOrchestrationService> _logger;
+    private bool _feedbackTableUnavailable;
+    private bool _decisionTableUnavailable;
 
     public JobOrchestrationService(
         IDecisionsRepository decisionsRepository,
@@ -40,10 +42,8 @@ public sealed class JobOrchestrationService : IJobOrchestrationService
 
         try
         {
-            var recentFeedbackCount = await _feedbackRepository.CountRecentAsync(_dateTimeProvider.UtcNow.AddDays(-14), cancellationToken);
-            var finalizedDecisions = await _decisionsRepository.CountByStatesAsync(
-                new[] { DecisionState.Approved, DecisionState.Rejected },
-                cancellationToken);
+            var recentFeedbackCount = await CountRecentFeedbackSafeAsync(cancellationToken);
+            var finalizedDecisions = await CountFinalizedDecisionsSafeAsync(cancellationToken);
 
             var details = $"Recent feedback={recentFeedbackCount}; finalized decisions={finalizedDecisions}.";
             run.CompleteSuccess(details, triggeredByUserId, _dateTimeProvider.UtcNow);
@@ -78,5 +78,50 @@ public sealed class JobOrchestrationService : IJobOrchestrationService
             item.Details,
             item.StartedAtUtc,
             item.CompletedAtUtc);
+    }
+
+    private async Task<int> CountRecentFeedbackSafeAsync(CancellationToken cancellationToken)
+    {
+        if (_feedbackTableUnavailable)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return await _feedbackRepository.CountRecentAsync(_dateTimeProvider.UtcNow.AddDays(-14), cancellationToken);
+        }
+        catch (Exception ex) when (IsMissingLegacyTable(ex))
+        {
+            _feedbackTableUnavailable = true;
+            _logger.LogWarning("Feedback table is unavailable in the current schema; defaulting retraining feedback count to 0.");
+            return 0;
+        }
+    }
+
+    private async Task<int> CountFinalizedDecisionsSafeAsync(CancellationToken cancellationToken)
+    {
+        if (_decisionTableUnavailable)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return await _decisionsRepository.CountByStatesAsync(
+                new[] { DecisionState.Approved, DecisionState.Rejected },
+                cancellationToken);
+        }
+        catch (Exception ex) when (IsMissingLegacyTable(ex))
+        {
+            _decisionTableUnavailable = true;
+            _logger.LogWarning("Decision table is unavailable in the current schema; defaulting retraining finalized count to 0.");
+            return 0;
+        }
+    }
+
+    private static bool IsMissingLegacyTable(Exception exception)
+    {
+        return exception.Message.Contains("Invalid object name", StringComparison.OrdinalIgnoreCase);
     }
 }

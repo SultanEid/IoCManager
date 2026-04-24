@@ -3,7 +3,7 @@
 import { motion } from "framer-motion"
 import { ArrowRight, ChevronRight, Clock3, Radar, Sparkles, TrendingUp, Triangle } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
@@ -207,20 +207,8 @@ export default function PyramidOfPainPage() {
     })[0]
   }, [orderedLevels])
 
-  useEffect(() => {
-    if (!orderedLevels.length) {
-      return
-    }
-
-    if (orderedLevels.some((level) => level.level === activeLevel)) {
-      return
-    }
-
-    const firstUseful = dominantLevelSummary ?? orderedLevels.find((level) => level.count > 0) ?? orderedLevels[0]
-    setActiveLevel(firstUseful.level)
-  }, [activeLevel, dominantLevelSummary, orderedLevels])
-
-  const activeLevelSummary = orderedLevels.find((level) => level.level === activeLevel) ?? orderedLevels[0] ?? null
+  const fallbackLevelSummary = dominantLevelSummary ?? orderedLevels.find((level) => level.count > 0) ?? orderedLevels[0] ?? null
+  const activeLevelSummary = orderedLevels.find((level) => level.level === activeLevel) ?? fallbackLevelSummary
   const maxCount = Math.max(...orderedLevels.map((item) => item.count), 1)
   const postureSummary = analysis ? buildPostureSummary(analysis) : ""
   const activeLevelInsight = activeLevelSummary

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 from urllib import error, request as urllib_request
 

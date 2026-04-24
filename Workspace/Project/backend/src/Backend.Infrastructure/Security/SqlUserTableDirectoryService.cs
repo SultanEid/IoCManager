@@ -164,6 +164,76 @@ VALUES (@userName, @role, @email, @passwordHash);";
         return new SqlUserTableDirectoryRecord(insertedUserId, normalizedUserName, normalizedRole, normalizedEmail);
     }
 
+    public async Task<SqlUserTableDirectoryRecord> EnsureBootstrapUserAsync(
+        BootstrapAdminOptions bootstrapOptions,
+        CancellationToken cancellationToken)
+    {
+        if (!bootstrapOptions.Enabled)
+        {
+            throw new InvalidOperationException("Bootstrap admin is disabled.");
+        }
+
+        var normalizedUserName = bootstrapOptions.UserName.Trim();
+        var normalizedEmail = bootstrapOptions.Email.Trim();
+        var normalizedRole = string.IsNullOrWhiteSpace(bootstrapOptions.Role) ? "Admin" : bootstrapOptions.Role.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalizedUserName)
+            || string.IsNullOrWhiteSpace(normalizedEmail)
+            || string.IsNullOrWhiteSpace(bootstrapOptions.Password)
+            || string.IsNullOrWhiteSpace(normalizedRole))
+        {
+            throw new InvalidOperationException("Bootstrap admin requires UserName, Email, Password, and Role when SQL-table auth is enabled.");
+        }
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var findCommand = connection.CreateCommand();
+        findCommand.CommandText = $@"
+SELECT TOP (1) UserID, UserName, Role, Email
+FROM {_options.TableName}
+WHERE UserName = @userName OR Email = @email;";
+        findCommand.Parameters.AddWithValue("@userName", normalizedUserName);
+        findCommand.Parameters.AddWithValue("@email", normalizedEmail);
+
+        await using var reader = await findCommand.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            var userId = reader.GetInt32(0);
+            var userName = reader.IsDBNull(1) ? normalizedUserName : reader.GetString(1);
+            var email = reader.IsDBNull(3) ? null : reader.GetString(3);
+            await reader.DisposeAsync();
+
+            await using var updateCommand = connection.CreateCommand();
+            updateCommand.CommandText = $@"
+UPDATE {_options.TableName}
+SET Role = @role,
+    Email = COALESCE(NULLIF(@email, ''), Email)
+WHERE UserID = @userId;";
+            updateCommand.Parameters.AddWithValue("@role", normalizedRole);
+            updateCommand.Parameters.AddWithValue("@email", normalizedEmail);
+            updateCommand.Parameters.AddWithValue("@userId", userId);
+            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            return new SqlUserTableDirectoryRecord(userId, userName, normalizedRole, email ?? normalizedEmail);
+        }
+
+        await reader.DisposeAsync();
+
+        await using var insertCommand = connection.CreateCommand();
+        insertCommand.CommandText = $@"
+INSERT INTO {_options.TableName} (UserName, Role, Email, PasswordHash)
+OUTPUT INSERTED.UserID
+VALUES (@userName, @role, @email, @passwordHash);";
+        insertCommand.Parameters.AddWithValue("@userName", normalizedUserName);
+        insertCommand.Parameters.AddWithValue("@role", normalizedRole);
+        insertCommand.Parameters.AddWithValue("@email", normalizedEmail);
+        insertCommand.Parameters.AddWithValue("@passwordHash", ComputeSha256Hex(bootstrapOptions.Password.Trim()));
+
+        var insertedUserId = Convert.ToInt32(await insertCommand.ExecuteScalarAsync(cancellationToken));
+        return new SqlUserTableDirectoryRecord(insertedUserId, normalizedUserName, normalizedRole, normalizedEmail);
+    }
+
     public bool MatchesPassword(string suppliedPassword, string storedPasswordHash)
     {
         if (string.IsNullOrWhiteSpace(storedPasswordHash))

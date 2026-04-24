@@ -44,6 +44,7 @@ public static class InitializationExtensions
         var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
         var dbOptions = scope.ServiceProvider.GetRequiredService<IOptions<DatabaseOptions>>().Value;
         var sqlUserTableAuthOptions = scope.ServiceProvider.GetRequiredService<IOptions<SqlUserTableAuthOptions>>().Value;
+        var bootstrapOptions = scope.ServiceProvider.GetRequiredService<IOptions<BootstrapAdminOptions>>().Value;
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("InfrastructureInitialization");
         var hostEnvironment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var isRelationalProvider = dbContext.Database.IsRelational();
@@ -52,7 +53,17 @@ public static class InitializationExtensions
         {
             if (sqlUserTableAuthOptions.Enabled)
             {
-                logger.LogInformation("Skipping EF schema initialization and Identity bootstrap because Auth:SqlUserTable:Enabled=true.");
+                if (bootstrapOptions.Enabled)
+                {
+                    var directoryService = scope.ServiceProvider.GetRequiredService<SqlUserTableDirectoryService>();
+                    var bootstrapUser = await directoryService.EnsureBootstrapUserAsync(bootstrapOptions, cancellationToken);
+                    logger.LogInformation(
+                        "SQL user table bootstrap completed for user {UserName} in role {Role}.",
+                        bootstrapUser.UserName,
+                        bootstrapUser.Role);
+                }
+
+                logger.LogInformation("Skipping EF schema initialization because Auth:SqlUserTable:Enabled=true.");
                 return;
             }
 

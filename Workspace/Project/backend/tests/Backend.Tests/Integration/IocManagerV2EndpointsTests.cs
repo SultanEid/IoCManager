@@ -231,26 +231,27 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
         createPermissionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createdPermission = await createPermissionResponse.Content.ReadFromJsonAsync<PermissionResponse>(JsonOptions);
         createdPermission.Should().NotBeNull();
+        var createdRoleId = Guid.Parse(createdRole!.Id);
 
         var assignResponse = await adminClient.PostAsJsonAsync(
             "/api/v2/identity/role-permissions",
-            new AssignRolePermissionRequest(createdRole!.Id, createdPermission!.Id, "admin-1"));
+            new AssignRolePermissionRequest(createdRoleId, createdPermission!.Id, "admin-1"));
         assignResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var assignment = await assignResponse.Content.ReadFromJsonAsync<RolePermissionResponse>(JsonOptions);
         assignment.Should().NotBeNull();
-        assignment!.RoleId.Should().Be(createdRole.Id);
+        assignment!.RoleId.Should().Be(createdRoleId);
         assignment.PermissionId.Should().Be(createdPermission.Id);
 
         var duplicateResponse = await adminClient.PostAsJsonAsync(
             "/api/v2/identity/role-permissions",
-            new AssignRolePermissionRequest(createdRole.Id, createdPermission.Id, "admin-1"));
+            new AssignRolePermissionRequest(createdRoleId, createdPermission.Id, "admin-1"));
         duplicateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         var listedAssignments = await adminClient.GetFromJsonAsync<IReadOnlyList<RolePermissionResponse>>(
             $"/api/v2/identity/role-permissions?roleId={createdRole.Id}",
             JsonOptions);
         listedAssignments.Should().NotBeNull();
-        listedAssignments!.Should().ContainSingle(x => x.RoleId == createdRole.Id && x.PermissionId == createdPermission.Id);
+        listedAssignments!.Should().ContainSingle(x => x.RoleId == createdRoleId && x.PermissionId == createdPermission.Id);
     }
 
     [Fact]

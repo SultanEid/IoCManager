@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Backend.Api.Infrastructure;
+using Backend.Api.Infrastructure.Execution;
 using Backend.Domain.IocManager;
 using FluentAssertions;
 using Microsoft.AspNetCore.DataProtection;
@@ -277,6 +278,7 @@ public sealed class ScanExecutionDispatcherTests
         return new ScanExecutionDispatcher(
             protector,
             factory,
+            new PassthroughLegacyScriptScanExecutor(),
             monitor,
             NullLogger<ScanExecutionDispatcher>.Instance);
     }
@@ -402,6 +404,28 @@ public sealed class ScanExecutionDispatcherTests
         {
             _ = name;
             return _client;
+        }
+    }
+
+    private sealed class PassthroughLegacyScriptScanExecutor : ILegacyScriptScanExecutor
+    {
+        public Task<LegacyScriptDispatchAttempt> TryExecuteAsync(
+            ScanJob scanJob,
+            ScanJobTargetExecution targetExecution,
+            TargetServer targetServer,
+            ScannerCapability capability,
+            TargetServerConnectionSecret? connectionSecret,
+            IReadOnlyList<RuleRevision> effectiveRules,
+            CancellationToken cancellationToken)
+        {
+            _ = scanJob;
+            _ = targetExecution;
+            _ = targetServer;
+            _ = capability;
+            _ = connectionSecret;
+            _ = effectiveRules;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(LegacyScriptDispatchAttempt.NotHandled);
         }
     }
 

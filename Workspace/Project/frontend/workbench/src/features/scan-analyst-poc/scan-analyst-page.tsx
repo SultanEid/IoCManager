@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useMutation } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import { Bot, PlayCircle, Radar, Sparkles } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -358,12 +358,6 @@ export function ScanAnalystPage() {
   )
 
   useEffect(() => {
-    if (chatState?.latestAnalysis?.proposedPlan) {
-      setDraftPlan(clonePlan(chatState.latestAnalysis.proposedPlan))
-    }
-  }, [chatState])
-
-  useEffect(() => {
     if (!chatState) {
       return
     }
@@ -388,11 +382,11 @@ export function ScanAnalystPage() {
     }
   }
 
-  function publishWidgetState(
+  const publishWidgetState = useCallback((
     phase: "analyzing" | "drafting" | "creating" | "running" | "summarizing" | "completed" | "blocked",
     title: string,
     scannerCapability: string | null,
-  ) {
+  ) => {
     writeZiraWidgetState({
       phase,
       title,
@@ -401,7 +395,7 @@ export function ScanAnalystPage() {
       source: phase === "completed" ? "user_action" : phase === "blocked" ? "user_action" : "user_action",
       updatedAtUtc: new Date().toISOString(),
     })
-  }
+  }, [statusQuery.data?.operatingMode])
 
   const chatMutation = useMutation({
     mutationFn: async (action: SendScanAnalystChatTurnInput["action"]) => {
@@ -445,6 +439,7 @@ export function ScanAnalystPage() {
     },
     onSuccess: (response) => {
       setChatState(response)
+      setDraftPlan(clonePlan(response.latestAnalysis.proposedPlan))
       setSubmitError(null)
       setActiveAction(null)
       const analysis = response.latestAnalysis
@@ -492,7 +487,7 @@ export function ScanAnalystPage() {
       `Completed a ${currentAnalysis.proposedPlan.scannerCapability} run summary with ${activeRunSummary.detectionCount} mock detections`,
       currentAnalysis.proposedPlan.scannerCapability,
     )
-  }, [activeRunSummary, currentAnalysis])
+  }, [activeRunSummary, currentAnalysis, publishWidgetState])
 
   if (subnetsQuery.isLoading || statusQuery.isLoading) {
     return <LoadingState label="Loading Zira workspace" />

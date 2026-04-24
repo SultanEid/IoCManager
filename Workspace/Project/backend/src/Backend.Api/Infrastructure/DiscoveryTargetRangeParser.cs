@@ -51,6 +51,11 @@ public sealed class DiscoveryTargetRangeParser
             throw new ArgumentException("Subnet CIDR does not contain any discoverable host addresses.", nameof(subnetCidr));
         }
 
+        if (!IsPrivateIpv4Range(networkValue, broadcastValue))
+        {
+            throw new ArgumentException("Discovery CIDR must be fully contained in an RFC1918 private IPv4 range.", nameof(subnetCidr));
+        }
+
         uint rangeStartValue;
         uint rangeEndValue;
         string? normalizedRangeStart = null;
@@ -142,6 +147,21 @@ public sealed class DiscoveryTargetRangeParser
         }
 
         return parsed;
+    }
+
+    private static bool IsPrivateIpv4Range(uint networkValue, uint broadcastValue)
+    {
+        return IsPrivateIpv4(networkValue) && IsPrivateIpv4(broadcastValue);
+    }
+
+    private static bool IsPrivateIpv4(uint value)
+    {
+        var firstOctet = (value >> 24) & 0xFF;
+        var secondOctet = (value >> 16) & 0xFF;
+
+        return firstOctet == 10
+               || (firstOctet == 172 && secondOctet is >= 16 and <= 31)
+               || (firstOctet == 192 && secondOctet == 168);
     }
 
     private static uint ToUInt32(IPAddress address)

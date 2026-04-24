@@ -115,7 +115,7 @@ public sealed class CtiDecisionReplayQueryServiceTests
             ctiCase.Id,
             decision.Id,
             "Containment Rule",
-            "network",
+            "sigma",
             "rule body",
             "v1",
             "analyst-1",
@@ -137,7 +137,8 @@ public sealed class CtiDecisionReplayQueryServiceTests
         var feedback = CtiFeedback.Create(
             ctiCase.Id,
             decision.Id,
-            Backend.Domain.Common.FeedbackVerdict.ConfirmedThreat,
+            Backend.Domain.Common.FeedbackVerdict.Malicious,
+            Backend.Domain.Common.FeedbackAuxiliaryOutputs.CreateDefaults(Backend.Domain.Common.FeedbackVerdict.Malicious),
             "Containment worked as expected.",
             "lead-1",
             nowUtc.AddMinutes(-22));

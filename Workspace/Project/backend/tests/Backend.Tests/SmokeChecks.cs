@@ -24,6 +24,8 @@ internal static class SmokeChecks
             new SmokeCase("scan dispatch prefers legacy scripts before connector fallback", ScanDispatch_PrefersLegacyScriptsAsync),
             new SmokeCase("legacy Azure compatibility reader is available for incremental fallback", LegacyAzureCompatibilityReader_IsAvailableAsync),
             new SmokeCase("controllers fall back to legacy Azure reads for mapped surfaces", Controllers_UseLegacyAzureFallbackAsync),
+            new SmokeCase("job runs repository degrades cleanly when legacy db lacks job_run_records", JobRunsRepository_UsesMissingTableGuardAsync),
+            new SmokeCase("retraining repositories guard missing feedback and decision tables", RetrainingRepositories_UseMissingTableGuardsAsync),
             new SmokeCase("ai decision contracts carry safety diagnostics end to end", AiDecisionContracts_CarrySafetyDiagnosticsAsync),
             new SmokeCase("obsolete ai decision parser has been removed", ObsoleteAiDecisionParser_IsRemovedAsync),
             new SmokeCase("authorization policy catalog enforces admin it analyst dev scopes", AuthorizationPolicies_EnforceRoleScopesAsync),
@@ -215,6 +217,24 @@ internal static class SmokeChecks
         return Task.CompletedTask;
     }
 
+    private static Task JobRunsRepository_UsesMissingTableGuardAsync()
+    {
+        var source = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Infrastructure", "Persistence", "Repositories", "JobRunsRepository.cs"));
+        Expect.Contains("OBJECT_ID(N'[dbo].[job_run_records]'", source, "Job runs repository should guard for missing job_run_records table.");
+        Expect.Contains("return Array.Empty<JobRunRecord>();", source, "Job runs repository should degrade to an empty list when the table is unavailable.");
+        return Task.CompletedTask;
+    }
+
+    private static Task RetrainingRepositories_UseMissingTableGuardsAsync()
+    {
+        var feedbackSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Infrastructure", "Persistence", "Repositories", "FeedbackRepository.cs"));
+        Expect.Contains("OBJECT_ID(N'[dbo].[feedback_records]'", feedbackSource, "Feedback repository should guard for missing feedback_records table.");
+
+        var decisionsSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Infrastructure", "Persistence", "Repositories", "DecisionsRepository.cs"));
+        Expect.Contains("OBJECT_ID(N'[dbo].[decision_records]'", decisionsSource, "Decisions repository should guard for missing decision_records table.");
+        return Task.CompletedTask;
+    }
+
     private static Task AiDecisionContracts_CarrySafetyDiagnosticsAsync()
     {
         var contractSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Contracts", "V2", "AiDecisionContracts.cs"));
@@ -245,6 +265,7 @@ internal static class SmokeChecks
     {
         var source = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Infrastructure", "AuthorizationPolicies.cs"));
         Expect.Contains("policy.RequireRole(\"Analyst\", \"Lead\", \"DEV\")", source, "Analyst access should include Analyst, Lead, and DEV.");
+        Expect.Contains("policy.RequireRole(\"Lead\", \"DEV\")", source, "Lead access should exclude Analyst and include only Lead plus DEV.");
         Expect.Contains("policy.RequireRole(\"Admin\", \"DEV\")", source, "Admin access should include Admin and DEV.");
         Expect.Contains("policy.RequireRole(\"IT\", \"Analyst\", \"Lead\", \"DEV\")", source, "Alert access should include IT + security roles + DEV.");
         Expect.Contains("InfrastructureReadAccess", source, "Infrastructure read policy should be present.");
