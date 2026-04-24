@@ -3,18 +3,18 @@
 import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 import { motion } from "framer-motion"
-import { Activity, AlertOctagon, FileText, Radar, ServerCog, Sparkles } from "lucide-react"
+import { Activity, AlertOctagon, FileText, Radar, ServerCog } from "lucide-react"
 import { PowerBiVisualAnalyticsPanel } from "@/components/workbench/dashboard/power-bi-visual-analytics-panel"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import type { V2AlertResponse } from "@/shared/api/schemas"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { getLegacyOverviewSummary } from "@/shared/gateway/legacy-scan-pipeline"
-import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
+import { gateway, isModeConfigured } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { DataGrid } from "@/shared/ui/data-grid"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { panelMotion, staggerMotion } from "@/shared/ui/motion"
-import { EmptyState, LoadingState, SimulatedBadge } from "@/shared/ui/state-panels"
+import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
 
 const columns: ColumnDef<V2AlertResponse>[] = [
   {
@@ -102,35 +102,23 @@ export default function OverviewPage() {
   return (
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
       <motion.header className="wb-page-header" variants={panelMotion}>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl">
-            <p className="wb-kicker">Overview</p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[var(--shadow-soft)]">
-                <Radar className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight md:text-2xl">Operational posture with live evidence and report output</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Current counts come from the working legacy evidence model, while the analytics surface below stays inside the main shell for a cleaner analyst workflow.
-                </p>
-              </div>
+        <div className="max-w-3xl">
+          <p className="wb-kicker">Overview</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[var(--shadow-soft)]">
+              <Radar className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight md:text-2xl">Operational posture</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Monitor alert pressure, detection coverage, reporting activity, and recent investigation work from one workspace.
+              </p>
             </div>
           </div>
-          <div className="wb-insight max-w-sm">
-            <div className="mb-2 flex items-center gap-2 text-foreground">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <p className="text-sm font-semibold tracking-tight">Posture Summary</p>
-            </div>
-            <p>
-              The dashboard is now tied to persisted targets, normalized IOC detections, saved reports, and the live alert registry instead of the stale V2 placeholders.
-            </p>
-          </div>
-          {isMockMode ? <SimulatedBadge /> : null}
         </div>
       </motion.header>
 
-      <motion.article className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" variants={panelMotion}>
+      <motion.article className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-4" variants={panelMotion}>
         <MetricCard
           icon={AlertOctagon}
           label="Indexed Alerts"

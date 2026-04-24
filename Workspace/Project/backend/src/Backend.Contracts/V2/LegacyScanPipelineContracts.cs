@@ -134,6 +134,7 @@ public sealed record LegacyPipelineCustomScanRequest(
     IReadOnlyList<string> ScannerFamilies,
     string RuleInputMode,
     string? RulePath,
+    Dictionary<string, string?>? RulePathsByFamily,
     IReadOnlyList<string> NetworkIds,
     IReadOnlyList<string> TargetIds,
     Dictionary<string, string?>? Options,

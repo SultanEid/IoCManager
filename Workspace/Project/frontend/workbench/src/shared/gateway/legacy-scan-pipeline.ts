@@ -437,6 +437,7 @@ export async function createLegacyCustomScan(input: {
   scannerFamilies: string[]
   ruleInputMode: "hostPath" | "upload"
   rulePath?: string
+  rulePathsByFamily?: Record<string, string | null>
   networkIds: string[]
   targetIds: string[]
   options: Record<string, string | null>
@@ -450,6 +451,9 @@ export async function createLegacyCustomScan(input: {
   formData.set("ruleInputMode", input.ruleInputMode)
   if (input.rulePath) {
     formData.set("rulePath", input.rulePath)
+  }
+  if (input.rulePathsByFamily && Object.keys(input.rulePathsByFamily).length > 0) {
+    formData.set("rulePathsByFamilyJson", JSON.stringify(input.rulePathsByFamily))
   }
   formData.set("networkIdsJson", JSON.stringify(input.networkIds))
   formData.set("targetIdsJson", JSON.stringify(input.targetIds))

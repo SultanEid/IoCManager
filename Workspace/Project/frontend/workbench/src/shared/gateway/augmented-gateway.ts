@@ -172,6 +172,10 @@ export class AugmentedGateway implements Gateway {
     return this.source.generateReport(input)
   }
 
+  deleteReport(reportId: string) {
+    return this.source.deleteReport(reportId)
+  }
+
   getPowerBiVisualizationCatalog(signal?: AbortSignal) {
     return this.source.getPowerBiVisualizationCatalog(signal)
   }

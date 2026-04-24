@@ -7,11 +7,11 @@ import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { canAccessAdminActions, canAccessWorkflowSettingsActions, roleLabel, roleLabels } from "@/shared/auth/session"
-import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
+import { gateway, isModeConfigured } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { panelMotion, staggerMotion } from "@/shared/ui/motion"
-import { CompactEmptyState, LoadingState, SimulatedBadge } from "@/shared/ui/state-panels"
+import { CompactEmptyState, LoadingState } from "@/shared/ui/state-panels"
 
 const AUDIT_PREVIEW_SIZE = 5
 const RETENTION_DATA_TYPES = ["ScanResult", "Alert", "Report", "AuditLog", "IocFile"] as const
@@ -384,15 +384,12 @@ export default function SettingsPage() {
   return (
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
       <motion.header className="wb-page-header" variants={panelMotion}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="wb-kicker">Settings</p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight">System configuration and environment status</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Shared operational visibility for every signed-in user, with administrative configuration sections revealed only when your role allows them.
-            </p>
-          </div>
-          {isMockMode ? <SimulatedBadge /> : null}
+        <div>
+          <p className="wb-kicker">Settings</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight">System configuration and operating status</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Monitor service readiness, retention, access control, and scanner administration from one workspace.
+          </p>
         </div>
       </motion.header>
 
@@ -405,11 +402,11 @@ export default function SettingsPage() {
           <StatusPill label={readiness.status === "ready" ? "Ready" : "Not ready"} />
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-4">
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Service</p>
             <p className="mt-1 text-sm font-semibold">{healthQuery.data.service}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{healthQuery.data.environment}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Reported {formatTimestamp(healthQuery.data.utcNow)}</p>
           </div>
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Session</p>

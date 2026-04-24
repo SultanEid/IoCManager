@@ -162,7 +162,7 @@ describe("IngestionFeedsPage health/readiness contract behavior", () => {
 
     render(<IngestionFeedsPage />)
 
-    expect(screen.getByText("Search ingested indicators with contract-backed filters")).toBeInTheDocument()
+    expect(screen.getByText("Search ingested indicators")).toBeInTheDocument()
     expect(screen.getByTestId("ingestion-optional-degraded")).toBeInTheDocument()
     expect(screen.getByText(/Optional dependency degraded/i)).toBeInTheDocument()
     expect(screen.getByText(/ai_sidecar/i)).toBeInTheDocument()

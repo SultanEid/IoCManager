@@ -930,11 +930,28 @@ export const generatedReportMetricResponseSchema = z.object({
   detail: z.string(),
 })
 
+export const generatedReportTableColumnResponseSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+})
+
+export const generatedReportTableRowResponseSchema = z.object({
+  values: z.record(z.string(), z.string()),
+})
+
+export const generatedReportTableResponseSchema = z.object({
+  title: z.string(),
+  columns: z.array(generatedReportTableColumnResponseSchema),
+  rows: z.array(generatedReportTableRowResponseSchema),
+})
+
 export const generatedReportSectionResponseSchema = z.object({
   title: z.string(),
   summary: z.string(),
   metrics: z.array(generatedReportMetricResponseSchema),
   highlights: z.array(z.string()),
+  narrative: z.string().nullable().optional().default(null),
+  tables: z.array(generatedReportTableResponseSchema).optional().default([]),
 })
 
 export const generatedReportResponseSchema = z.object({
@@ -1510,6 +1527,9 @@ export type IocResponse = z.infer<typeof iocResponseSchema>
 export type IocListResponse = z.infer<typeof iocListResponseSchema>
 export type ReportResponse = z.infer<typeof reportResponseSchema>
 export type GeneratedReportMetricResponse = z.infer<typeof generatedReportMetricResponseSchema>
+export type GeneratedReportTableColumnResponse = z.infer<typeof generatedReportTableColumnResponseSchema>
+export type GeneratedReportTableRowResponse = z.infer<typeof generatedReportTableRowResponseSchema>
+export type GeneratedReportTableResponse = z.infer<typeof generatedReportTableResponseSchema>
 export type GeneratedReportSectionResponse = z.infer<typeof generatedReportSectionResponseSchema>
 export type GeneratedReportResponse = z.infer<typeof generatedReportResponseSchema>
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>

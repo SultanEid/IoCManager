@@ -27,21 +27,25 @@ const SCANNER_METADATA = {
     title: "YARA",
     description: "File and malware signature sweep",
     executionHint: "SSH / host",
+    rulePlaceholder: "C:\\IOC\\ZombieVM\\zombie-lab-yara-probe.yar",
   },
   sigma: {
     title: "SIGMA",
     description: "Windows EVTX and constrained Linux log detection",
     executionHint: "SSH / host",
+    rulePlaceholder: "C:\\Tools\\Tools\\Sigma\\rules\\windows\\process_creation",
   },
   snort: {
     title: "SNORT",
     description: "Sensor hunt, live watch, and offline PCAP analysis",
     executionHint: "Network",
+    rulePlaceholder: "C:\\Tools\\Snort\\rules\\local.rules",
   },
   suricata: {
     title: "SURICATA",
     description: "Sensor hunt, live watch, and offline PCAP analysis",
     executionHint: "Network",
+    rulePlaceholder: "C:\\Tools\\Suricata\\rules\\local.rules",
   },
 } as const
 
@@ -50,6 +54,10 @@ type ResolvedTargetOs = "windows" | "linux"
 function normalizeTargetOs(value: string | null | undefined): ResolvedTargetOs | null {
   const normalized = value?.trim().toLowerCase()
   return normalized === "windows" || normalized === "linux" ? normalized : null
+}
+
+function normalizeWindowsPathInput(value: string) {
+  return /^[a-zA-Z]:(?:\\|$)/.test(value) ? value.replace(/\\{2,}/g, "\\") : value
 }
 
 function toggleScannerFamilySelection(
@@ -72,8 +80,8 @@ function toggleScannerFamilySelection(
 }
 
 export default function ScansPage() {
-  const { session } = useAuth()
-  const actorUserId = session?.userId ?? session?.username ?? "team-dev"
+  const { session, signOut } = useAuth()
+  const actorUserId = session?.userId ?? session?.username ?? "system"
   const [refreshKey, setRefreshKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [historyExpanded, setHistoryExpanded] = useState(false)
@@ -88,7 +96,7 @@ export default function ScansPage() {
   const [form, setForm] = useState({
     selectedFamilies: ["yara"] as string[],
     ruleInputMode: "hostPath" as "hostPath" | "upload",
-    rulePath: "",
+    rulePathsByFamily: {} as Record<string, string>,
     minutesBack: "60",
     snortMode: "hunt" as "hunt" | "quarantine" | "pcap",
     suricataMode: "hunt" as "hunt" | "quarantine" | "pcap",
@@ -190,12 +198,16 @@ export default function ScansPage() {
   const hasNetworkPcapUpload = !!form.pcapFile
   const hasNetworkPcapHostPath = form.pcapPath.trim().length > 0
   const missingScope = form.selectedNetworkIds.length === 0 && form.selectedTargetIds.length === 0
-  const missingRulePath = form.ruleInputMode === "hostPath" && !form.rulePath.trim()
+  const windowsScanPath = normalizeWindowsPathInput(form.windowsScanPath).trim()
+  const linuxScanPath = form.linuxScanPath.trim()
+  const missingRuleFamilies = form.ruleInputMode === "hostPath"
+    ? selectedFamilies.filter((family) => !form.rulePathsByFamily[family]?.trim())
+    : []
   const missingUploadFiles = form.ruleInputMode === "upload" && form.files.length === 0
   const submitValidationMessages = [
     ...(selectedFamilies.length === 0 ? ["Select at least one scanner."] : []),
     ...(missingScope ? ["Choose a subnet or at least one explicit target."] : []),
-    ...(missingRulePath ? ["Enter a rule path on IOC_MGR or switch to upload mode."] : []),
+    ...(missingRuleFamilies.length > 0 ? [`Enter a rule path for ${missingRuleFamilies.map((family) => SCANNER_METADATA[family].title).join(", ")} or switch to upload mode.`] : []),
     ...(missingUploadFiles ? ["Upload at least one rule file or zip bundle."] : []),
     ...(networkFamilyConflict ? ["Choose either Snort or Suricata for a network scan run, not both."] : []),
     ...(snortHuntSelected && !minutesBackIsValid ? ["Snort Hunt mode requires Minutes back to be a positive integer."] : []),
@@ -209,8 +221,8 @@ export default function ScansPage() {
     ...(suricataPcapSelected && !hasNetworkPcapUpload && !hasNetworkPcapHostPath ? ["Suricata PCAP mode requires one PCAP source via upload or IOC_MGR host path."] : []),
     ...(yaraSelected && yaraUnknownTargets.length > 0 ? ["Choose Windows or Linux for each selected YARA target whose OS is still unknown."] : []),
     ...(sigmaSelected && sigmaUnknownTargets.length > 0 ? ["Sigma requires every selected target to have a discovered OS before the run can be queued."] : []),
-    ...(requiresWindowsYaraPath && !form.windowsScanPath.trim() ? ["Windows YARA scope requires a Windows scan path like C:\\IOC\\."] : []),
-    ...(requiresLinuxYaraPath && !form.linuxScanPath.trim() ? ["Linux YARA scope requires a POSIX scan path like /opt/ioc/."] : []),
+    ...(requiresWindowsYaraPath && !windowsScanPath ? ["Windows YARA scope requires a Windows scan path like C:\\IOC\\."] : []),
+    ...(requiresLinuxYaraPath && !linuxScanPath ? ["Linux YARA scope requires a POSIX scan path like /opt/ioc/."] : []),
   ]
   const canSubmit = submitValidationMessages.length === 0
   const filteredJobs = jobs.filter((job) => {
@@ -273,15 +285,15 @@ export default function ScansPage() {
 
       if (yaraSelected) {
         if (requiresWindowsYaraPath) {
-          options.windowsScanPath = form.windowsScanPath.trim()
+          options.windowsScanPath = windowsScanPath
         }
 
         if (requiresLinuxYaraPath) {
-          options.linuxScanPath = form.linuxScanPath.trim()
+          options.linuxScanPath = linuxScanPath
         }
 
         if (yaraKnownOs.length === 1) {
-          options.scanPath = yaraKnownOs[0] === "windows" ? form.windowsScanPath.trim() : form.linuxScanPath.trim()
+          options.scanPath = yaraKnownOs[0] === "windows" ? windowsScanPath : linuxScanPath
         }
       }
 
@@ -295,7 +307,9 @@ export default function ScansPage() {
         actorUserId,
         scannerFamilies: form.selectedFamilies,
         ruleInputMode: form.ruleInputMode,
-        rulePath: form.ruleInputMode === "hostPath" ? form.rulePath : undefined,
+        rulePathsByFamily: form.ruleInputMode === "hostPath"
+          ? Object.fromEntries(selectedFamilies.map((family) => [family, form.rulePathsByFamily[family]?.trim() || null]))
+          : undefined,
         networkIds: form.selectedNetworkIds,
         targetIds: form.selectedTargetIds,
         options,
@@ -307,7 +321,12 @@ export default function ScansPage() {
       setRefreshKey((value) => value + 1)
     } catch (error) {
       const failure = classifyUiError(error)
-      setErrorText(failure.message)
+      if (failure.status === 401) {
+        signOut()
+        setErrorText("Session expired. Sign in again, then rerun the scan.")
+      } else {
+        setErrorText(failure.message)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -347,7 +366,7 @@ export default function ScansPage() {
         <p className="wb-kicker">Scans</p>
         <h2 className="mt-1 text-lg font-semibold tracking-tight">Run one-time custom scans</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Run YARA, Sigma, Snort, and Suricata scans against discovered targets with shared rule sources and scanner-specific runtime options.
+          Run YARA, Sigma, Snort, and Suricata scans against discovered targets with scanner-specific rule sources and runtime options.
         </p>
       </header>
 
@@ -412,7 +431,7 @@ export default function ScansPage() {
             <p className="wb-kicker">Rule Source</p>
             <h3 className="mt-1 text-base font-semibold tracking-tight">Choose how this run gets its rules</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Rule source is shared for the whole submission. Each selected scanner resolves or stages the compatible files behind the scenes.
+              Assign a compatible rule source for each selected scanner.
             </p>
           </div>
           <div className="grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
@@ -426,17 +445,41 @@ export default function ScansPage() {
             </select>
             <div className="space-y-2">
               {form.ruleInputMode === "hostPath" ? (
-                <>
-                  <Input placeholder="Rule path on IOC_MGR" value={form.rulePath} onChange={(event) => setForm((current) => ({ ...current, rulePath: event.target.value }))} />
-                  <p className="text-xs text-muted-foreground">
-                    Use a path that exists on the backend host. Selected families will reuse this shared source where compatible.
-                  </p>
-                </>
+                selectedFamilies.length > 0 ? (
+                  <div className="grid gap-2 lg:grid-cols-2">
+                    {selectedFamilies.map((family) => {
+                      const meta = SCANNER_METADATA[family]
+                      return (
+                        <label key={family} className="space-y-1 rounded-lg border border-border/70 bg-surface-1/70 p-3">
+                          <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            <ScannerFamilyMark family={family} size="sm" />
+                            {meta.title} rules
+                          </span>
+                          <Input
+                            placeholder={meta.rulePlaceholder}
+                            value={form.rulePathsByFamily[family] ?? ""}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                rulePathsByFamily: {
+                                  ...current.rulePathsByFamily,
+                                  [family]: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-border/70 bg-surface-1/70 p-3 text-sm text-muted-foreground">Select a scanner to assign its rule path.</p>
+                )
               ) : (
                 <>
                   <Input type="file" multiple onChange={(event) => setForm((current) => ({ ...current, files: Array.from(event.target.files ?? []) }))} />
                   <p className="text-xs text-muted-foreground">
-                    Upload one rule file or a zip bundle. The backend will stage only the compatible files for the selected scanners.
+                    Upload rule files or a zip bundle. The backend stages compatible files for each selected scanner.
                   </p>
                 </>
               )}
@@ -709,9 +752,10 @@ export default function ScansPage() {
                               <div className="space-y-2">
                                 <label className="text-sm font-medium">Windows scan path</label>
                                 <Input
-                                  placeholder="C:\\IOC\\"
+                                  aria-label="Windows scan path"
+                                  placeholder={"C:\\IOC\\"}
                                   value={form.windowsScanPath}
-                                  onChange={(event) => setForm((current) => ({ ...current, windowsScanPath: event.target.value }))}
+                                  onChange={(event) => setForm((current) => ({ ...current, windowsScanPath: normalizeWindowsPathInput(event.target.value) }))}
                                 />
                                 <p className="text-xs text-muted-foreground">
                                   Used for every selected Windows host in this YARA run.
@@ -722,6 +766,7 @@ export default function ScansPage() {
                               <div className="space-y-2">
                                 <label className="text-sm font-medium">Linux scan path</label>
                                 <Input
+                                  aria-label="Linux scan path"
                                   placeholder="/opt/ioc/"
                                   value={form.linuxScanPath}
                                   onChange={(event) => setForm((current) => ({ ...current, linuxScanPath: event.target.value }))}
@@ -774,7 +819,7 @@ export default function ScansPage() {
                     ) : null}
                     {!usesMinutesBack && !usesScanPath ? (
                       <div className="rounded-lg border border-border/60 bg-background/30 p-3 text-xs text-muted-foreground">
-                        This scanner uses the shared rule source and target scope only. No extra runtime parameters are required in v1.
+                        This scanner uses its assigned rule source and target scope.
                       </div>
                     ) : null}
                   </div>
@@ -923,7 +968,7 @@ export default function ScansPage() {
               <div className="space-y-1 text-muted-foreground">
                 <p>{selectedFamilies.length > 0 ? "Scanners selected" : "No scanners selected yet"}</p>
                 <p>{missingScope ? "No scan scope selected yet" : "Scan scope selected"}</p>
-                <p>{missingRulePath ? "Rule path still required" : "Rule source configured"}</p>
+                <p>{missingRuleFamilies.length > 0 ? "Rule paths still required" : "Rule sources configured"}</p>
                 {snortHuntSelected ? <p>{minutesBackIsValid ? "Snort Hunt window configured" : "Snort Hunt window still invalid"}</p> : null}
                 {snortQuarantineSelected ? <p>{quarantineDurationIsValid ? "Snort Quarantine duration configured" : "Snort Quarantine duration still invalid"}</p> : null}
                 {snortPcapSelected ? <p>{hasNetworkPcapUpload || hasNetworkPcapHostPath ? "Snort PCAP source configured" : "Snort PCAP source still required"}</p> : null}

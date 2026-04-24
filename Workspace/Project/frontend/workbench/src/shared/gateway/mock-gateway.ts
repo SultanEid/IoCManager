@@ -672,6 +672,8 @@ export class MockGateway implements Gateway {
             { label: "Scanner family", value: input.scannerFamily ?? "All scanners", detail: "Preview scope only." },
           ],
           highlights: ["Switch to ASP.NET mode for persisted summaries backed by stored data."],
+          narrative: "Demo mode shows the report shell only. ASP.NET mode returns the full intelligence report with tables and recommendations.",
+          tables: [],
         },
       ],
       alertIds: [],
@@ -680,10 +682,24 @@ export class MockGateway implements Gateway {
 
     if (input.persist) {
       const persistedReport = {
-        id: nextUserId(),
+        id: crypto.randomUUID(),
         title,
         reportType: input.reportType,
-        summaryJson: JSON.stringify(preview.sections),
+        summaryJson: JSON.stringify({
+          requestedReportType: input.reportType,
+          generatedAtUtc,
+          filters: {
+            fromUtc: input.fromUtc ?? null,
+            toUtc: input.toUtc ?? null,
+            targetServerId: input.targetServerId ?? null,
+            scannerFamily: input.scannerFamily ?? null,
+            severity: input.severity ?? null,
+            status: input.status ?? null,
+            iocType: input.iocType ?? null,
+            source: input.source ?? null,
+          },
+          sections: preview.sections,
+        }),
         generatedAtUtc,
         createdAtUtc: generatedAtUtc,
         updatedAtUtc: generatedAtUtc,
@@ -695,6 +711,10 @@ export class MockGateway implements Gateway {
     }
 
     return copy(preview)
+  }
+
+  async deleteReport(reportId: string): Promise<void> {
+    this.generatedReports = this.generatedReports.filter((item) => item.id !== reportId)
   }
 
   async getPowerBiVisualizationCatalog(_signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse> {

@@ -11,13 +11,13 @@ import { Input } from "@/components/ui/input"
 import { ApiError } from "@/shared/api/error"
 import { classifyUiError } from "@/shared/api/error-classification"
 import type { IocResponse } from "@/shared/api/schemas"
-import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
+import { gateway, isModeConfigured } from "@/shared/gateway"
 import type { IocListQuery } from "@/shared/gateway/types"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { DataGrid } from "@/shared/ui/data-grid"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { panelMotion, staggerMotion } from "@/shared/ui/motion"
-import { EmptyState, LoadingState, SearchEmptyState, SimulatedBadge } from "@/shared/ui/state-panels"
+import { EmptyState, LoadingState, SearchEmptyState } from "@/shared/ui/state-panels"
 
 const PAGE_SIZE = 20
 
@@ -246,15 +246,12 @@ export default function IngestionFeedsPage() {
       <IngestionFeedsSubnav current="overview" />
 
       <motion.header className="wb-page-header" variants={panelMotion}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="wb-kicker">IOCs Explorer</p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight">Search ingested indicators with contract-backed filters</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Service: {healthQuery.data.service} | Env: {healthQuery.data.environment}
-            </p>
-          </div>
-          {isMockMode ? <SimulatedBadge /> : null}
+        <div>
+          <p className="wb-kicker">IOCs Explorer</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight">Search ingested indicators</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Review normalized indicators by source, type, severity, and collection window.
+          </p>
         </div>
         {optionalDegradedComponents.length > 0 ? (
           <div
@@ -265,7 +262,7 @@ export default function IngestionFeedsPage() {
             {optionalDegradedComponents.map((component) => `${component.name} (${component.message})`).join(", ")}
           </div>
         ) : null}
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Matching IoCs</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{total}</p>

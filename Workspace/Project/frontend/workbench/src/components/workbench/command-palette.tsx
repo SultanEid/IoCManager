@@ -119,7 +119,7 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
         <CommandInput
           value={query}
           onValueChange={setQuery}
-          placeholder="Search routes, queue focus, alert ids, and alert titles..."
+          placeholder="Search workspace..."
         />
         <CommandList>
           <CommandEmpty>

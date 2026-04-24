@@ -816,6 +816,15 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         ValidateTargetCount(resolvedTargets.Count);
         var ruleInputMode = LegacyScanPipelineHelpers.NormalizeRuleInputMode(request.RuleInputMode);
         var normalizedTargetOsOverrides = NormalizeTargetOsOverrides(request.TargetOsOverrides);
+        var requestedRulePathsByFamily = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (request.RulePathsByFamily is not null)
+        {
+            foreach (var pair in request.RulePathsByFamily)
+            {
+                var normalizedFamily = LegacyScanPipelineHelpers.NormalizeScannerFamily(pair.Key);
+                requestedRulePathsByFamily[normalizedFamily] = LegacyScanPipelineHelpers.CleanOrNull(pair.Value);
+            }
+        }
 
         Dictionary<string, string?> stagedPathsByFamily;
         Dictionary<string, string[]> stagedRuleFilesByFamily;
@@ -825,7 +834,11 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         {
             stagedPathsByFamily = normalizedFamilies.ToDictionary(
                 family => family,
-                family => (string?)LegacyScanPipelineHelpers.ResolveRulePath(family, request.RulePath, null),
+                family =>
+                {
+                    requestedRulePathsByFamily.TryGetValue(family, out var familyRulePath);
+                    return (string?)LegacyScanPipelineHelpers.ResolveRulePath(family, familyRulePath ?? request.RulePath, null);
+                },
                 StringComparer.OrdinalIgnoreCase);
             stagedRuleFilesByFamily = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
         }

@@ -282,6 +282,14 @@ public sealed class AlertsController : ControllerBase
                 .OrderByDescending(x => x.FinishedAt ?? x.StartedAt)
                 .ToArrayAsync(cancellationToken);
 
+        var normalizedLinkedResults = await (
+                from link in _dbContext.AlertScanResults.AsNoTracking()
+                join result in _dbContext.ScanResults.AsNoTracking() on link.ScanResultId equals result.Id
+                where link.AlertId == alertId
+                orderby link.LinkedAtUtc descending
+                select result)
+            .ToArrayAsync(cancellationToken);
+
         var target = alertRow.Alert.TargetId.HasValue
             ? await _legacyDbContext.Targets.AsNoTracking().FirstOrDefaultAsync(x => x.TargetId == alertRow.Alert.TargetId.Value, cancellationToken)
             : null;
@@ -317,7 +325,10 @@ public sealed class AlertsController : ControllerBase
                     target.Status,
                     target.TargetOsType),
             linkedIocs.Select(ToLinkedIocResponse).ToArray(),
-            linkedResults.Select(ToLinkedScanResultResponse).ToArray());
+            normalizedLinkedResults
+                .Select(ToLinkedScanResultResponse)
+                .Concat(linkedResults.Select(ToLinkedScanResultResponse))
+                .ToArray());
 
         return detail;
     }
@@ -353,6 +364,17 @@ public sealed class AlertsController : ControllerBase
             source.NoOfFindings ?? 0,
             source.StartedAt is null ? null : DateTime.SpecifyKind(source.StartedAt.Value, DateTimeKind.Utc),
             source.FinishedAt is null ? null : DateTime.SpecifyKind(source.FinishedAt.Value, DateTimeKind.Utc));
+    }
+
+    private static AlertLinkedScanResultResponse ToLinkedScanResultResponse(ScanResult source)
+    {
+        return new AlertLinkedScanResultResponse(
+            source.Id.ToString("D"),
+            source.ScanJobId?.ToString("D"),
+            source.Disposition.ToString(),
+            source.OccurrenceCount,
+            source.FirstObservedAtUtc,
+            source.LastObservedAtUtc);
     }
 
     private static (string Value, string Kind) ResolveIndicator(LegacyPipelineIocEntity source)

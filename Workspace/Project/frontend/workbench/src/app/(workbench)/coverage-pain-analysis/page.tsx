@@ -214,6 +214,7 @@ export default function PyramidOfPainPage() {
   const activeLevelInsight = activeLevelSummary
     ? buildLevelInsight(activeLevelSummary.level, activeLevelSummary.count, activeLevelSummary.share)
     : ""
+  const selectedLevelKey = activeLevelSummary?.level ?? ""
 
   const trendByLevel = useMemo(() => {
     if (!analysis) {
@@ -244,7 +245,7 @@ export default function PyramidOfPainPage() {
   return (
     <section className="wb-page space-y-6">
       <header className="wb-page-header">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-5">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-primary/90">
               <Triangle className="h-3.5 w-3.5" />
@@ -257,12 +258,12 @@ export default function PyramidOfPainPage() {
             <p className="mt-4 max-w-2xl text-sm text-foreground/90">{postureSummary}</p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-3">
             <motion.div
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35 }}
-              className="rounded-2xl border border-border/70 bg-surface-2/50 p-4 backdrop-blur"
+              className="wb-metric-card"
             >
               <p className="wb-kicker">Total Findings</p>
               <p className="mt-2 text-3xl font-semibold tracking-tight">{formatCount(analysis.totalCount)}</p>
@@ -271,7 +272,7 @@ export default function PyramidOfPainPage() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.05 }}
-              className="rounded-2xl border border-border/70 bg-surface-2/50 p-4 backdrop-blur"
+              className="wb-metric-card"
             >
               <p className="wb-kicker">Window</p>
               <div className="mt-2 flex items-center gap-2">
@@ -283,7 +284,7 @@ export default function PyramidOfPainPage() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.1 }}
-              className="rounded-2xl border border-border/70 bg-surface-2/50 p-4 backdrop-blur"
+              className="wb-metric-card"
             >
               <p className="wb-kicker">Top Pressure</p>
               <p className="mt-2 text-base font-semibold tracking-tight">
@@ -297,28 +298,15 @@ export default function PyramidOfPainPage() {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" className="gap-2">
+          <Button type="button" size="sm" variant="outline" className="gap-2">
             <Clock3 className="h-3.5 w-3.5" />
             7 days
           </Button>
-          {["24h", "30d"].map((label) => (
-            <button
-              key={label}
-              type="button"
-              disabled
-              className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-border/60 bg-surface-2/40 px-3 py-1.5 text-xs text-muted-foreground/80"
-            >
-              <span>{label}</span>
-              <span className="rounded-full border border-border/60 bg-surface-1/70 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em]">
-                Soon
-              </span>
-            </button>
-          ))}
         </div>
       </header>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <article className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_92%,transparent),color-mix(in_srgb,var(--surface-1)_90%,transparent))] p-5 shadow-[var(--shadow-reading-surface)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.55fr)]">
+        <article className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_95%,transparent),color-mix(in_srgb,var(--surface-1)_90%,transparent))] p-6 shadow-[var(--shadow-reading-surface)]">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="wb-kicker">Pain Pyramid</p>
@@ -330,107 +318,105 @@ export default function PyramidOfPainPage() {
             </div>
           </div>
 
-          <div className="space-y-2.5 pt-1">
-            {orderedLevels.map((level, index) => {
-              const theme = LEVEL_THEME[level.level as keyof typeof LEVEL_THEME]
-              const width = 56 + index * 8
-              const intensity = Math.max(level.count / maxCount, 0.08)
-              const isActive = activeLevel === level.level
-              const contentInset = `${Math.max(11.5 - index * 0.35, 9.5)}%`
-              const gradientId = `pain-band-gradient-${level.level}`
-              const shapeId = `pain-band-shape-${level.level}`
-              const shadowId = `pain-band-shadow-${level.level}`
-              return (
-                <motion.button
-                  key={level.level}
-                  type="button"
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: index * 0.05 }}
-                  onClick={() => setActiveLevel(level.level)}
-                  className={cn(
-                    "group relative mx-auto block h-[4.5rem] overflow-visible text-left transition-all",
-                    isActive
-                      ? "scale-[1.008] shadow-[var(--shadow-soft)]"
-                      : "opacity-92 hover:opacity-100",
-                  )}
-                  style={{
-                    width: `${width}%`,
-                  }}
-                >
-                  <svg
-                    viewBox="0 0 1000 100"
-                    preserveAspectRatio="none"
-                    className="absolute inset-0 h-full w-full overflow-visible"
-                    aria-hidden="true"
+          <div className="relative rounded-[24px] border border-border/65 bg-[radial-gradient(circle_at_50%_18%,color-mix(in_srgb,var(--primary)_14%,transparent),transparent_36%),color-mix(in_srgb,var(--background)_64%,transparent)] px-2 py-6 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--foreground)_8%,transparent)] sm:px-5">
+            <svg
+              viewBox="0 0 620 430"
+              className="mx-auto block h-auto w-full max-w-[980px]"
+              role="img"
+              aria-label="Interactive Pyramid of Pain detection distribution"
+            >
+              <defs>
+                <filter id="pain-pyramid-soft-shadow" x="-8%" y="-8%" width="116%" height="122%">
+                  <feDropShadow dx="0" dy="16" stdDeviation="14" floodColor="rgba(0,0,0,0.24)" />
+                </filter>
+                {orderedLevels.map((level) => {
+                  const theme = LEVEL_THEME[level.level as keyof typeof LEVEL_THEME]
+                  return (
+                    <linearGradient key={level.level} id={`clean-pyramid-${level.level}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor={theme.toneFrom} stopOpacity="0.94" />
+                      <stop offset="100%" stopColor={theme.toneTo} stopOpacity="0.78" />
+                    </linearGradient>
+                  )
+                })}
+              </defs>
+
+              <text x="310" y="18" textAnchor="middle" className="fill-muted-foreground text-[11px] uppercase tracking-[0.16em]">
+                Detection value increases upward
+              </text>
+              <text x="310" y="418" textAnchor="middle" className="fill-muted-foreground text-[11px] uppercase tracking-[0.16em]">
+                Indicator volume increases downward
+              </text>
+
+              {orderedLevels.map((level, index) => {
+                const theme = LEVEL_THEME[level.level as keyof typeof LEVEL_THEME]
+                const bandHeight = 56
+                const gap = 8
+                const topWidth = 224 + index * 63
+                const bottomWidth = 224 + (index + 1) * 63
+                const y = 34 + index * (bandHeight + gap)
+                const xTop = (620 - topWidth) / 2
+                const xBottom = (620 - bottomWidth) / 2
+                const path = `M ${xTop} ${y} L ${xTop + topWidth} ${y} L ${xBottom + bottomWidth} ${y + bandHeight} L ${xBottom} ${y + bandHeight} Z`
+                const progressWidth = Math.max((bottomWidth - 56) * (level.count / maxCount), 0)
+                const isActive = selectedLevelKey === level.level
+                const labelX = xBottom + 32
+                const countX = xBottom + bottomWidth - 34
+
+                return (
+                  <motion.g
+                    key={level.level}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, delay: index * 0.05 }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${formatPainLevelLabel(level.level)} band, ${formatCount(level.count)} detections`}
+                    onClick={() => setActiveLevel(level.level)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        setActiveLevel(level.level)
+                      }
+                    }}
+                    className="cursor-pointer outline-none"
                   >
-                    <defs>
-                      <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor={theme.toneFrom} stopOpacity="0.96" />
-                        <stop offset="100%" stopColor={theme.toneTo} stopOpacity="0.74" />
-                      </linearGradient>
-                      <clipPath id={shapeId}>
-                        <path d="M72 6 H905 Q944 6 956 28 L990 82 Q998 94 982 98 H28 Q8 98 10 82 L42 28 Q54 6 72 6 Z" />
-                      </clipPath>
-                      <filter id={shadowId} x="-8%" y="-18%" width="116%" height="150%">
-                        <feDropShadow dx="0" dy="12" stdDeviation="10" floodColor="color-mix(in srgb, var(--foreground) 28%, transparent)" />
-                      </filter>
-                    </defs>
                     <path
-                      d="M72 6 H905 Q944 6 956 28 L990 82 Q998 94 982 98 H28 Q8 98 10 82 L42 28 Q54 6 72 6 Z"
-                      fill="color-mix(in srgb, var(--surface-1) 86%, transparent)"
-                      filter={`url(#${shadowId})`}
+                      d={path}
+                      fill="color-mix(in srgb, var(--surface-1) 88%, transparent)"
+                      stroke={isActive ? theme.toneTo : "color-mix(in srgb, var(--border) 82%, transparent)"}
+                      strokeWidth={isActive ? 3 : 1.35}
+                      filter={index === orderedLevels.length - 1 ? "url(#pain-pyramid-soft-shadow)" : undefined}
                     />
                     <path
-                      d="M72 6 H905 Q944 6 956 28 L990 82 Q998 94 982 98 H28 Q8 98 10 82 L42 28 Q54 6 72 6 Z"
-                      fill="color-mix(in srgb, var(--foreground) 2%, transparent)"
-                      stroke={theme.stroke}
-                      strokeWidth="1.8"
+                      d={path}
+                      fill={`url(#clean-pyramid-${level.level})`}
+                      opacity={level.count > 0 ? 0.98 : 0.28}
                     />
-                    <path
-                      d="M72 6 H905"
-                      stroke="color-mix(in srgb, var(--foreground) 14%, transparent)"
-                      strokeWidth="1.4"
+                    <line
+                      x1={xBottom + 28}
+                      y1={y + bandHeight - 4}
+                      x2={xBottom + 28 + progressWidth}
+                      y2={y + bandHeight - 4}
+                      stroke={level.count > 0 ? "rgba(255,255,255,0.74)" : "rgba(255,255,255,0.18)"}
+                      strokeWidth="3"
                       strokeLinecap="round"
                     />
-                    <rect
-                      x="0"
-                      y="0"
-                      width={Math.max(intensity * 1000, 90)}
-                      height="100"
-                      fill={`url(#${gradientId})`}
-                      clipPath={`url(#${shapeId})`}
-                    />
-                    <rect
-                      x="0"
-                      y="0"
-                      width={Math.max(intensity * 1000, 90)}
-                      height="100"
-                      fill={theme.glow}
-                      opacity="0.28"
-                      clipPath={`url(#${shapeId})`}
-                    />
-                  </svg>
-                  <div
-                    className="relative z-10 grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-5"
-                    style={{ paddingLeft: contentInset, paddingRight: contentInset }}
-                  >
-                    <div className="min-w-0">
-                      <p className={cn("truncate text-[13px] font-semibold tracking-tight", theme.accent)}>
-                        {formatPainLevelLabel(level.level)}
-                      </p>
-                      <p className="mt-0.5 truncate text-[11px] text-foreground/70">
-                        {formatShareLabel(level.count, level.share)}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-lg font-semibold tracking-tight text-foreground sm:text-[1.65rem]">{formatCount(level.count)}</p>
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-foreground/60">detections</p>
-                    </div>
-                  </div>
-                </motion.button>
-              )
-            })}
+                    <text x={labelX} y={y + 24} className="fill-foreground text-[17px] font-semibold">
+                      {formatPainLevelLabel(level.level)}
+                    </text>
+                    <text x={labelX} y={y + 43} className="fill-muted-foreground text-[12px]">
+                      {formatShareLabel(level.count, level.share)}
+                    </text>
+                    <text x={countX} y={y + 30} textAnchor="end" className="fill-foreground text-[34px] font-semibold">
+                      {formatCount(level.count)}
+                    </text>
+                    <text x={countX} y={y + 50} textAnchor="end" className="fill-muted-foreground text-[10px] uppercase tracking-[0.16em]">
+                      detections
+                    </text>
+                  </motion.g>
+                )
+              })}
+            </svg>
           </div>
 
           {activeLevelSummary ? (
