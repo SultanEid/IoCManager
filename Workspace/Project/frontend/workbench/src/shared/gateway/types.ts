@@ -30,12 +30,13 @@ import type {
   RuleDistributionTargetResponse,
   RuleFamily,
   ScanCadenceType,
-  ScanJobResponse,
-  ScanJobTargetExecutionResponse,
+  ScanAnalystAction,
   ScanAnalystAgentStatusResponse,
   ScanAnalystChatResponse,
   ScanAnalystPlanProposalResponse,
   ScanAnalystRunSummaryResponse,
+  ScanJobResponse,
+  ScanJobTargetExecutionResponse,
   ScanPlanResponse,
   ScanRuleSelectionMode,
   ScannerCapability,
@@ -613,6 +614,20 @@ export type ScanJobFilters = {
   take?: number
 }
 
+export type ScanAnalystSimulatedCondition = "new_hosts_found" | "failed_recent_job" | "stale_coverage" | "recent_alert_detected"
+
+export type SendScanAnalystChatTurnInput = {
+  sessionId?: string
+  actorUserId: string
+  message: string
+  action: ScanAnalystAction
+  subnetId?: string
+  preferredScannerCapability?: ScannerCapability
+  maxTargetCount?: number
+  editedPlan?: ScanAnalystPlanProposalResponse | null
+  simulatedConditions?: ScanAnalystSimulatedCondition[]
+}
+
 export type AlertListQuery = {
   q?: string
   status?: string
@@ -733,20 +748,6 @@ export type SubmitAiDecisionOverrideOrClosureInput = {
 export type RetryDistributionJobInput = {
   actorUserId: string
   notes?: string
-}
-
-export type ScanAnalystSimulatedCondition = "new_hosts_found" | "failed_recent_job" | "stale_coverage"
-
-export type SendScanAnalystChatTurnInput = {
-  sessionId?: string
-  actorUserId: string
-  message: string
-  action: "RecommendOnly" | "CreatePlan" | "CreateAndRun"
-  subnetId?: string
-  preferredScannerCapability?: ScannerCapability
-  maxTargetCount?: number
-  editedPlan?: ScanAnalystPlanProposalResponse
-  simulatedConditions?: ScanAnalystSimulatedCondition[]
 }
 
 export interface Gateway {

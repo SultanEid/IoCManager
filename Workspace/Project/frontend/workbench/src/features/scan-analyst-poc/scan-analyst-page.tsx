@@ -38,6 +38,7 @@ const MOCK_CONDITION_LABELS: Record<ScanAnalystSimulatedCondition, string> = {
   new_hosts_found: "New hosts found",
   failed_recent_job: "Failed recent job",
   stale_coverage: "Stale coverage",
+  recent_alert_detected: "Recent alert detected",
 }
 
 const MOCK_CONDITION_STATUS_PRESETS: Record<
@@ -119,6 +120,25 @@ const MOCK_CONDITION_STATUS_PRESETS: Record<
       action: "RecommendOnly",
     },
   },
+  recent_alert_detected: {
+    currentActivity: "Correlating a recent alert with impacted assets and candidate scanner rules.",
+    latestActionSummary: "Zira detected a fresh alert signal and prepared a bounded verification scan.",
+    recentActionTitle: "Prepared alert-driven verification",
+    recentActionSummary: "Zira used the alert as an indicator to scope affected hosts and matching scan rules.",
+    completedPlan: {
+      id: "mock-completed-plan-recent-alert",
+      name: "zira-alert-verification",
+      scannerCapability: "Yara",
+      targetCount: 3,
+      detectionCount: 1,
+      outcome: "Prepared verification for recent alert",
+    },
+    autonomous: {
+      summary: "Zira noticed a recent alert and prepared a verification scan automatically.",
+      trigger: "recent alert",
+      action: "CreateAndRun",
+    },
+  },
 }
 
 function formatTimestamp(value: string | null | undefined) {
@@ -127,6 +147,16 @@ function formatTimestamp(value: string | null | undefined) {
 
 function resolveCapabilityLabel(value: ScannerCapability | "Auto" | null | undefined) {
   return value && value !== "Auto" ? value : null
+}
+
+function resolvePlannerModeLabel(value: string | null | undefined) {
+  if (value === "openai_refined") {
+    return "OpenAI refined"
+  }
+  if (value === "openai_fallback") {
+    return "Local fallback"
+  }
+  return "Local planner"
 }
 
 function deriveMockStatus(
@@ -786,7 +816,7 @@ export function ScanAnalystPage() {
       ) : (
         <>
           <motion.article className="wb-panel space-y-4" variants={panelMotion}>
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
                 <p className="wb-kicker">Scanner</p>
                 <p className="mt-1 text-lg font-semibold">{currentAnalysis.recommendedScannerCapability}</p>
@@ -802,6 +832,10 @@ export function ScanAnalystPage() {
               <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
                 <p className="wb-kicker">Mode</p>
                 <p className="mt-1 text-lg font-semibold">{currentAnalysis.operatingMode}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-surface-2/60 p-3">
+                <p className="wb-kicker">Planner</p>
+                <p className="mt-1 text-lg font-semibold">{resolvePlannerModeLabel(currentAnalysis.plannerMode)}</p>
               </div>
             </div>
 

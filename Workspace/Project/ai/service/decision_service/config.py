@@ -9,6 +9,21 @@ def _repo_ai_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _load_local_env(ai_root: Path) -> None:
+    for env_path in (ai_root / "service" / ".env", ai_root / ".env"):
+        if not env_path.exists():
+            continue
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            normalized_key = key.strip()
+            if not normalized_key or os.getenv(normalized_key):
+                continue
+            os.environ[normalized_key] = value.strip().strip('"').strip("'")
+
+
 @dataclass(frozen=True)
 class ServiceSettings:
     service_name: str
@@ -23,6 +38,10 @@ class ServiceSettings:
     historical_learning_default_top_k: int = 10
     historical_learning_default_lookback_days: int = 90
     historical_learning_decay_half_life_days: float = 45.0
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_planner_model: str = "gpt-5.4-mini"
+    openai_timeout_seconds: float = 25.0
 
 
 def _env_value(*names: str, default: str | None = None) -> str | None:
@@ -35,6 +54,7 @@ def _env_value(*names: str, default: str | None = None) -> str | None:
 
 def load_settings() -> ServiceSettings:
     ai_root = _repo_ai_root()
+    _load_local_env(ai_root)
     artifacts_root = Path(
         _env_value(
             "IOC_MANAGER_AI_ARTIFACTS_ROOT",
@@ -91,6 +111,16 @@ def load_settings() -> ServiceSettings:
             default="45",
         )
     )
+    openai_api_key = _env_value("OPENAI_API_KEY", "IOC_MANAGER_OPENAI_API_KEY")
+    openai_base_url = _env_value("OPENAI_BASE_URL", "IOC_MANAGER_OPENAI_BASE_URL", default="https://api.openai.com/v1")
+    openai_planner_model = _env_value(
+        "IOC_MANAGER_AI_SCAN_ANALYST_MODEL",
+        "IOC_MANAGER_OPENAI_MODEL",
+        default="gpt-5.4-mini",
+    )
+    openai_timeout_seconds = float(
+        _env_value("IOC_MANAGER_OPENAI_TIMEOUT_SECONDS", "OPENAI_TIMEOUT_SECONDS", default="25")
+    )
 
     return ServiceSettings(
         service_name=_env_value("IOC_MANAGER_AI_SERVICE_NAME", "CTI_SIDECAR_SERVICE_NAME", default="ioc-manager-ai-sidecar"),
@@ -105,4 +135,8 @@ def load_settings() -> ServiceSettings:
         historical_learning_default_top_k=max(1, min(historical_learning_default_top_k, 100)),
         historical_learning_default_lookback_days=max(1, min(historical_learning_default_lookback_days, 3650)),
         historical_learning_decay_half_life_days=max(1.0, historical_learning_decay_half_life_days),
+        openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url.rstrip("/"),
+        openai_planner_model=openai_planner_model,
+        openai_timeout_seconds=max(5.0, openai_timeout_seconds),
     )

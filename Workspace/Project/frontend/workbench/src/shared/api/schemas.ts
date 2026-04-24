@@ -641,6 +641,9 @@ export const scanJobTargetExecutionResponseSchema = z.object({
   updatedAtUtc: z.string(),
 })
 
+export const scanAnalystPlannerModeSchema = z.enum(["local", "openai_refined", "openai_fallback"]).catch("local")
+export const scanAnalystActionSchema = z.enum(["RecommendOnly", "CreatePlan", "CreateAndRun"])
+
 export const scanAnalystTargetProposalResponseSchema = z.object({
   targetServerId: z.string().uuid(),
   hostname: z.string(),
@@ -728,9 +731,10 @@ export const scanAnalystRunSummaryResponseSchema = z.object({
 })
 
 export const scanAnalystResponseSchema = z.object({
-  action: z.enum(["RecommendOnly", "CreatePlan", "CreateAndRun"]),
+  action: scanAnalystActionSchema,
   operatingMode: z.string(),
   summary: z.string(),
+  plannerMode: scanAnalystPlannerModeSchema,
   observations: z.array(z.string()),
   reasoning: z.array(z.string()),
   validationWarnings: z.array(z.string()),
@@ -748,6 +752,14 @@ export const scanAnalystAgentMessageResponseSchema = z.object({
   timestampUtc: z.string(),
 })
 
+export const scanAnalystAutonomousActivityResponseSchema = z.object({
+  summary: z.string(),
+  trigger: z.string(),
+  action: scanAnalystActionSchema,
+  operatingMode: z.string(),
+  occurredAtUtc: z.string(),
+})
+
 export const scanAnalystAgentParametersResponseSchema = z.object({
   enabled: z.boolean(),
   allowedSubnets: z.array(z.string()),
@@ -759,14 +771,6 @@ export const scanAnalystAgentParametersResponseSchema = z.object({
   watchForNewHosts: z.boolean(),
   watchForFailedRecentJobs: z.boolean(),
   requireMatchingRuleFamily: z.boolean(),
-})
-
-export const scanAnalystAutonomousActivityResponseSchema = z.object({
-  summary: z.string(),
-  trigger: z.string(),
-  action: z.enum(["RecommendOnly", "CreatePlan", "CreateAndRun"]),
-  operatingMode: z.string(),
-  occurredAtUtc: z.string(),
 })
 
 export const scanAnalystRecentActionResponseSchema = z.object({
@@ -1479,17 +1483,21 @@ export type ScanPlanRuleSummaryResponse = z.infer<typeof scanPlanRuleSummaryResp
 export type ScanPlanResponse = z.infer<typeof scanPlanResponseSchema>
 export type ScanJobResponse = z.infer<typeof scanJobResponseSchema>
 export type ScanJobTargetExecutionResponse = z.infer<typeof scanJobTargetExecutionResponseSchema>
+export type ScanAnalystPlannerMode = z.infer<typeof scanAnalystPlannerModeSchema>
+export type ScanAnalystAction = z.infer<typeof scanAnalystActionSchema>
 export type ScanAnalystTargetProposalResponse = z.infer<typeof scanAnalystTargetProposalResponseSchema>
 export type ScanAnalystRuleProposalResponse = z.infer<typeof scanAnalystRuleProposalResponseSchema>
 export type ScanAnalystPlanProposalResponse = z.infer<typeof scanAnalystPlanProposalResponseSchema>
-export type ScanAnalystContextSummaryResponse = z.infer<typeof scanAnalystContextSummaryResponseSchema>
 export type ScanAnalystRunTargetExecutionResponse = z.infer<typeof scanAnalystRunTargetExecutionResponseSchema>
 export type ScanAnalystRunDetectionResponse = z.infer<typeof scanAnalystRunDetectionResponseSchema>
 export type ScanAnalystRunSummaryResponse = z.infer<typeof scanAnalystRunSummaryResponseSchema>
+export type ScanAnalystContextSummaryResponse = z.infer<typeof scanAnalystContextSummaryResponseSchema>
 export type ScanAnalystResponse = z.infer<typeof scanAnalystResponseSchema>
 export type ScanAnalystAgentMessageResponse = z.infer<typeof scanAnalystAgentMessageResponseSchema>
-export type ScanAnalystAgentParametersResponse = z.infer<typeof scanAnalystAgentParametersResponseSchema>
 export type ScanAnalystAutonomousActivityResponse = z.infer<typeof scanAnalystAutonomousActivityResponseSchema>
+export type ScanAnalystAgentParametersResponse = z.infer<typeof scanAnalystAgentParametersResponseSchema>
+export type ScanAnalystRecentActionResponse = z.infer<typeof scanAnalystRecentActionResponseSchema>
+export type ScanAnalystCompletedPlanResponse = z.infer<typeof scanAnalystCompletedPlanResponseSchema>
 export type ScanAnalystAgentStatusResponse = z.infer<typeof scanAnalystAgentStatusResponseSchema>
 export type ScanAnalystChatResponse = z.infer<typeof scanAnalystChatResponseSchema>
 export type ScannerResponse = z.infer<typeof scannerResponseSchema>

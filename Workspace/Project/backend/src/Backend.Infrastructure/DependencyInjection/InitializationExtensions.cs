@@ -115,6 +115,13 @@ public static class InitializationExtensions
 
         if (await HasAnyTablesAsync(dbContext, cancellationToken))
         {
+            if (!IsSafeForDevelopmentRebuild(dbContext.Database.GetDbConnection()))
+            {
+                logger.LogWarning(
+                    "Detected relational schema drift in development, but the configured database is not local. Skipping destructive rebuild.");
+                return;
+            }
+
             logger.LogWarning(
                 "Detected relational schema drift in development. Rebuilding database from the current EF model.");
             await dbContext.Database.EnsureDeletedAsync(cancellationToken);
@@ -197,6 +204,22 @@ public static class InitializationExtensions
             || FindException<DbException>(exception) is not null
             || FindException<SocketException>(exception) is not null
             || FindException<TimeoutException>(exception) is not null;
+    }
+
+    private static bool IsSafeForDevelopmentRebuild(DbConnection connection)
+    {
+        var (host, _, _) = ReadSafeConnectionTarget(connection);
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        return host.Contains("(localdb)", StringComparison.OrdinalIgnoreCase)
+            || host.Equals(".", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("(local)", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("::1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static InvalidOperationException BuildDatabaseStartupException(

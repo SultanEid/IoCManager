@@ -980,15 +980,15 @@ export class AspNetGateway {
     return requestJson("/api/v2/ai/scan-analyst/chat", scanAnalystChatResponseSchema, {
       method: "POST",
       body: {
-        sessionId: input.sessionId,
+        sessionId: input.sessionId ?? null,
         actorUserId: input.actorUserId,
         message: input.message,
         action: input.action,
-        subnetId: input.subnetId,
-        preferredScannerCapability: input.preferredScannerCapability,
-        maxTargetCount: input.maxTargetCount,
-        editedPlan: input.editedPlan,
-        simulatedConditions: input.simulatedConditions,
+        subnetId: input.subnetId ?? null,
+        preferredScannerCapability: input.preferredScannerCapability ?? null,
+        maxTargetCount: input.maxTargetCount ?? null,
+        editedPlan: input.editedPlan ?? null,
+        simulatedConditions: input.simulatedConditions ?? null,
       },
     })
   }

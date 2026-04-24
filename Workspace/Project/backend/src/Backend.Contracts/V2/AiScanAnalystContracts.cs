@@ -12,6 +12,7 @@ public sealed record ScanAnalystResponseDto(
     string Action,
     string OperatingMode,
     string Summary,
+    string PlannerMode,
     IReadOnlyList<string> Observations,
     IReadOnlyList<string> Reasoning,
     IReadOnlyList<string> ValidationWarnings,

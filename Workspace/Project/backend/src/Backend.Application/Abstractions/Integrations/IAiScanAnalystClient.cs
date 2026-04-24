@@ -16,7 +16,10 @@ public sealed record AiScanAnalystContextRequest(
     IReadOnlyList<AiScanAnalystManagedServerContext> ManagedServers,
     IReadOnlyList<AiScanAnalystRuleContext> CandidateRules,
     IReadOnlyList<AiScanAnalystPlanContext> ExistingPlans,
-    IReadOnlyList<AiScanAnalystJobContext> RecentJobs);
+    IReadOnlyList<AiScanAnalystJobContext> RecentJobs,
+    IReadOnlyList<AiScanAnalystAlertContext> RecentAlerts,
+    IReadOnlyList<AiScanAnalystServerFactContext> ExternalServerFacts,
+    IReadOnlyList<AiScanAnalystTriggerContext> ActiveTriggers);
 
 public sealed record AiScanAnalystFocusSubnetContext(
     Guid SubnetId,
@@ -56,6 +59,38 @@ public sealed record AiScanAnalystManagedServerContext(
     IReadOnlyList<string> ScannerCapabilities,
     DateTimeOffset? LastContactUtc);
 
+public sealed record AiScanAnalystAlertContext(
+    Guid AlertId,
+    string Title,
+    string Summary,
+    string Severity,
+    string Status,
+    string ScannerFamily,
+    int? TargetId,
+    string TargetDisplay,
+    string RuleName,
+    DateTimeOffset FirstDetectedAtUtc,
+    DateTimeOffset LastDetectedAtUtc,
+    int LinkedDetectionCount,
+    string? MatchedTargetServerId,
+    string? MatchedTargetHostname,
+    string? MatchedTargetIpAddress,
+    string SuggestedScannerCapability);
+
+public sealed record AiScanAnalystServerFactContext(
+    Guid TargetServerId,
+    string Hostname,
+    string IpAddress,
+    string? ConnectionProtocol,
+    string? ConnectionHost,
+    int? ConnectionPort,
+    DateTimeOffset? LastHeartbeatUtc,
+    DateTimeOffset? LastScannerHeartbeatUtc,
+    string? PreferredScannerConnectivity,
+    bool HasRemoteConnectionMetadata,
+    IReadOnlyList<string> HealthyScannerCapabilities,
+    IReadOnlyList<string> Notes);
+
 public sealed record AiScanAnalystRuleContext(
     Guid RuleRevisionId,
     Guid RuleArtifactId,
@@ -92,8 +127,20 @@ public sealed record AiScanAnalystJobContext(
     DateTimeOffset QueuedAtUtc,
     DateTimeOffset? CompletedAtUtc);
 
+public sealed record AiScanAnalystTriggerContext(
+    string TriggerType,
+    string TriggerLabel,
+    string Summary,
+    string Severity,
+    string? TargetServerId,
+    string? TargetHostname,
+    string? TargetIpAddress,
+    string? ScannerCapability,
+    DateTimeOffset ObservedAtUtc);
+
 public sealed record AiScanAnalystRecommendationResult(
     string Summary,
+    string PlannerMode,
     IReadOnlyList<string> Observations,
     IReadOnlyList<string> Reasoning,
     IReadOnlyList<string> ValidationWarnings,

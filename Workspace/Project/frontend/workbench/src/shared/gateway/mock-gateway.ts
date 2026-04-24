@@ -1069,6 +1069,7 @@ export class MockGateway implements Gateway {
         action: input.action,
         operatingMode: "MockFallback",
         summary: buildMockAgentMessage(input.action, capability, runSummary),
+        plannerMode: "local",
         observations: ["Demo context is available.", `${capability} coverage is suitable for this request.`],
         reasoning: ["The selected scanner family matches the requested follow-up and available demo evidence."],
         validationWarnings: [],

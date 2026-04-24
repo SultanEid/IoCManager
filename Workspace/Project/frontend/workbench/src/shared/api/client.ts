@@ -2,7 +2,7 @@ import { type ZodType } from "zod"
 import { ApiError } from "@/shared/api/error"
 import { clearSession, getSession } from "@/shared/auth/session"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:5127"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "") ?? "http://localhost:5127"
 
 type RequestOptions<TBody> = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
@@ -116,11 +116,13 @@ function buildUrl(path: string) {
     return path
   }
 
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`
+
   if (typeof window !== "undefined") {
-    return path
+    return `${API_BASE_URL}${normalizedPath}`
   }
 
-  return `${API_BASE_URL}${path}`
+  return `${API_BASE_URL}${normalizedPath}`
 }
 
 export async function requestJson<TSchema, TBody = undefined>(
