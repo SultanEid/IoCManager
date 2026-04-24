@@ -1,6 +1,6 @@
 import type { NextConfig } from "next"
 
-const backendBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5127").replace(/\/$/, "")
+const backendBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "http://localhost:5127").replace(/\/$/, "")
 
 const nextConfig: NextConfig = {
   async redirects() {

@@ -1,6 +1,7 @@
 using Backend.Api.Infrastructure;
 using Backend.Api.Infrastructure.Execution;
 using Backend.Api.Middlewares;
+using Backend.Api.Features.ScanAnalystPoc;
 using Backend.Application.Abstractions.Services;
 using Backend.Application.DependencyInjection;
 using Backend.Infrastructure.Configuration;
@@ -117,6 +118,14 @@ public static class ServiceCollectionExtensions
             .AddOptions<LegacyScanPipelineOptions>()
             .Bind(configuration.GetSection(LegacyScanPipelineOptions.SectionName))
             .ValidateOnStart();
+        services
+            .AddOptions<ScanAnalystPocOptions>()
+            .Bind(configuration.GetSection(ScanAnalystPocOptions.SectionName))
+            .Validate(options => options.AutonomyIntervalSeconds >= 15, "ScanAnalystPoc:AutonomyIntervalSeconds must be at least 15.")
+            .Validate(options => options.AutonomyCooldownMinutes >= 0, "ScanAnalystPoc:AutonomyCooldownMinutes must be zero or greater.")
+            .Validate(options => options.MaxTargetsPerRun is >= 1 and <= 25, "ScanAnalystPoc:MaxTargetsPerRun must be between 1 and 25.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.SystemActorUserId), "ScanAnalystPoc:SystemActorUserId must be configured.")
+            .ValidateOnStart();
 
         services.AddScoped<IAuthSensitiveAuditService, AuthSensitiveAuditService>();
         services.AddScoped<IAlertRegistrySchemaInitializer, AlertRegistrySchemaInitializer>();
@@ -138,15 +147,20 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IScanJobQueue, ScanJobQueue>();
         services.AddSingleton<IAiDecisionQueue, AiDecisionQueue>();
         services.AddSingleton<IAiDecisionOrchestrator, AiDecisionOrchestrator>();
+        services.AddSingleton<ScanAnalystPocRuntimeState>();
+        services.AddSingleton<ScanAnalystPocSessionStore>();
         services.AddSingleton<IIcmpProbe, SystemIcmpProbe>();
         services.AddSingleton<IRuleDistributionCommandRunner, RuleDistributionCommandRunner>();
         services.AddSingleton<IRuleDistributionTransportDispatcher, RuleDistributionTransportDispatcher>();
         services.AddSingleton<ILegacyScriptScanExecutor, LegacyScriptScanExecutor>();
         services.AddSingleton<IScanExecutionDispatcher, ScanExecutionDispatcher>();
+        services.AddScoped<IScanAnalystPocAgentAdapter, HeuristicScanAnalystPocAgentAdapter>();
+        services.AddScoped<ScanAnalystPocService>();
         services.AddHostedService<DiscoveryRunWorker>();
         services.AddHostedService<RuleDistributionWorker>();
         services.AddHostedService<ScanPlanExecutionWorker>();
         services.AddHostedService<AiDecisionWorker>();
+        services.AddHostedService<ScanAnalystPocAutonomyWorker>();
         services.AddHostedService<LegacyScanPipelineWorker>();
         services.AddApiRateLimiting(configuration);
 

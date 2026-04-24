@@ -30,6 +30,11 @@ import type {
   RuleDistributionTargetResponse,
   RuleFamily,
   ScanCadenceType,
+  ScanAnalystAction,
+  ScanAnalystAgentStatusResponse,
+  ScanAnalystChatResponse,
+  ScanAnalystPlanProposalResponse,
+  ScanAnalystRunSummaryResponse,
   ScanJobResponse,
   ScanJobTargetExecutionResponse,
   ScanPlanResponse,
@@ -609,6 +614,20 @@ export type ScanJobFilters = {
   take?: number
 }
 
+export type ScanAnalystSimulatedCondition = "new_hosts_found" | "failed_recent_job" | "stale_coverage" | "recent_alert_detected"
+
+export type SendScanAnalystChatTurnInput = {
+  sessionId?: string
+  actorUserId: string
+  message: string
+  action: ScanAnalystAction
+  subnetId?: string
+  preferredScannerCapability?: ScannerCapability
+  maxTargetCount?: number
+  editedPlan?: ScanAnalystPlanProposalResponse | null
+  simulatedConditions?: ScanAnalystSimulatedCondition[]
+}
+
 export type AlertListQuery = {
   q?: string
   status?: string
@@ -813,6 +832,9 @@ export interface Gateway {
   getScanJob(scanJobId: string, signal?: AbortSignal): Promise<ScanJobResponse>
   listScanJobTargets(scanJobId: string, signal?: AbortSignal): Promise<ScanJobTargetExecutionResponse[]>
   cancelScanJob(scanJobId: string, actorUserId: string, reason?: string): Promise<ScanJobResponse>
+  getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse>
+  sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse>
+  getScanAnalystRunSummary(scanJobId: string, signal?: AbortSignal): Promise<ScanAnalystRunSummaryResponse>
   listManagedServers(filters?: ManagedServerInventoryFilters, signal?: AbortSignal): Promise<ManagedServerInventoryResponse>
   getManagedServer(targetServerId: string, signal?: AbortSignal): Promise<ManagedServerResponse>
   createManagedServer(input: CreateManagedServerInput): Promise<void>

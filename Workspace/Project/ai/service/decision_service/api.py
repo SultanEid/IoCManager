@@ -208,7 +208,7 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
 
     @app.post("/scan_analyst", response_model=ScanAnalystResponse)
     def scan_analyst_endpoint(request: ScanAnalystRequest) -> ScanAnalystResponse:
-        return recommend_scan_plan(request)
+        return recommend_scan_plan(request, runtime.settings)
 
     @app.post("/evaluate_model", response_model=EvaluateModelResponse, deprecated=True)
     def evaluate_model_endpoint(request: EvaluateModelRequest) -> EvaluateModelResponse:
