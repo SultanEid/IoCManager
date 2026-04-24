@@ -18,6 +18,7 @@ public sealed class TestIcmpProbe : IIcmpProbe
         _responses[ipAddress] = new IcmpProbeResult(
             Reachable: true,
             Hostname: hostname ?? ipAddress,
+            Ttl: null,
             Status: "Success",
             Diagnostic: null);
     }
@@ -27,6 +28,7 @@ public sealed class TestIcmpProbe : IIcmpProbe
         _responses[ipAddress] = new IcmpProbeResult(
             Reachable: false,
             Hostname: null,
+            Ttl: null,
             Status: "TimedOut",
             Diagnostic: diagnostic);
     }
@@ -43,6 +45,7 @@ public sealed class TestIcmpProbe : IIcmpProbe
         return Task.FromResult(new IcmpProbeResult(
             Reachable: false,
             Hostname: null,
+            Ttl: null,
             Status: "TimedOut",
             Diagnostic: $"No test probe response configured for {key}."));
     }

@@ -96,12 +96,9 @@ export default function AlertDetailPage() {
   const [statusUpdate, setStatusUpdate] = useState<string | null>(null)
   const [detailOverride, setDetailOverride] = useState<V2AlertDetailResponse | null>(null)
 
-  if (!isModeConfigured) {
-    const failure = classifyUiError(null, { modeMisconfigured: true })
-    return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
-  }
-
-  const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal))
+  const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal), {
+    enabled: isModeConfigured,
+  })
 
   useEffect(() => {
     setDetailOverride(null)
@@ -123,6 +120,11 @@ export default function AlertDetailPage() {
     } finally {
       setStatusUpdate(null)
     }
+  }
+
+  if (!isModeConfigured) {
+    const failure = classifyUiError(null, { modeMisconfigured: true })
+    return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
   }
 
   if (alertQuery.isLoading) {

@@ -32,6 +32,10 @@ import type {
   ScanCadenceType,
   ScanJobResponse,
   ScanJobTargetExecutionResponse,
+  ScanAnalystAgentStatusResponse,
+  ScanAnalystChatResponse,
+  ScanAnalystPlanProposalResponse,
+  ScanAnalystRunSummaryResponse,
   ScanPlanResponse,
   ScanRuleSelectionMode,
   ScannerCapability,
@@ -731,6 +735,20 @@ export type RetryDistributionJobInput = {
   notes?: string
 }
 
+export type ScanAnalystSimulatedCondition = "new_hosts_found" | "failed_recent_job" | "stale_coverage"
+
+export type SendScanAnalystChatTurnInput = {
+  sessionId?: string
+  actorUserId: string
+  message: string
+  action: "RecommendOnly" | "CreatePlan" | "CreateAndRun"
+  subnetId?: string
+  preferredScannerCapability?: ScannerCapability
+  maxTargetCount?: number
+  editedPlan?: ScanAnalystPlanProposalResponse
+  simulatedConditions?: ScanAnalystSimulatedCondition[]
+}
+
 export interface Gateway {
   login(username: string, password: string): Promise<TokenResponse>
   listAlertRegistry(query?: AlertListQuery, signal?: AbortSignal): Promise<AlertListResponse>
@@ -813,6 +831,9 @@ export interface Gateway {
   getScanJob(scanJobId: string, signal?: AbortSignal): Promise<ScanJobResponse>
   listScanJobTargets(scanJobId: string, signal?: AbortSignal): Promise<ScanJobTargetExecutionResponse[]>
   cancelScanJob(scanJobId: string, actorUserId: string, reason?: string): Promise<ScanJobResponse>
+  getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse>
+  sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse>
+  getScanAnalystRunSummary(scanJobId: string, signal?: AbortSignal): Promise<ScanAnalystRunSummaryResponse>
   listManagedServers(filters?: ManagedServerInventoryFilters, signal?: AbortSignal): Promise<ManagedServerInventoryResponse>
   getManagedServer(targetServerId: string, signal?: AbortSignal): Promise<ManagedServerResponse>
   createManagedServer(input: CreateManagedServerInput): Promise<void>

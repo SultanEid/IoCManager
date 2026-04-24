@@ -111,11 +111,6 @@ export default function IngestionFeedsPage() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  if (!isModeConfigured) {
-    const failure = classifyUiError(null, { modeMisconfigured: true })
-    return <ClassifiedFailureState failure={failure} fallbackTitle="IoC ingestion unavailable" />
-  }
-
   const parsedFilters = useMemo(() => parseFilters(new URLSearchParams(searchParams.toString())), [searchParams])
   const [filters, setFilters] = useState(parsedFilters)
 
@@ -123,9 +118,15 @@ export default function IngestionFeedsPage() {
     setFilters(parsedFilters)
   }, [parsedFilters])
 
-  const healthQuery = useWorkbenchQuery(["ingestion", "health"], (signal) => gateway.getHealthInfo(signal))
-  const readinessQuery = useWorkbenchQuery(["ingestion", "ready"], (signal) => gateway.getHealthReady(signal))
-  const feedSourcesQuery = useWorkbenchQuery(["ingestion", "feed-sources"], (signal) => gateway.listFeedSources(signal))
+  const healthQuery = useWorkbenchQuery(["ingestion", "health"], (signal) => gateway.getHealthInfo(signal), {
+    enabled: isModeConfigured,
+  })
+  const readinessQuery = useWorkbenchQuery(["ingestion", "ready"], (signal) => gateway.getHealthReady(signal), {
+    enabled: isModeConfigured,
+  })
+  const feedSourcesQuery = useWorkbenchQuery(["ingestion", "feed-sources"], (signal) => gateway.listFeedSources(signal), {
+    enabled: isModeConfigured,
+  })
   const iocsQuery = useWorkbenchQuery(
     ["ingestion", "iocs", parsedFilters],
     (signal) =>
@@ -143,6 +144,9 @@ export default function IngestionFeedsPage() {
         } satisfies IocListQuery,
         signal,
       ),
+    {
+      enabled: isModeConfigured,
+    },
   )
 
   const applyFilters = () => {
@@ -170,6 +174,11 @@ export default function IngestionFeedsPage() {
     router.replace(next ? `${pathname}?${next}` : pathname)
   }
 
+  if (!isModeConfigured) {
+    const failure = classifyUiError(null, { modeMisconfigured: true })
+    return <ClassifiedFailureState failure={failure} fallbackTitle="IoC ingestion unavailable" />
+  }
+
   if (
     healthQuery.isLoading ||
     readinessQuery.isLoading ||
@@ -184,7 +193,7 @@ export default function IngestionFeedsPage() {
   }
 
   if (readinessQuery.isError || !readinessQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(readinessQuery.error)} fallbackTitle="IOCs Explorer unavailable" />
+    return <ClassifiedFailureState failure={classifyUiError(readinessQuery.error)} fallbackTitle="IoC ingestion unavailable" />
   }
 
   if (feedSourcesQuery.isError) {

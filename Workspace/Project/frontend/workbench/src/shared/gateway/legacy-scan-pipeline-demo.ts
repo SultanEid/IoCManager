@@ -573,7 +573,7 @@ function createInitialState(): DemoState {
   return state
 }
 
-let demoState = createInitialState()
+const demoState = createInitialState()
 
 function getState() {
   recalculateNetworkStats(demoState)
@@ -875,6 +875,7 @@ export const legacyPipelineDemo = {
   },
 
   discoverNetwork(networkId: string, _input: { actorUserId: string; rangeStartIp?: string; rangeEndIp?: string }) {
+    void _input
     const state = getState()
     const network = state.networks.find((item) => item.id === networkId)
     if (!network) {

@@ -75,16 +75,19 @@ function MetricCard({
 }
 
 export default function OverviewPage() {
+  const alertsQuery = useWorkbenchQuery(
+    ["overview", "alerts"],
+    (signal) => gateway.listAlertRegistry({ page: 1, pageSize: 12 }, signal),
+    { enabled: isModeConfigured },
+  )
+  const summaryQuery = useWorkbenchQuery(["overview", "summary"], (signal) => getLegacyOverviewSummary(signal), {
+    enabled: isModeConfigured,
+  })
+
   if (!isModeConfigured) {
     const failure = classifyUiError(null, { modeMisconfigured: true })
     return <ClassifiedFailureState failure={failure} fallbackTitle="Overview unavailable" />
   }
-
-  const alertsQuery = useWorkbenchQuery(
-    ["overview", "alerts"],
-    (signal) => gateway.listAlertRegistry({ page: 1, pageSize: 12 }, signal),
-  )
-  const summaryQuery = useWorkbenchQuery(["overview", "summary"], (signal) => getLegacyOverviewSummary(signal))
 
   if (alertsQuery.isLoading) {
     return <LoadingState label="Loading overview" />

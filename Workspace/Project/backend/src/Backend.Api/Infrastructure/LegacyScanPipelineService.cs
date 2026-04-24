@@ -519,9 +519,13 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             range.ExcludedTargets.Select(ip => ip.ToString()).Concat(LegacyScanPipelineHelpers.ExcludedTargetAddresses),
             StringComparer.OrdinalIgnoreCase);
 
-        var existingTargets = await _dbContext.Targets
-            .Where(target => target.NetworkId == parsedNetworkId && !excludedAddresses.Contains(target.IPAddress))
+        var existingTargetsByAddress = await _dbContext.Targets
+            .Where(target => !excludedAddresses.Contains(target.IPAddress))
             .ToDictionaryAsync(target => target.IPAddress, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        var existingNetworkTargets = existingTargetsByAddress.Values
+            .Where(target => target.NetworkId == parsedNetworkId)
+            .ToDictionary(target => target.IPAddress, StringComparer.OrdinalIgnoreCase);
 
         var reachableObservations = observations
             .Where(observation =>
@@ -529,20 +533,36 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
                 && !excludedAddresses.Contains(observation.IpAddress))
             .ToArray();
 
-        var seenAddresses = new HashSet<string>(reachableObservations.Select(item => item.IpAddress), StringComparer.OrdinalIgnoreCase);
+        var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var observation in reachableObservations)
         {
-            if (existingTargets.TryGetValue(observation.IpAddress, out var target))
+            // Discovery providers can emit duplicate observations for the same IP in one run.
+            if (!seenAddresses.Add(observation.IpAddress))
             {
-                target.HostName = LegacyScanPipelineHelpers.CleanOrNull(observation.Hostname);
-                target.TargetOsType = LegacyScanPipelineHelpers.NormalizeStoredTargetOs(observation.TargetOsType) ?? target.TargetOsType;
-                target.Status = "Online";
-                target.NetworkId = parsedNetworkId;
-                target.LastSweep = nowUtc.UtcDateTime;
                 continue;
             }
 
-            _dbContext.Targets.Add(new LegacyPipelineTargetEntity
+            if (existingTargetsByAddress.TryGetValue(observation.IpAddress, out var target))
+            {
+                if (target.NetworkId != parsedNetworkId)
+                {
+                    _logger.LogWarning(
+                        "Discovery skipped IP {IpAddress} for network {NetworkId} because the target already belongs to network {ExistingNetworkId}.",
+                        observation.IpAddress,
+                        parsedNetworkId,
+                        target.NetworkId);
+                    continue;
+                }
+
+                target.HostName = LegacyScanPipelineHelpers.CleanOrNull(observation.Hostname);
+                target.TargetOsType = LegacyScanPipelineHelpers.NormalizeStoredTargetOs(observation.TargetOsType) ?? target.TargetOsType;
+                target.Status = "Online";
+                target.LastSweep = nowUtc.UtcDateTime;
+                existingNetworkTargets[target.IPAddress] = target;
+                continue;
+            }
+
+            var createdTarget = new LegacyPipelineTargetEntity
             {
                 HostName = LegacyScanPipelineHelpers.CleanOrNull(observation.Hostname),
                 IPAddress = observation.IpAddress,
@@ -550,11 +570,15 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
                 TargetOsType = LegacyScanPipelineHelpers.NormalizeStoredTargetOs(observation.TargetOsType),
                 NetworkId = parsedNetworkId,
                 LastSweep = nowUtc.UtcDateTime,
-            });
+            };
+
+            _dbContext.Targets.Add(createdTarget);
+            existingTargetsByAddress[createdTarget.IPAddress] = createdTarget;
+            existingNetworkTargets[createdTarget.IPAddress] = createdTarget;
         }
 
         var offlineCount = 0;
-        foreach (var existing in existingTargets.Values)
+        foreach (var existing in existingNetworkTargets.Values)
         {
             if (!seenAddresses.Contains(existing.IPAddress))
             {

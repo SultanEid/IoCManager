@@ -59,6 +59,7 @@ import type {
   SimulateRuleProposalInput,
   TriggerRollbackInput,
   RetryDistributionJobInput,
+  SendScanAnalystChatTurnInput,
   AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
@@ -313,6 +314,18 @@ export class AugmentedGateway implements Gateway {
 
   cancelScanJob(scanJobId: string, actorUserId: string, reason?: string) {
     return this.source.cancelScanJob(scanJobId, actorUserId, reason)
+  }
+
+  getScanAnalystStatus(signal?: AbortSignal) {
+    return this.source.getScanAnalystStatus(signal)
+  }
+
+  sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput) {
+    return this.source.sendScanAnalystChatTurn(input)
+  }
+
+  getScanAnalystRunSummary(scanJobId: string, signal?: AbortSignal) {
+    return this.source.getScanAnalystRunSummary(scanJobId, signal)
   }
 
   listManagedServers(filters?: ManagedServerInventoryFilters, signal?: AbortSignal) {

@@ -641,6 +641,182 @@ export const scanJobTargetExecutionResponseSchema = z.object({
   updatedAtUtc: z.string(),
 })
 
+export const scanAnalystTargetProposalResponseSchema = z.object({
+  targetServerId: z.string().uuid(),
+  hostname: z.string(),
+  ipAddress: z.string(),
+  operatingSystem: z.string(),
+  environment: z.string(),
+  status: z.string(),
+  connectivityStatus: z.string(),
+  scannerCapabilities: z.array(scannerCapabilitySchema),
+  reason: z.string(),
+})
+
+export const scanAnalystRuleProposalResponseSchema = z.object({
+  ruleRevisionId: z.string().uuid(),
+  ruleArtifactId: z.string().uuid(),
+  ruleName: z.string(),
+  ruleFamily: ruleFamilySchema,
+  revisionNumber: z.number().int(),
+  versionLabel: z.string(),
+  lifecycleStatus: z.string(),
+  scopeType: z.string(),
+  scopeValue: z.string().nullable(),
+  reason: z.string(),
+})
+
+export const scanAnalystPlanProposalResponseSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  scannerCapability: scannerCapabilitySchema,
+  ruleSelectionMode: scanRuleSelectionModeSchema,
+  ruleScopeType: z.string().nullable(),
+  ruleScopeValue: z.string().nullable(),
+  cadenceType: scanCadenceTypeSchema,
+  intervalMinutes: z.number().int().nullable(),
+  runAtHourUtc: z.number().int().nullable(),
+  runAtMinuteUtc: z.number().int().nullable(),
+  weeklyDayOfWeek: z.number().int().nullable(),
+  operatorNotes: z.string(),
+  status: z.string(),
+  targetServerIds: z.array(z.string().uuid()),
+  ruleRevisionIds: z.array(z.string().uuid()),
+  targets: z.array(scanAnalystTargetProposalResponseSchema),
+  rules: z.array(scanAnalystRuleProposalResponseSchema),
+})
+
+export const scanAnalystContextSummaryResponseSchema = z.object({
+  focusSubnetId: z.string().uuid().nullable(),
+  focusSubnetName: z.string().nullable(),
+  discoveryRunCount: z.number().int(),
+  discoveredHostCount: z.number().int(),
+  managedServerCount: z.number().int(),
+  candidateRuleCount: z.number().int(),
+  existingPlanCount: z.number().int(),
+  recentJobCount: z.number().int(),
+})
+
+export const scanAnalystRunTargetExecutionResponseSchema = z.object({
+  targetHostname: z.string(),
+  targetIpAddress: z.string(),
+  status: z.string(),
+  summary: z.string(),
+  errorMessage: z.string().nullable(),
+})
+
+export const scanAnalystRunDetectionResponseSchema = z.object({
+  detectionId: z.string().uuid(),
+  ruleName: z.string(),
+  serverHostname: z.string(),
+  disposition: z.string(),
+  observedAtUtc: z.string(),
+})
+
+export const scanAnalystRunSummaryResponseSchema = z.object({
+  scanJobId: z.string().uuid().nullable(),
+  isSimulated: z.boolean(),
+  narrativeSummary: z.string(),
+  jobStatus: z.string(),
+  totalTargets: z.number().int(),
+  completedTargets: z.number().int(),
+  failedTargets: z.number().int(),
+  detectionCount: z.number().int(),
+  generatedAtUtc: z.string(),
+  targetExecutions: z.array(scanAnalystRunTargetExecutionResponseSchema),
+  detections: z.array(scanAnalystRunDetectionResponseSchema),
+})
+
+export const scanAnalystResponseSchema = z.object({
+  action: z.enum(["RecommendOnly", "CreatePlan", "CreateAndRun"]),
+  operatingMode: z.string(),
+  summary: z.string(),
+  observations: z.array(z.string()),
+  reasoning: z.array(z.string()),
+  validationWarnings: z.array(z.string()),
+  recommendedScannerCapability: scannerCapabilitySchema,
+  contextSummary: scanAnalystContextSummaryResponseSchema,
+  proposedPlan: scanAnalystPlanProposalResponseSchema,
+  createdPlan: scanPlanResponseSchema.nullable(),
+  queuedJob: scanJobResponseSchema.nullable(),
+  runSummary: scanAnalystRunSummaryResponseSchema.nullable(),
+})
+
+export const scanAnalystAgentMessageResponseSchema = z.object({
+  role: z.string(),
+  content: z.string(),
+  timestampUtc: z.string(),
+})
+
+export const scanAnalystAgentParametersResponseSchema = z.object({
+  enabled: z.boolean(),
+  allowedSubnets: z.array(z.string()),
+  allowedEnvironments: z.array(z.string()),
+  maxTargetsPerRun: z.number().int(),
+  preferredScannerFamily: z.string(),
+  autoRun: z.boolean(),
+  quietHours: z.string(),
+  watchForNewHosts: z.boolean(),
+  watchForFailedRecentJobs: z.boolean(),
+  requireMatchingRuleFamily: z.boolean(),
+})
+
+export const scanAnalystAutonomousActivityResponseSchema = z.object({
+  summary: z.string(),
+  trigger: z.string(),
+  action: z.enum(["RecommendOnly", "CreatePlan", "CreateAndRun"]),
+  operatingMode: z.string(),
+  occurredAtUtc: z.string(),
+})
+
+export const scanAnalystRecentActionResponseSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  occurredAtUtc: z.string(),
+  status: z.string(),
+})
+
+export const scanAnalystCompletedPlanResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  scannerCapability: scannerCapabilitySchema,
+  targetCount: z.number().int(),
+  detectionCount: z.number().int(),
+  outcome: z.string(),
+  completedAtUtc: z.string(),
+})
+
+export const scanAnalystAgentStatusResponseSchema = z.object({
+  agentEnabled: z.boolean(),
+  autonomyEnabled: z.boolean(),
+  databaseAvailable: z.boolean(),
+  operatingMode: z.string(),
+  indicatorLabel: z.string(),
+  degradedReason: z.string().nullable(),
+  activeSessionCount: z.number().int(),
+  availableMockConditions: z.array(z.string()),
+  activeMockConditions: z.array(z.string()),
+  parameters: scanAnalystAgentParametersResponseSchema,
+  lastAutonomousActivity: scanAnalystAutonomousActivityResponseSchema.nullable(),
+  personaName: z.string().optional(),
+  currentActivity: z.string().optional(),
+  latestActionSummary: z.string().optional(),
+  recentActions: z.array(scanAnalystRecentActionResponseSchema).optional(),
+  completedPlans: z.array(scanAnalystCompletedPlanResponseSchema).optional(),
+})
+
+export const scanAnalystChatResponseSchema = z.object({
+  sessionId: z.string().uuid(),
+  agentStatusLine: z.string(),
+  operatingMode: z.string(),
+  databaseAvailable: z.boolean(),
+  activeMockConditions: z.array(z.string()),
+  messages: z.array(scanAnalystAgentMessageResponseSchema),
+  latestAnalysis: scanAnalystResponseSchema,
+  latestRunSummary: scanAnalystRunSummaryResponseSchema.nullable(),
+})
+
 export const scannerResponseSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -1303,6 +1479,19 @@ export type ScanPlanRuleSummaryResponse = z.infer<typeof scanPlanRuleSummaryResp
 export type ScanPlanResponse = z.infer<typeof scanPlanResponseSchema>
 export type ScanJobResponse = z.infer<typeof scanJobResponseSchema>
 export type ScanJobTargetExecutionResponse = z.infer<typeof scanJobTargetExecutionResponseSchema>
+export type ScanAnalystTargetProposalResponse = z.infer<typeof scanAnalystTargetProposalResponseSchema>
+export type ScanAnalystRuleProposalResponse = z.infer<typeof scanAnalystRuleProposalResponseSchema>
+export type ScanAnalystPlanProposalResponse = z.infer<typeof scanAnalystPlanProposalResponseSchema>
+export type ScanAnalystContextSummaryResponse = z.infer<typeof scanAnalystContextSummaryResponseSchema>
+export type ScanAnalystRunTargetExecutionResponse = z.infer<typeof scanAnalystRunTargetExecutionResponseSchema>
+export type ScanAnalystRunDetectionResponse = z.infer<typeof scanAnalystRunDetectionResponseSchema>
+export type ScanAnalystRunSummaryResponse = z.infer<typeof scanAnalystRunSummaryResponseSchema>
+export type ScanAnalystResponse = z.infer<typeof scanAnalystResponseSchema>
+export type ScanAnalystAgentMessageResponse = z.infer<typeof scanAnalystAgentMessageResponseSchema>
+export type ScanAnalystAgentParametersResponse = z.infer<typeof scanAnalystAgentParametersResponseSchema>
+export type ScanAnalystAutonomousActivityResponse = z.infer<typeof scanAnalystAutonomousActivityResponseSchema>
+export type ScanAnalystAgentStatusResponse = z.infer<typeof scanAnalystAgentStatusResponseSchema>
+export type ScanAnalystChatResponse = z.infer<typeof scanAnalystChatResponseSchema>
 export type ScannerResponse = z.infer<typeof scannerResponseSchema>
 export type ManagedServerScannerAssignmentResponse = z.infer<typeof managedServerScannerAssignmentResponseSchema>
 export type ManagedServerResponse = z.infer<typeof managedServerResponseSchema>

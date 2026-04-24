@@ -34,6 +34,9 @@ import {
   reportListResponseSchema,
   scanJobResponseSchema,
   scanJobTargetExecutionResponseSchema,
+  scanAnalystAgentStatusResponseSchema,
+  scanAnalystChatResponseSchema,
+  scanAnalystRunSummaryResponseSchema,
   scanPlanResponseSchema,
   ruleDistributionAttemptResponseSchema,
   ruleDistributionJobResponseSchema,
@@ -94,6 +97,9 @@ import {
   type ReportListResponse,
   type ScanJobResponse,
   type ScanJobTargetExecutionResponse,
+  type ScanAnalystAgentStatusResponse,
+  type ScanAnalystChatResponse,
+  type ScanAnalystRunSummaryResponse,
   type ScanPlanResponse,
   type RuleDistributionAttemptResponse,
   type RuleDistributionJobResponse,
@@ -169,6 +175,7 @@ import type {
   SimulateRuleProposalInput,
   TriggerRollbackInput,
   RetryDistributionJobInput,
+  SendScanAnalystChatTurnInput,
   AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
@@ -963,6 +970,31 @@ export class AspNetGateway {
         reason: reason ?? null,
       },
     })
+  }
+
+  async getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse> {
+    return requestJson("/api/v2/ai/scan-analyst/status", scanAnalystAgentStatusResponseSchema, { signal })
+  }
+
+  async sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse> {
+    return requestJson("/api/v2/ai/scan-analyst/chat", scanAnalystChatResponseSchema, {
+      method: "POST",
+      body: {
+        sessionId: input.sessionId,
+        actorUserId: input.actorUserId,
+        message: input.message,
+        action: input.action,
+        subnetId: input.subnetId,
+        preferredScannerCapability: input.preferredScannerCapability,
+        maxTargetCount: input.maxTargetCount,
+        editedPlan: input.editedPlan,
+        simulatedConditions: input.simulatedConditions,
+      },
+    })
+  }
+
+  async getScanAnalystRunSummary(scanJobId: string, signal?: AbortSignal): Promise<ScanAnalystRunSummaryResponse> {
+    return requestJson(`/api/v2/ai/scan-analyst/runs/${scanJobId}/summary`, scanAnalystRunSummaryResponseSchema, { signal })
   }
 
   async listManagedServers(

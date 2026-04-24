@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { motion } from "framer-motion"
+import { useState } from "react"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { classifyUiError } from "@/shared/api/error-classification"
@@ -43,6 +44,7 @@ function MetricCard({
 }
 
 export function ManagedServerDetailPage({ serverId }: { serverId: string }) {
+  const [renderedAtMs] = useState(() => Date.now())
   const serverQuery = useWorkbenchQuery(
     ["servers", "detail", serverId],
     (signal) => gateway.getManagedServer(serverId, signal),
@@ -99,7 +101,7 @@ export function ManagedServerDetailPage({ serverId }: { serverId: string }) {
   const relatedDetections = detectionsQuery.data?.items ?? []
   const relatedReports = reportsQuery.data?.items ?? []
   const relatedGroups = groupsQuery.data ?? []
-  const isContactStale = !server.lastContactUtc || Date.now() - Date.parse(server.lastContactUtc) > 72 * 60 * 60 * 1000
+  const isContactStale = !server.lastContactUtc || renderedAtMs - Date.parse(server.lastContactUtc) > 72 * 60 * 60 * 1000
 
   return (
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">

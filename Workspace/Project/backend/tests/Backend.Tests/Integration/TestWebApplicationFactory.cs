@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Backend.Infrastructure.Security;
 
 namespace Backend.Tests.Integration;
 
@@ -82,6 +83,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
             dbContext.Database.EnsureDeleted();
             dbContext.Database.EnsureCreated();
+            scope.ServiceProvider.GetRequiredService<IdentityBootstrapper>().SeedAsync(CancellationToken.None).GetAwaiter().GetResult();
         });
     }
 
@@ -91,6 +93,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
         await dbContext.Database.EnsureDeletedAsync();
         await dbContext.Database.EnsureCreatedAsync();
+        await scope.ServiceProvider.GetRequiredService<IdentityBootstrapper>().SeedAsync(CancellationToken.None);
         scope.ServiceProvider.GetRequiredService<TestRuleDistributionTransportDispatcher>().Reset();
         scope.ServiceProvider.GetRequiredService<TestScanExecutionDispatcher>().Reset();
     }

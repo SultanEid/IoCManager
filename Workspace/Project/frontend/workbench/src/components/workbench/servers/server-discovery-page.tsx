@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion } from "framer-motion"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,17 +47,12 @@ export function ServerDiscoveryPage({ surface }: { surface: "servers" | "subnets
   const [promotionEnvironment, setPromotionEnvironment] = useState("lab")
 
   const subnetsQuery = useWorkbenchQuery(["infrastructure", "subnets"], (signal) => gateway.listSubnets(signal))
-  const subnets = subnetsQuery.data ?? []
-
-  useEffect(() => {
-    if (!selectedSubnetId && subnets.length > 0) {
-      setSelectedSubnetId(subnets[0].id)
-    }
-  }, [selectedSubnetId, subnets])
+  const subnets = useMemo(() => subnetsQuery.data ?? [], [subnetsQuery.data])
+  const effectiveSubnetId = selectedSubnetId || subnets[0]?.id || ""
 
   const selectedSubnet = useMemo(
-    () => subnets.find((subnet) => subnet.id === selectedSubnetId) ?? null,
-    [selectedSubnetId, subnets],
+    () => subnets.find((subnet) => subnet.id === effectiveSubnetId) ?? null,
+    [effectiveSubnetId, subnets],
   )
 
   const rangeValidation = useMemo(() => {
@@ -75,13 +70,13 @@ export function ServerDiscoveryPage({ surface }: { surface: "servers" | "subnets
   }, [rangeEndIp, rangeStartIp, selectedSubnet])
 
   const runsQuery = useWorkbenchQuery(
-    ["infrastructure", "discovery-runs", selectedSubnetId],
-    (signal) => (selectedSubnetId ? gateway.listDiscoveryRuns(selectedSubnetId, signal) : Promise.resolve([])),
+    ["infrastructure", "discovery-runs", effectiveSubnetId],
+    (signal) => (effectiveSubnetId ? gateway.listDiscoveryRuns(effectiveSubnetId, signal) : Promise.resolve([])),
     { refetchInterval: 2500 },
   )
   const hostsQuery = useWorkbenchQuery(
-    ["infrastructure", "discovered-hosts", selectedSubnetId],
-    (signal) => (selectedSubnetId ? gateway.listDiscoveredHosts(selectedSubnetId, signal) : Promise.resolve([])),
+    ["infrastructure", "discovered-hosts", effectiveSubnetId],
+    (signal) => (effectiveSubnetId ? gateway.listDiscoveredHosts(effectiveSubnetId, signal) : Promise.resolve([])),
     { refetchInterval: 2500 },
   )
 
@@ -100,8 +95,8 @@ export function ServerDiscoveryPage({ surface }: { surface: "servers" | "subnets
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovery-runs", selectedSubnetId] }),
-        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovered-hosts", selectedSubnetId] }),
+        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovery-runs", effectiveSubnetId] }),
+        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovered-hosts", effectiveSubnetId] }),
       ])
     },
   })
@@ -122,9 +117,9 @@ export function ServerDiscoveryPage({ surface }: { surface: "servers" | "subnets
       }),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovered-hosts", selectedSubnetId] }),
-        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovery-runs", selectedSubnetId] }),
-        queryClient.invalidateQueries({ queryKey: ["infrastructure", "target-servers", selectedSubnetId] }),
+        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovered-hosts", effectiveSubnetId] }),
+        queryClient.invalidateQueries({ queryKey: ["infrastructure", "discovery-runs", effectiveSubnetId] }),
+        queryClient.invalidateQueries({ queryKey: ["infrastructure", "target-servers", effectiveSubnetId] }),
       ])
     },
   })
@@ -180,7 +175,7 @@ export function ServerDiscoveryPage({ surface }: { surface: "servers" | "subnets
           <label className="space-y-1">
             <span className="wb-kicker">Subnet</span>
             <select
-              value={selectedSubnetId}
+              value={effectiveSubnetId}
               onChange={(event) => setSelectedSubnetId(event.target.value)}
               className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
             >

@@ -9,6 +9,7 @@ public sealed class AiSidecarOptions
     public string ScoreCasePath { get; set; } = "/score_case";
     public string ExplainCasePath { get; set; } = "/explain_case";
     public string RecommendActionPath { get; set; } = "/recommend_action";
+    public string ScanAnalystPath { get; set; } = "/scan_analyst";
     public string HistoricalLearningPath { get; set; } = "/historical_learning/query";
     public int TimeoutSeconds { get; set; } = 30;
 }

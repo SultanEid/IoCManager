@@ -19,6 +19,11 @@ public sealed class LegacyScanPipelineSchemaInitializer : ILegacyScanPipelineSch
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
+        if (!_dbContext.Database.IsRelational())
+        {
+            return;
+        }
+
         var commands = new[]
         {
             "IF COL_LENGTH('dbo.NETWORK', 'SshUser') IS NULL ALTER TABLE dbo.NETWORK ADD SshUser nvarchar(100) NULL;",
