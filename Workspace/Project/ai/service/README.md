@@ -161,7 +161,8 @@ Promote only after artifact hashes validate:
 Push-Location Workspace/Project/ai
 .\service\.venv\Scripts\python.exe .\jobs\publish_model.py `
   --registry-path .\service\artifacts\model_registry.json `
-  --model-version <candidate-model-version>
+  --model-version <candidate-model-version> `
+  --evaluation-report .\datasets\processed\evaluations\<candidate-model-version>.json
 Pop-Location
 ```
 
@@ -177,8 +178,12 @@ Push-Location Workspace/Project/ai
 Pop-Location
 ```
 
-Model registry artifact paths are artifact-root-relative, and
-`publish_model.py` validates every registered artifact hash before promotion.
+Model registry artifact paths are artifact-root-relative. `publish_model.py`
+validates every registered artifact hash and refuses promotion unless the
+evaluation report passes the configured promotion gates. The gates check core
+quality metrics, safety metrics, sample size, and required evaluation slices
+for IOC type, source system, scanner family, recency, trust, and evidence
+availability.
 
 ## Offline Jobs
 Offline jobs live under `ai/jobs`:
@@ -191,10 +196,10 @@ Offline jobs live under `ai/jobs`:
 | `inventory_datasets.py` | supported | `tests/test_inventory_datasets_job.py` | Dataset inventory reporting. |
 | `probe_live_ioc_decisions.py` | supported utility | `tests/test_probe_live_ioc_decisions_job.py` | Requires a live backend when run outside tests. |
 | `stage_reliable_source_exports.py` | supported staging utility | `tests/test_stage_reliable_source_exports_job.py` | Uses temp outputs in tests; real runs stage source exports. |
-| `evaluate_model.py` | supported developer utility | `tests/test_evaluation_harness_job.py` plus API evaluation tests | Writes machine-readable reports and bundles from a registry model and snapshot. |
+| `evaluate_model.py` | supported developer utility | `tests/test_evaluate_model_job.py`, `tests/test_evaluation_harness_job.py`, and API evaluation tests | Writes machine-readable reports, input hashes, promotion-gate metadata, and bundles from a registry model and snapshot. |
 | `train_baseline.py` | supported developer utility | `tests/test_train_and_publish_jobs.py` covers shared registry artifact validation | Single split baseline training. Prefer CV for release candidates. |
 | `train_baseline_cv.py` | supported developer utility | `tests/test_train_and_publish_jobs.py` | Reproducible candidate training with held-out test split and CV. |
-| `publish_model.py` | supported developer utility | `tests/test_train_and_publish_jobs.py` | Validates artifact hashes before promotion; AI-5 will add metric gates. |
+| `publish_model.py` | supported developer utility | `tests/test_train_and_publish_jobs.py` | Validates artifact hashes and promotion-gate metrics before promotion. |
 | Other feed/review/build scripts under `ai/jobs` | experimental | varies | Treat as draft or network/data-dependent unless this table marks them supported. |
 
 See [AI Model Pipeline](../../docs/ai-model-pipeline.md) before changing model, dataset, training, or evaluation behavior.

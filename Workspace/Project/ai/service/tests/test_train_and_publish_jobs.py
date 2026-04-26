@@ -88,6 +88,7 @@ def test_publish_model_refuses_bad_artifact_hash(tmp_path: Path) -> None:
         str(store.path),
         "--model-version",
         "v1-a",
+        "--skip-promotion-gates",
     ]
     try:
         try:
@@ -109,6 +110,8 @@ def test_publish_model_promotes_when_artifacts_validate(tmp_path: Path, capsys) 
     artifact_path.parent.mkdir(parents=True)
     artifact_path.write_text('{"precision":1.0}', encoding="utf-8")
     digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    evaluation_report_path = tmp_path / "evaluation.json"
+    _write_evaluation_report(evaluation_report_path, model_version="v1-a", passed=True)
     store = ModelRegistryStore(artifacts_root / "model_registry.json")
     store.upsert(
         ModelRegistryEntry(
@@ -129,6 +132,8 @@ def test_publish_model_promotes_when_artifacts_validate(tmp_path: Path, capsys) 
         str(store.path),
         "--model-version",
         "v1-a",
+        "--evaluation-report",
+        str(evaluation_report_path),
     ]
     try:
         module.main()
@@ -137,7 +142,53 @@ def test_publish_model_promotes_when_artifacts_validate(tmp_path: Path, capsys) 
 
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "active"
+    assert output["promotionGates"]["passed"] is True
     assert store.get_by_version("v1-a").status == "active"
+
+
+def test_publish_model_refuses_failed_promotion_gates(tmp_path: Path) -> None:
+    module = _load_job_module("publish_model")
+    artifacts_root = tmp_path / "artifacts"
+    artifact_path = artifacts_root / "models" / "v1-a" / "metrics.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text('{"precision":1.0}', encoding="utf-8")
+    digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    evaluation_report_path = tmp_path / "evaluation.json"
+    _write_evaluation_report(evaluation_report_path, model_version="v1-a", passed=False)
+    store = ModelRegistryStore(artifacts_root / "model_registry.json")
+    store.upsert(
+        ModelRegistryEntry(
+            model_id="cti-v1",
+            model_version="v1-a",
+            dataset_version="d-1",
+            status="candidate",
+            created_at_utc=datetime.now(timezone.utc),
+            artifact_paths={"metrics": "models/v1-a/metrics.json"},
+            artifact_hashes={"metrics": digest},
+        )
+    )
+
+    previous_argv = sys.argv
+    sys.argv = [
+        "publish_model.py",
+        "--registry-path",
+        str(store.path),
+        "--model-version",
+        "v1-a",
+        "--evaluation-report",
+        str(evaluation_report_path),
+    ]
+    try:
+        try:
+            module.main()
+        except RuntimeError as exc:
+            assert "Promotion gates failed" in str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("publish_model.py should reject failing promotion gates")
+    finally:
+        sys.argv = previous_argv
+
+    assert store.get_by_version("v1-a").status == "candidate"
 
 
 def _write_snapshot(*, snapshot_root: Path, dataset_version: str, row_count: int) -> None:
@@ -218,3 +269,39 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_evaluation_report(path: Path, *, model_version: str, passed: bool) -> None:
+    metric_value = 0.90 if passed else 0.40
+    false_positive_rate = 0.02 if passed else 0.42
+    path.write_text(
+        json.dumps(
+            {
+                "modelVersion": model_version,
+                "datasetVersion": "d-1",
+                "sampleSize": 100,
+                "overall": {
+                    "precision": metric_value,
+                    "recall": metric_value,
+                    "f1": metric_value,
+                    "prAuc": metric_value,
+                    "calibrationError": 0.04,
+                    "brierScore": 0.08,
+                    "falsePositiveRate": false_positive_rate,
+                    "falseNegativeRate": 0.05,
+                    "unsafeRecommendationRate": 0.0,
+                    "coverage": 0.80,
+                },
+                "slices": [
+                    {"sliceField": "ioc_type", "sliceValue": "domain"},
+                    {"sliceField": "source_system", "sliceValue": "feed"},
+                    {"sliceField": "rule_family", "sliceValue": "sigma"},
+                    {"sliceField": "recency_bucket", "sliceValue": "0_24h"},
+                    {"sliceField": "trust_bucket", "sliceValue": "high"},
+                    {"sliceField": "evidence_availability_bucket", "sliceValue": "sparse"},
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )

@@ -207,8 +207,8 @@ paths and validate artifact hashes before loading or promoting models.
 
 ## Evaluation Flow
 
-Evaluation code is already present but should become stricter before promotion
-is trusted.
+Evaluation code is present and promotion now requires passing evaluation gates
+by default.
 
 | File | Purpose |
 |------|---------|
@@ -221,6 +221,17 @@ is trusted.
 | `Workspace/Project/ai/service/decision_service/eval_framework.py` | generic offline evaluation framework |
 | `Workspace/Project/ai/service/decision_service/action_plan_evaluator.py` | action-plan quality and safety metrics |
 
+`Workspace/Project/ai/jobs/evaluate_model.py` writes `promotionGates` metadata
+into the evaluation report and run manifest. `Workspace/Project/ai/jobs/publish_model.py`
+requires an evaluation report unless `--skip-promotion-gates` is explicitly set
+for controlled local recovery.
+
+The default gate checks sample size, precision, recall, F1, PR-AUC, calibration
+error, Brier score, false-positive rate, false-negative rate, unsafe
+recommendation rate, coverage, and required slices for IOC type, source system,
+scanner family, recency, trust, and evidence availability. Near-perfect metrics
+are allowed but flagged for leakage and source-overlap review.
+
 ## Job Support Status
 
 | Job | Status | Smoke coverage | Notes |
@@ -231,10 +242,10 @@ is trusted.
 | `Workspace/Project/ai/jobs/inventory_datasets.py` | supported | `tests/test_inventory_datasets_job.py` | Dataset inventory reporting. |
 | `Workspace/Project/ai/jobs/probe_live_ioc_decisions.py` | supported utility | `tests/test_probe_live_ioc_decisions_job.py` | Requires a live backend when run outside tests. |
 | `Workspace/Project/ai/jobs/stage_reliable_source_exports.py` | supported staging utility | `tests/test_stage_reliable_source_exports_job.py` | Real runs stage source exports; tests use temp outputs. |
-| `Workspace/Project/ai/jobs/evaluate_model.py` | supported developer utility | API evaluation and report bundle tests | Produces machine-readable reports and bundles from a registry model and snapshot. |
+| `Workspace/Project/ai/jobs/evaluate_model.py` | supported developer utility | API evaluation, report bundle tests, and `tests/test_evaluate_model_job.py` | Produces machine-readable reports, input hashes, promotion-gate metadata, and bundles from a registry model and snapshot. |
 | `Workspace/Project/ai/jobs/train_baseline.py` | supported developer utility | shared registry artifact validation tests | Single split baseline training. Prefer CV for release candidates. |
 | `Workspace/Project/ai/jobs/train_baseline_cv.py` | supported developer utility | `Workspace/Project/ai/service/tests/test_train_and_publish_jobs.py` | Reproducible candidate training with held-out test split and CV. |
-| `Workspace/Project/ai/jobs/publish_model.py` | supported developer utility | `Workspace/Project/ai/service/tests/test_train_and_publish_jobs.py` | Validates registered artifact hashes before promotion; AI-5 adds metric gates. |
+| `Workspace/Project/ai/jobs/publish_model.py` | supported developer utility | `Workspace/Project/ai/service/tests/test_train_and_publish_jobs.py` | Validates registered artifact hashes and promotion-gate metrics before promotion. |
 
 Any other feed, review, or build script under `Workspace/Project/ai/jobs` should
 be treated as experimental unless this table marks it supported. Network fetch
@@ -254,7 +265,7 @@ policy, and time-window separation before production reliance.
 | Unlocked dependencies | `pyproject.toml` uses lower bounds instead of a lock/constraints workflow | AI-4 |
 | Non-portable registry paths | model and dataset registries contain local absolute paths | AI-4 |
 | Large parser/data modules | `source_adapters.py` and `decision_dataset_builder.py` are high-change-risk modules | AI-3, AI-6 |
-| Evaluation promotion not enforced | evaluation exists, but model promotion gates need stronger checks | AI-5 |
+| Evaluation promotion not enforced | promotion now requires evaluation report gates; future work can tune thresholds from production feedback | AI-5 |
 | Filesystem concurrency | registry saves use atomic replace; JSONL feedback is only locked within one process | AI-8 |
 | Deployment packaging missing | no dedicated sidecar deployment package was identified | AI-8 |
 
