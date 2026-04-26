@@ -38,7 +38,7 @@ Enhance the existing IOC Manager AI sidecar into a well-understood, tested, repr
 | Phase | Status | Evidence |
 |-------|--------|----------|
 | AI-1 | Complete - 2026-04-26 | `Workspace/Project/docs/ai-model-pipeline.md`, README links, `.planning/phases/ai-01-pipeline-understanding-baseline/AI-01-EXECUTION.md` |
-| AI-2 | Pending | Not started |
+| AI-2 | Planned - 2026-04-26 | `.planning/phases/ai-02-broken-path-stabilization/AI-02-CONTEXT.md`, `AI-02-RESEARCH.md`, `AI-02-01-PLAN.md`, `AI-02-02-PLAN.md`, `AI-02-03-PLAN.md` |
 | AI-3 | Pending | Not started |
 | AI-4 | Pending | Not started |
 | AI-5 | Pending | Not started |
