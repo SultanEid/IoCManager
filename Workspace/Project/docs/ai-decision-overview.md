@@ -8,7 +8,7 @@ The decision and action-plan subsystem is the IoC Manager component that turns a
 - explicit abstention guidance when evidence is not sufficient
 - a manual-only, policy-constrained action plan
 
-The subsystem is implemented in the AI sidecar and supports IoC Manager operations. It is designed to help analysts review detections, not to widen the product into a general CTI platform.
+The subsystem is implemented in the AI sidecar and supports IoC Manager operations. It is designed to help analysts review detections, not to widen the product into a general threat-intelligence suite.
 
 Core runtime outputs are defined by the sidecar contracts in `ai/service/decision_service/contracts.py`, especially:
 
@@ -27,7 +27,7 @@ This subsystem is not:
 
 - autonomous response orchestration
 - final proof of maliciousness based on generated text
-- a campaign, actor, or graph-first CTI platform
+- a campaign, actor, or graph-centered threat-intelligence suite
 - a replacement for analyst review, override, or closure workflow
 - a license to auto-remediate endpoints, block infrastructure, or suppress detections without human approval
 
