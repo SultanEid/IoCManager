@@ -395,12 +395,65 @@ public sealed class AiDecisionsController : ControllerBase
             },
             rule_metadata = BuildRuleMetadata(iocId, detail),
             raw_hit_payload = BuildRawHitPayload(iocId, detail),
+            asset_context = new
+            {
+                asset_id = detail.Target?.Id ?? detail.TargetDisplay,
+                asset_name = detail.Target?.Hostname ?? detail.TargetDisplay,
+                asset_type = "scan_target",
+                criticality = MapAssetCriticality(detail),
+                environment = "lab",
+                internet_exposed = false,
+            },
+            time_prevalence_context = new
+            {
+                first_seen = detail.TimestampUtc,
+                last_seen = detail.TimestampUtc,
+                hit_count_24h = 1,
+                hit_count_7d = 1,
+                prevalence_ratio = 0.001m,
+                recency_bucket = "new",
+                trend = "new",
+            },
+            linked_enrichment = new
+            {
+                enrichments = new[]
+                {
+                    new
+                    {
+                        kind = $"scanner_result_{detail.Severity.Trim().ToLowerInvariant()}",
+                        source = "legacy-ioc-explorer",
+                        confidence = MapProviderConfidence(detail),
+                        value = new
+                        {
+                            scanner_family = family,
+                            severity = detail.Severity,
+                            pain_level = detail.PainLevel,
+                            rule_name = detail.RuleName,
+                        },
+                    },
+                },
+            },
+            behavior_report_references = new
+            {
+                reports = new[]
+                {
+                    new
+                    {
+                        report_id = $"legacy-scan-{iocId:D}",
+                        source = "legacy-ioc-explorer",
+                        observed_at = detail.TimestampUtc,
+                        summary = BuildBehaviorSummary(detail),
+                    },
+                },
+            },
             hostContext = new
             {
                 hostname = detail.Target?.Hostname ?? detail.TargetDisplay,
                 ipAddress = detail.Target?.IpAddress ?? detail.TargetIp,
                 operatingSystem = detail.Target?.TargetOsType ?? detail.TargetOsType,
                 status = detail.Target?.Status,
+                criticality = MapHostCriticality(detail),
+                assetExposure = 0.25m,
             },
             ruleContext = new
             {
@@ -413,6 +466,16 @@ public sealed class AiDecisionsController : ControllerBase
                 scannerAgreement = MapScannerAgreement(detail),
                 sourceName = "legacy-ioc-explorer",
                 activitySignal = MapActivitySignal(detail),
+                providerConfidence = MapProviderConfidence(detail),
+                indicatorStrength = MapIndicatorStrength(detail),
+                enrichmentStrength = MapEnrichmentStrength(detail),
+                benignContext = 0.04m,
+                heuristicNoise = 0.08m,
+                sourceThreatSignal = MapSourceThreatSignal(detail),
+                externalSourceSignal = MapExternalSourceSignal(detail),
+                sightingsCount = 1,
+                sightingsCorroboration = MapSightingsCorroboration(detail),
+                evidenceConflict = 0.0m,
             },
         };
 
@@ -619,6 +682,105 @@ public sealed class AiDecisionsController : ControllerBase
             "queued" => 0.44m,
             _ => 0.40m,
         };
+    }
+
+    private static string MapAssetCriticality(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        return detail.Severity.Trim().ToLowerInvariant() switch
+        {
+            "critical" => "high",
+            "high" => "high",
+            "medium" => "medium",
+            _ => "low",
+        };
+    }
+
+    private static decimal MapHostCriticality(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        return detail.Severity.Trim().ToLowerInvariant() switch
+        {
+            "critical" => 0.85m,
+            "high" => 0.72m,
+            "medium" => 0.50m,
+            _ => 0.30m,
+        };
+    }
+
+    private static decimal MapProviderConfidence(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        var scannerBoost = detail.ScannerFamily.Trim().ToLowerInvariant() switch
+        {
+            "yara" => 0.08m,
+            "sigma" => 0.05m,
+            "suricata" => 0.04m,
+            "snort" => 0.04m,
+            _ => 0.00m,
+        };
+
+        return Math.Min(0.92m, MapConfidence(detail) + scannerBoost);
+    }
+
+    private static decimal MapIndicatorStrength(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        return detail.ScannerFamily.Trim().ToLowerInvariant() switch
+        {
+            "yara" => 0.82m,
+            "sigma" => 0.70m,
+            "suricata" => 0.76m,
+            "snort" => 0.76m,
+            _ => 0.62m,
+        };
+    }
+
+    private static decimal MapEnrichmentStrength(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        return detail.Severity.Trim().ToLowerInvariant() switch
+        {
+            "critical" => 0.72m,
+            "high" => 0.64m,
+            "medium" => 0.48m,
+            _ => 0.34m,
+        };
+    }
+
+    private static decimal MapSourceThreatSignal(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        return detail.Severity.Trim().ToLowerInvariant() switch
+        {
+            "critical" => 0.86m,
+            "high" => 0.76m,
+            "medium" => 0.58m,
+            _ => 0.36m,
+        };
+    }
+
+    private static decimal MapExternalSourceSignal(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        return detail.ScannerFamily.Trim().ToLowerInvariant() switch
+        {
+            "yara" => 0.68m,
+            "sigma" => 0.64m,
+            "suricata" => 0.72m,
+            "snort" => 0.72m,
+            _ => 0.48m,
+        };
+    }
+
+    private static decimal MapSightingsCorroboration(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        return detail.Severity.Trim().ToLowerInvariant() switch
+        {
+            "critical" => 0.56m,
+            "high" => 0.48m,
+            "medium" => 0.34m,
+            _ => 0.20m,
+        };
+    }
+
+    private static string BuildBehaviorSummary(LegacyPipelineIocFindingDetailResponse detail)
+    {
+        var family = detail.ScannerFamily.Trim().ToUpperInvariant();
+        return $"{family} scanner reported {detail.Severity.Trim().ToLowerInvariant()} severity evidence for {detail.RuleName}.";
     }
 
     private static string ComputeSha256Hex(string value)

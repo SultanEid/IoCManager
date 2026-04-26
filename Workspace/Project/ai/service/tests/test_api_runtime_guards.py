@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from decision_service.api import create_app
 from decision_service.config import load_settings
+from decision_service.registry import ModelRegistryEntry, ModelRegistryStore
 
 
 def test_score_batch_rejects_too_many_items(settings) -> None:
@@ -76,6 +79,56 @@ def test_health_surfaces_sanitized_dataset_startup_warning(settings) -> None:
     warnings_payload = json.dumps(body["runtimeWarnings"])
     assert "Traceback" not in warnings_payload
     assert "C:" not in warnings_payload
+
+
+def test_health_surfaces_sanitized_model_artifact_warning(settings, tmp_path: Path) -> None:
+    artifacts_root = tmp_path / "artifacts"
+    artifact_path = artifacts_root / "models" / "v1-bad" / "metrics.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text('{"precision": 1.0}', encoding="utf-8")
+    registry_path = artifacts_root / "model_registry.json"
+    ModelRegistryStore(registry_path).upsert(
+        ModelRegistryEntry(
+            model_id="cti-v1",
+            model_version="v1-bad",
+            dataset_version="test-v1",
+            status="active",
+            created_at_utc=datetime.now(timezone.utc),
+            artifact_paths={"metrics": "models/v1-bad/metrics.json"},
+            artifact_hashes={"metrics": "bad-hash"},
+        )
+    )
+    degraded_settings = replace(
+        settings,
+        artifacts_root=artifacts_root,
+        registry_path=registry_path,
+        dataset_registry_path=artifacts_root / "dataset_registry.json",
+        feedback_store_path=artifacts_root / "feedback_events.jsonl",
+    )
+    degraded_client = TestClient(create_app(degraded_settings))
+
+    response = degraded_client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "model_artifact_validation_failed" in body["runtimeWarnings"]
+    warnings_payload = json.dumps(body["runtimeWarnings"])
+    assert "bad-hash" not in warnings_payload
+    assert "C:" not in warnings_payload
+
+
+def test_score_case_rejects_malformed_required_fields(client) -> None:
+    response = client.post(
+        "/score_case",
+        json={
+            "caseId": "case-malformed",
+            "sourceSystem": "feed",
+            "iocType": "domain",
+            "iocValue": "",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_load_settings_disables_http_evaluation_by_default_for_staging(monkeypatch, tmp_path) -> None:

@@ -204,3 +204,20 @@ Offline jobs live under `ai/jobs`:
 
 See [AI Model Pipeline](../../docs/ai-model-pipeline.md) before changing model, dataset, training, or evaluation behavior.
 
+## Test Scope
+
+Fast PR-gate tests run with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+```
+
+The fast suite uses fixtures and temp directories only. It covers API response
+contracts, deterministic scorer behavior, scanner-family decision paths,
+registry and artifact validation, dataset builders, evaluation jobs, promotion
+gates, historical learning, and runtime guard failure modes.
+
+Live/offline operator checks are not part of the fast gate. They include
+`probe_live_ioc_decisions.py` against a running backend and network feed fetch
+jobs. Run those only from an explicitly configured local/operator environment.
+

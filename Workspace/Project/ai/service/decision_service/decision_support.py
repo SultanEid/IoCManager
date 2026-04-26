@@ -557,6 +557,41 @@ def _finalize_grounded_decision(
         false_positive_risk=false_positive_risk,
         fusion_failure_reason=fusion_failure_reason,
     )
+    fallback = _family_model_supported_fallback(
+        score=score,
+        request=request,
+        verdict=verdict,
+        confidence=confidence,
+        false_positive_risk=false_positive_risk,
+        safety_inputs=safety_inputs,
+    )
+    if fallback is not None:
+        verdict, confidence, false_positive_risk, fallback_reason = fallback
+        action = _select_action(
+            verdict=verdict,
+            uncertainty=score.uncertainty_score,
+            blast_radius=score.blast_radius_score,
+            deployability=score.deployability_score,
+            request=request,
+        )
+        abstain_reason = None
+        review_priority = _review_priority(verdict, confidence, score.blast_radius_score)
+        reasons = _merge_unique_text(list(reasons) + [fallback_reason])
+        next_best_evidence = _merge_unique_text(
+            list(next_best_evidence) + _next_best_evidence(score=score, verdict=verdict)
+        )
+        safety_inputs = _collect_safety_inputs(
+            request=request,
+            evidence_fusion=evidence_fusion,
+            family=family,
+            lexical_only_gate_triggered=lexical_only_gate_triggered,
+            non_lexical_corroborated=non_lexical_corroborated,
+            contradiction_score=contradiction_score,
+            missing_score=missing_score,
+            confidence=confidence,
+            false_positive_risk=false_positive_risk,
+            fusion_failure_reason=fusion_failure_reason,
+        )
     safety_outcome = _apply_safety_rails(
         verdict=verdict,
         action=action,
@@ -668,6 +703,68 @@ def _blend_family_confidence_and_risk(
     score_risk = _clip01((1.0 - score_signal) + (0.10 * uncertainty))
     blended_false_positive_risk = _clip01((0.72 * blended_false_positive_risk) + (0.28 * score_risk))
     return blended_confidence, blended_false_positive_risk
+
+
+def _family_model_supported_fallback(
+    *,
+    score: CaseScoreVectorResponse,
+    request: ScoreCaseRequest,
+    verdict: DecisionVerdict,
+    confidence: float,
+    false_positive_risk: float,
+    safety_inputs: _SafetyInputs,
+) -> tuple[DecisionVerdict, float, float, str] | None:
+    if verdict != "insufficient_evidence":
+        return None
+    if safety_inputs.family.strip().lower() not in {"sigma", "snort", "suricata", "yara"}:
+        return None
+    if score.decision_state not in {"recommend", "escalate"}:
+        return None
+    if _false_positive_signal_present(request) or _stale_or_revoked_signal_present(request):
+        return None
+    hard_abstain_codes = {
+        "high_uncertainty",
+        "high_evidence_conflict",
+        "low_source_trust",
+        "low_malicious_signal",
+        "missing_non_string_corroboration",
+    }
+    if hard_abstain_codes.intersection({code.strip().lower() for code in score.abstain_reason_codes}):
+        return None
+    if (
+        safety_inputs.missing_critical_fields
+        or safety_inputs.lexical_only_gate_triggered
+        or not safety_inputs.non_lexical_corroborated
+        or safety_inputs.missing_score >= 0.65
+        or safety_inputs.contradiction_score >= 0.50
+        or (safety_inputs.enrichment_status == "unavailable" and not safety_inputs.non_lexical_corroborated)
+    ):
+        return None
+
+    maliciousness = _clip01(score.maliciousness_score)
+    uncertainty = _clip01(score.uncertainty_score)
+    actionability = _clip01(score.actionability_score)
+    if maliciousness < LIKELY_MALICIOUS_MIN or uncertainty > 0.50:
+        return None
+
+    if maliciousness >= 0.95 and actionability >= 0.25:
+        fallback_verdict: DecisionVerdict = "likely_malicious"
+        confidence_floor = 0.62
+        risk_ceiling = 0.22
+    else:
+        fallback_verdict = "suspicious"
+        confidence_floor = 0.52
+        risk_ceiling = 0.30
+
+    model_confidence = _clip01(maliciousness * (1.0 - (0.55 * uncertainty)) * (0.78 + (0.22 * actionability)))
+    fallback_confidence = max(_clip01(confidence), confidence_floor, min(0.78, model_confidence))
+    fallback_false_positive_risk = min(_clip01(false_positive_risk), risk_ceiling)
+    reason = (
+        "Family adjudicator had sparse scanner evidence, but calibrated model score and non-string "
+        f"corroboration met the fallback evidence bar (maliciousness={maliciousness:.2f}, "
+        f"uncertainty={uncertainty:.2f})."
+    )
+    return fallback_verdict, fallback_confidence, fallback_false_positive_risk, reason
 
 
 def _collect_safety_inputs(
@@ -851,8 +948,23 @@ def _missing_critical_fields(*, request: ScoreCaseRequest, family: str) -> list[
             missing.append("raw_hit_payload.network.five_tuple_or_message_or_event_id")
     elif resolved_family == "yara":
         matched_strings = raw_hit_payload.get("matched_strings")
+        raw_evidence = _coerce_dict(raw_hit_payload.get("evidence"))
+        if not isinstance(matched_strings, list):
+            matched_strings = raw_hit_payload.get("matchedStrings")
+        if not isinstance(matched_strings, list):
+            matched_strings = raw_evidence.get("matched_strings")
+        if not isinstance(matched_strings, list):
+            matched_strings = raw_evidence.get("matchedStrings")
         has_matched_strings = isinstance(matched_strings, list) and any(_has_text(item) for item in matched_strings)
-        has_match_count = raw_hit_payload.get("match_count") is not None
+        has_match_count = any(
+            value is not None
+            for value in (
+                raw_hit_payload.get("match_count"),
+                raw_hit_payload.get("matchCount"),
+                raw_evidence.get("match_count"),
+                raw_evidence.get("matchCount"),
+            )
+        )
         if not (_has_text(rule_metadata.get("rule_id")) or _has_text(rule_metadata.get("rule_name"))):
             missing.append("rule_metadata.rule_id_or_rule_name")
         if not (has_matched_strings or has_match_count or _has_text(raw_hit_payload.get("event_id"))):
