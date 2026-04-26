@@ -40,6 +40,20 @@ This roadmap stabilizes the existing IOC Manager platform before expanding produ
 - `Workspace/Project/frontend/workbench/package.json`
 - `Workspace/Project/ai/service/pyproject.toml`
 
+**Plans:**
+
+| Wave | Plan | Objective | Requirements |
+|------|------|-----------|--------------|
+| 1 | `01-01-PLAN.md` | Onboarding and canonical source docs | GOV-01 |
+| 1 | `01-02-PLAN.md` | Noisy-path boundary and guardrails | GOV-02 |
+| 2 *(blocked on Wave 1 completion)* | `01-03-PLAN.md` | Validation gates and CI baseline | GOV-03 |
+
+**Cross-cutting constraints:**
+- `Workspace/Project/` remains the only active application root.
+- `src/IocManager.Web` is removed/decommissioned and must not be reintroduced as active.
+- Existing user material in logs, screenshots, backups, result folders, temp folders, archives, and imported copies must not be deleted unless explicitly requested.
+- Fast and full validation gates must avoid local secret files and preserve the backend MSBuild workaround.
+
 **UI hint:** no
 
 ### Phase 2: Security Boundary Hardening
