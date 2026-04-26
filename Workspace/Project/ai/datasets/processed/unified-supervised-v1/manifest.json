@@ -1,0 +1,10 @@
+{
+  "datasetVersion": "unified-supervised-v1",
+  "createdAtUtc": "2026-04-26T06:01:19.498829+00:00",
+  "files": {
+    "observables": "observables.csv",
+    "detections": "detections.csv",
+    "outcomes": "outcomes.csv",
+    "source_trust": "source_trust.csv"
+  }
+}

@@ -1,0 +1,1855 @@
+{
+  "modelVersion": "v1-unified-supervised-v1-cv5-20260426054616",
+  "scoringProfileVersion": "heuristic-v1",
+  "featureSchemaVersion": "cti-feature-schema-v1",
+  "datasetVersion": "unified-supervised-v1",
+  "datasetManifestHash": null,
+  "windowStartUtc": null,
+  "windowEndUtc": null,
+  "sampleSize": 5178,
+  "overall": {
+    "precision": 0.9979166666666667,
+    "recall": 0.35679702048417133,
+    "f1": 0.5256515775034294,
+    "precisionAtK": 1.0,
+    "recallAtK": 0.0037243947858473,
+    "prAuc": 0.9995464745053075,
+    "calibrationError": 0.0028516390498262052,
+    "brierScore": 0.0023470574193466586,
+    "falsePositiveRate": 1.0,
+    "falseNegativeRate": 0.0,
+    "unsafeRecommendationRate": 0.0020833333333333333,
+    "analystOverrideRate": 0.0,
+    "rollbackRate": null,
+    "abstainRate": 0.8146002317497103,
+    "coverage": 0.1853997682502897,
+    "confusionMatrix": {
+      "tp": 958,
+      "fp": 2,
+      "tn": 0,
+      "fn": 0,
+      "abstainedPositive": 1727,
+      "abstainedNegative": 2491
+    },
+    "calibrationBins": [
+      {
+        "index": 0,
+        "lowerBound": 0.0,
+        "upperBound": 0.1,
+        "sampleSize": 2486,
+        "averageConfidence": 0.0021101890587288817,
+        "empiricalPositiveRate": 0.0028157683024939663
+      },
+      {
+        "index": 2,
+        "lowerBound": 0.2,
+        "upperBound": 0.3,
+        "sampleSize": 15,
+        "averageConfidence": 0.21029799999999996,
+        "empiricalPositiveRate": 0.26666666666666666
+      },
+      {
+        "index": 4,
+        "lowerBound": 0.4,
+        "upperBound": 0.5,
+        "sampleSize": 2,
+        "averageConfidence": 0.4867475,
+        "empiricalPositiveRate": 0.5
+      },
+      {
+        "index": 9,
+        "lowerBound": 0.9,
+        "upperBound": 1.0,
+        "sampleSize": 2675,
+        "averageConfidence": 0.9947141375700934,
+        "empiricalPositiveRate": 0.9992523364485981
+      }
+    ],
+    "outcomes": {
+      "confident_correct": 958,
+      "confident_wrong": 2,
+      "true_negative": 0,
+      "false_negative": 0,
+      "abstained_positive": 1727,
+      "abstained_negative": 2491
+    },
+    "unavailableMetrics": [
+      "rollback_rate"
+    ]
+  },
+  "slices": [
+    {
+      "sliceField": "ioc_type",
+      "sliceValue": "artifact",
+      "sampleSize": 32,
+      "positiveRate": 0.03125,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "prAuc": 1.0,
+      "calibrationError": 0.0004532499999999988,
+      "brierScore": 6.573937999999965e-06,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.96875,
+      "coverage": 0.03125,
+      "confusionMatrix": {
+        "tp": 1,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 0,
+        "abstainedNegative": 31
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 31,
+          "averageConfidence": 0.0,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 1,
+          "averageConfidence": 0.985496,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 1,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 0,
+        "abstained_negative": 31
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "ioc_type",
+      "sliceValue": "domain",
+      "sampleSize": 2748,
+      "positiveRate": 0.12409024745269287,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "prAuc": 1.0,
+      "calibrationError": 0.0011594701601164612,
+      "brierScore": 3.375286063609898e-05,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.8759097525473072,
+      "coverage": 0.12409024745269281,
+      "confusionMatrix": {
+        "tp": 341,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 0,
+        "abstainedNegative": 2407
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 2406,
+          "averageConfidence": 0.0012118599334995843,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 1,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 341,
+          "averageConfidence": 0.999823486803519,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 341,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 0,
+        "abstained_negative": 2407
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "ioc_type",
+      "sliceValue": "ip",
+      "sampleSize": 303,
+      "positiveRate": 0.9438943894389439,
+      "precision": 0.99644128113879,
+      "recall": 0.9790209790209791,
+      "f1": 0.9876543209876544,
+      "prAuc": 0.9993725014702092,
+      "calibrationError": 0.012346544554455417,
+      "brierScore": 0.015375801217871287,
+      "falsePositiveRate": 1.0,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.07260726072607261,
+      "coverage": 0.9273927392739274,
+      "confusionMatrix": {
+        "tp": 280,
+        "fp": 1,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 6,
+        "abstainedNegative": 16
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 14,
+          "averageConfidence": 0.04764071428571429,
+          "empiricalPositiveRate": 0.21428571428571427
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 5,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 0.2
+        },
+        {
+          "index": 4,
+          "lowerBound": 0.4,
+          "upperBound": 0.5,
+          "sampleSize": 1,
+          "averageConfidence": 0.487019,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 283,
+          "averageConfidence": 0.9995387420494699,
+          "empiricalPositiveRate": 0.9964664310954063
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 280,
+        "confident_wrong": 1,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 6,
+        "abstained_negative": 16
+      },
+      "unavailableMetrics": [
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "ioc_type",
+      "sliceValue": "log_event",
+      "sampleSize": 15,
+      "positiveRate": 0.0,
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "prAuc": null,
+      "calibrationError": 0.06585700000000003,
+      "brierScore": 0.004337144449,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 0,
+        "abstainedNegative": 15
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 15,
+          "averageConfidence": 0.06585700000000003,
+          "empiricalPositiveRate": 0.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 0,
+        "abstained_negative": 15
+      },
+      "unavailableMetrics": [
+        "precision",
+        "recall",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "ioc_type",
+      "sliceValue": "process_event",
+      "sampleSize": 6,
+      "positiveRate": 0.5,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": 0.9166666666666666,
+      "calibrationError": 0.4079483333333333,
+      "brierScore": 0.3540364644176666,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 3,
+        "abstainedNegative": 3
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 4,
+          "averageConfidence": 0.0329285,
+          "empiricalPositiveRate": 0.25
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 2,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 3,
+        "abstained_negative": 3
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "ioc_type",
+      "sliceValue": "sha256",
+      "sampleSize": 1092,
+      "positiveRate": 0.9880952380952381,
+      "precision": 1.0,
+      "recall": 0.0018535681186283596,
+      "f1": 0.003700277520814061,
+      "prAuc": 0.9999786824075786,
+      "calibrationError": 0.016176751831501766,
+      "brierScore": 0.003640285845440475,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.9981684981684982,
+      "coverage": 0.001831501831501825,
+      "confusionMatrix": {
+        "tp": 2,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 1077,
+        "abstainedNegative": 13
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 16,
+          "averageConfidence": 0.033978499999999995,
+          "empiricalPositiveRate": 0.1875
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 1,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 1.0
+        },
+        {
+          "index": 4,
+          "lowerBound": 0.4,
+          "upperBound": 0.5,
+          "sampleSize": 1,
+          "averageConfidence": 0.486476,
+          "empiricalPositiveRate": 1.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 1074,
+          "averageConfidence": 0.9870526601489759,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 2,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 1077,
+        "abstained_negative": 13
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "ioc_type",
+      "sliceValue": "url",
+      "sampleSize": 982,
+      "positiveRate": 0.9928716904276986,
+      "precision": 0.9970149253731343,
+      "recall": 0.3425641025641026,
+      "f1": 0.5099236641221375,
+      "prAuc": 0.9999989491382933,
+      "calibrationError": 0.0022737067209776104,
+      "brierScore": 0.0012594340375315684,
+      "falsePositiveRate": 1.0,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.6588594704684317,
+      "coverage": 0.34114052953156826,
+      "confusionMatrix": {
+        "tp": 334,
+        "fp": 1,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 641,
+        "abstainedNegative": 6
+      },
+      "calibrationBins": [
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 6,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 976,
+          "averageConfidence": 0.9999702786885246,
+          "empiricalPositiveRate": 0.9989754098360656
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 334,
+        "confident_wrong": 1,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 641,
+        "abstained_negative": 6
+      },
+      "unavailableMetrics": [
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "recency_bucket",
+      "sliceValue": "0_24h",
+      "sampleSize": 2653,
+      "positiveRate": 0.09536373916321146,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "prAuc": 1.0,
+      "calibrationError": 0.0009436686769694686,
+      "brierScore": 7.019632698454578e-06,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.9046362608367885,
+      "coverage": 0.0953637391632115,
+      "confusionMatrix": {
+        "tp": 253,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 0,
+        "abstainedNegative": 2400
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 2400,
+          "averageConfidence": 0.0010431470833333334,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 253,
+          "averageConfidence": 1.0,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 253,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 0,
+        "abstained_negative": 2400
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "recency_bucket",
+      "sliceValue": "168h_plus",
+      "sampleSize": 659,
+      "positiveRate": 0.9833080424886191,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": 0.9999738509797342,
+      "calibrationError": 0.027633863429438618,
+      "brierScore": 0.012679551883632777,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 648,
+        "abstainedNegative": 11
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 18,
+          "averageConfidence": 0.022885666666666662,
+          "empiricalPositiveRate": 0.3888888888888889
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 3,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 1.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 638,
+          "averageConfidence": 0.9854959999999999,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 648,
+        "abstained_negative": 11
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "recency_bucket",
+      "sliceValue": "24_168h",
+      "sampleSize": 1866,
+      "positiveRate": 0.9560557341907824,
+      "precision": 0.9971711456859972,
+      "recall": 0.3951793721973094,
+      "f1": 0.5660377358490566,
+      "prAuc": 0.9997852008707064,
+      "calibrationError": 0.0036262840300106515,
+      "brierScore": 0.0020249815329657014,
+      "falsePositiveRate": 1.0,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.6211146838156485,
+      "coverage": 0.3788853161843515,
+      "confusionMatrix": {
+        "tp": 705,
+        "fp": 2,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 1079,
+        "abstainedNegative": 80
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 68,
+          "averageConfidence": 0.03427110294117647,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 12,
+          "averageConfidence": 0.21029799999999998,
+          "empiricalPositiveRate": 0.08333333333333333
+        },
+        {
+          "index": 4,
+          "lowerBound": 0.4,
+          "upperBound": 0.5,
+          "sampleSize": 2,
+          "averageConfidence": 0.4867475,
+          "empiricalPositiveRate": 0.5
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 1784,
+          "averageConfidence": 0.9972611378923768,
+          "empiricalPositiveRate": 0.9988789237668162
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 705,
+        "confident_wrong": 2,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 1079,
+        "abstained_negative": 80
+      },
+      "unavailableMetrics": [
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "db_scan_results",
+      "sampleSize": 32,
+      "positiveRate": 0.03125,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "prAuc": 1.0,
+      "calibrationError": 0.0004532499999999988,
+      "brierScore": 6.573937999999965e-06,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.96875,
+      "coverage": 0.03125,
+      "confusionMatrix": {
+        "tp": 1,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 0,
+        "abstainedNegative": 31
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 31,
+          "averageConfidence": 0.0,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 1,
+          "averageConfidence": 0.985496,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 1,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 0,
+        "abstained_negative": 31
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "edr",
+      "sampleSize": 7,
+      "positiveRate": 0.42857142857142855,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": 1.0,
+      "calibrationError": 0.4179632857142857,
+      "brierScore": 0.40797977492128573,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 3,
+        "abstainedNegative": 4
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 7,
+          "averageConfidence": 0.010608142857142858,
+          "empiricalPositiveRate": 0.42857142857142855
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 3,
+        "abstained_negative": 4
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "ids",
+      "sampleSize": 8,
+      "positiveRate": 0.5,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": 1.0,
+      "calibrationError": 0.44796637499999997,
+      "brierScore": 0.405191745268875,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 4,
+        "abstainedNegative": 4
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 7,
+          "averageConfidence": 0.029424428571428574,
+          "empiricalPositiveRate": 0.42857142857142855
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 1,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 4,
+        "abstained_negative": 4
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "majestic",
+      "sampleSize": 2400,
+      "positiveRate": 0.0,
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "prAuc": null,
+      "calibrationError": 0.0010431470833333334,
+      "brierScore": 7.759618978750001e-06,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 0,
+        "abstainedNegative": 2400
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 2400,
+          "averageConfidence": 0.0010431470833333334,
+          "empiricalPositiveRate": 0.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 0,
+        "abstained_negative": 2400
+      },
+      "unavailableMetrics": [
+        "precision",
+        "recall",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "malwarebazaar",
+      "sampleSize": 1073,
+      "positiveRate": 1.0,
+      "precision": 1.0,
+      "recall": 0.0009319664492078285,
+      "f1": 0.00186219739292365,
+      "prAuc": null,
+      "calibrationError": 0.01294588909599248,
+      "brierScore": 0.00018769050720689558,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.9990680335507922,
+      "coverage": 0.0009319664492077884,
+      "confusionMatrix": {
+        "tp": 1,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 1072,
+        "abstainedNegative": 0
+      },
+      "calibrationBins": [
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 1073,
+          "averageConfidence": 0.9870541109040075,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 1,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 1072,
+        "abstained_negative": 0
+      },
+      "unavailableMetrics": [
+        "pr_auc",
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "siem",
+      "sampleSize": 57,
+      "positiveRate": 0.17543859649122806,
+      "precision": 0.7142857142857143,
+      "recall": 0.5,
+      "f1": 0.588235294117647,
+      "prAuc": 0.5210211336380328,
+      "calibrationError": 0.05202238596491229,
+      "brierScore": 0.10181408115277193,
+      "falsePositiveRate": 1.0,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.8771929824561403,
+      "coverage": 0.1228070175438597,
+      "confusionMatrix": {
+        "tp": 5,
+        "fp": 2,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 5,
+        "abstainedNegative": 45
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 34,
+          "averageConfidence": 0.05885735294117647,
+          "empiricalPositiveRate": 0.029411764705882353
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 14,
+          "averageConfidence": 0.21029799999999996,
+          "empiricalPositiveRate": 0.21428571428571427
+        },
+        {
+          "index": 4,
+          "lowerBound": 0.4,
+          "upperBound": 0.5,
+          "sampleSize": 2,
+          "averageConfidence": 0.4867475,
+          "empiricalPositiveRate": 0.5
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 7,
+          "averageConfidence": 0.9831132857142858,
+          "empiricalPositiveRate": 0.7142857142857143
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 5,
+        "confident_wrong": 2,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 5,
+        "abstained_negative": 45
+      },
+      "unavailableMetrics": [
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "snort",
+      "sampleSize": 7,
+      "positiveRate": 0.5714285714285714,
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571428571428571,
+      "prAuc": 1.0,
+      "calibrationError": 0.03651242857142855,
+      "brierScore": 0.0019789853444285707,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.5714285714285714,
+      "coverage": 0.4285714285714286,
+      "confusionMatrix": {
+        "tp": 3,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 1,
+        "abstainedNegative": 3
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 3,
+          "averageConfidence": 0.065857,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 4,
+          "averageConfidence": 0.985496,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 3,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 1,
+        "abstained_negative": 3
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "suricata",
+      "sampleSize": 8,
+      "positiveRate": 0.5,
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571428571428571,
+      "prAuc": 1.0,
+      "calibrationError": 0.04018049999999998,
+      "brierScore": 0.0022737552324999994,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.625,
+      "coverage": 0.375,
+      "confusionMatrix": {
+        "tp": 3,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 1,
+        "abstainedNegative": 4
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 4,
+          "averageConfidence": 0.065857,
+          "empiricalPositiveRate": 0.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 4,
+          "averageConfidence": 0.985496,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 3,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 1,
+        "abstained_negative": 4
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "threatfox",
+      "sampleSize": 945,
+      "positiveRate": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "prAuc": null,
+      "calibrationError": 0.0,
+      "brierScore": 0.0,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.0,
+      "coverage": 1.0,
+      "confusionMatrix": {
+        "tp": 945,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 0,
+        "abstainedNegative": 0
+      },
+      "calibrationBins": [
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 945,
+          "averageConfidence": 1.0,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 945,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 0,
+        "abstained_negative": 0
+      },
+      "unavailableMetrics": [
+        "pr_auc",
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "source_system",
+      "sliceValue": "urlhaus",
+      "sampleSize": 641,
+      "positiveRate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": null,
+      "calibrationError": 0.0,
+      "brierScore": 0.0,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 641,
+        "abstainedNegative": 0
+      },
+      "calibrationBins": [
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 641,
+          "averageConfidence": 1.0,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 641,
+        "abstained_negative": 0
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "time_bucket",
+      "sliceValue": "2025-12",
+      "sampleSize": 37,
+      "positiveRate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": null,
+      "calibrationError": 0.014504000000000183,
+      "brierScore": 0.0002103660159999989,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 37,
+        "abstainedNegative": 0
+      },
+      "calibrationBins": [
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 37,
+          "averageConfidence": 0.9854959999999998,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 37,
+        "abstained_negative": 0
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "time_bucket",
+      "sliceValue": "2026-01",
+      "sampleSize": 52,
+      "positiveRate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": null,
+      "calibrationError": 0.014504000000000072,
+      "brierScore": 0.00021036601599999882,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 52,
+        "abstainedNegative": 0
+      },
+      "calibrationBins": [
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 52,
+          "averageConfidence": 0.9854959999999999,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 52,
+        "abstained_negative": 0
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "time_bucket",
+      "sliceValue": "2026-02",
+      "sampleSize": 210,
+      "positiveRate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": null,
+      "calibrationError": 0.014504000000000072,
+      "brierScore": 0.0002103660159999989,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 210,
+        "abstainedNegative": 0
+      },
+      "calibrationBins": [
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 210,
+          "averageConfidence": 0.9854959999999999,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 210,
+        "abstained_negative": 0
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "time_bucket",
+      "sliceValue": "2026-03",
+      "sampleSize": 239,
+      "positiveRate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "prAuc": null,
+      "calibrationError": 0.014504000000000183,
+      "brierScore": 0.00021036601599999893,
+      "falsePositiveRate": null,
+      "falseNegativeRate": null,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 1.0,
+      "coverage": 0.0,
+      "confusionMatrix": {
+        "tp": 0,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 239,
+        "abstainedNegative": 0
+      },
+      "calibrationBins": [
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 239,
+          "averageConfidence": 0.9854959999999998,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 0,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 239,
+        "abstained_negative": 0
+      },
+      "unavailableMetrics": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "time_bucket",
+      "sliceValue": "2026-04",
+      "sampleSize": 4640,
+      "positiveRate": 0.4627155172413793,
+      "precision": 0.9979166666666667,
+      "recall": 0.4462040055891942,
+      "f1": 0.6166720308979724,
+      "prAuc": 0.9995349886207318,
+      "calibrationError": 0.0015005678879309553,
+      "brierScore": 0.002594803103614009,
+      "falsePositiveRate": 1.0,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.7931034482758621,
+      "coverage": 0.2068965517241379,
+      "confusionMatrix": {
+        "tp": 958,
+        "fp": 2,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 1189,
+        "abstainedNegative": 2491
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 2486,
+          "averageConfidence": 0.0021101890587288817,
+          "empiricalPositiveRate": 0.0028157683024939663
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 15,
+          "averageConfidence": 0.21029799999999996,
+          "empiricalPositiveRate": 0.26666666666666666
+        },
+        {
+          "index": 4,
+          "lowerBound": 0.4,
+          "upperBound": 0.5,
+          "sampleSize": 2,
+          "averageConfidence": 0.4867475,
+          "empiricalPositiveRate": 0.5
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 2137,
+          "averageConfidence": 0.9970348479176417,
+          "empiricalPositiveRate": 0.9990641085634067
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 958,
+        "confident_wrong": 2,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 1189,
+        "abstained_negative": 2491
+      },
+      "unavailableMetrics": [
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "trust_bucket",
+      "sliceValue": "high",
+      "sampleSize": 5131,
+      "positiveRate": 0.5217306567920483,
+      "precision": 0.9979144942648592,
+      "recall": 0.3574897273066866,
+      "f1": 0.5264026402640265,
+      "prAuc": 0.9997154142240503,
+      "calibrationError": 0.0031520586630285905,
+      "brierScore": 0.001180171616597349,
+      "falsePositiveRate": 1.0,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.8130968622100955,
+      "coverage": 0.18690313778990453,
+      "confusionMatrix": {
+        "tp": 957,
+        "fp": 2,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 1720,
+        "abstainedNegative": 2452
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 2441,
+          "averageConfidence": 0.0020342900450634987,
+          "empiricalPositiveRate": 0.00040966816878328555
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 14,
+          "averageConfidence": 0.21029799999999996,
+          "empiricalPositiveRate": 0.21428571428571427
+        },
+        {
+          "index": 4,
+          "lowerBound": 0.4,
+          "upperBound": 0.5,
+          "sampleSize": 2,
+          "averageConfidence": 0.4867475,
+          "empiricalPositiveRate": 0.5
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 2674,
+          "averageConfidence": 0.9947175848915484,
+          "empiricalPositiveRate": 0.9992520568436799
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 957,
+        "confident_wrong": 2,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 1720,
+        "abstained_negative": 2452
+      },
+      "unavailableMetrics": [
+        "rollback_rate"
+      ]
+    },
+    {
+      "sliceField": "trust_bucket",
+      "sliceValue": "medium",
+      "sampleSize": 47,
+      "positiveRate": 0.1702127659574468,
+      "precision": 1.0,
+      "recall": 0.125,
+      "f1": 0.2222222222222222,
+      "prAuc": 0.95,
+      "calibrationError": 0.13880804255319149,
+      "brierScore": 0.12973622877906382,
+      "falsePositiveRate": null,
+      "falseNegativeRate": 0.0,
+      "analystOverrideRate": 0.0,
+      "rollbackRate": null,
+      "abstainRate": 0.9787234042553191,
+      "coverage": 0.021276595744680882,
+      "confusionMatrix": {
+        "tp": 1,
+        "fp": 0,
+        "tn": 0,
+        "fn": 0,
+        "abstainedPositive": 7,
+        "abstainedNegative": 39
+      },
+      "calibrationBins": [
+        {
+          "index": 0,
+          "lowerBound": 0.0,
+          "upperBound": 0.1,
+          "sampleSize": 45,
+          "averageConfidence": 0.006227288888888889,
+          "empiricalPositiveRate": 0.13333333333333333
+        },
+        {
+          "index": 2,
+          "lowerBound": 0.2,
+          "upperBound": 0.3,
+          "sampleSize": 1,
+          "averageConfidence": 0.210298,
+          "empiricalPositiveRate": 1.0
+        },
+        {
+          "index": 9,
+          "lowerBound": 0.9,
+          "upperBound": 1.0,
+          "sampleSize": 1,
+          "averageConfidence": 0.985496,
+          "empiricalPositiveRate": 1.0
+        }
+      ],
+      "outcomes": {
+        "confident_correct": 1,
+        "confident_wrong": 0,
+        "true_negative": 0,
+        "false_negative": 0,
+        "abstained_positive": 7,
+        "abstained_negative": 39
+      },
+      "unavailableMetrics": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    }
+  ],
+  "metricAvailability": {
+    "overallUnavailable": [
+      "rollback_rate"
+    ],
+    "sliceUnavailable": {
+      "ioc_type:artifact": [
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "ioc_type:domain": [
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "ioc_type:ip": [
+        "rollback_rate"
+      ],
+      "ioc_type:log_event": [
+        "precision",
+        "recall",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "ioc_type:process_event": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "ioc_type:sha256": [
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "ioc_type:url": [
+        "rollback_rate"
+      ],
+      "recency_bucket:0_24h": [
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "recency_bucket:168h_plus": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "recency_bucket:24_168h": [
+        "rollback_rate"
+      ],
+      "source_system:db_scan_results": [
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "source_system:edr": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "source_system:ids": [
+        "precision",
+        "f1",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "source_system:majestic": [
+        "precision",
+        "recall",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "source_system:malwarebazaar": [
+        "pr_auc",
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "source_system:siem": [
+        "rollback_rate"
+      ],
+      "source_system:snort": [
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "source_system:suricata": [
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "source_system:threatfox": [
+        "pr_auc",
+        "false_positive_rate",
+        "rollback_rate"
+      ],
+      "source_system:urlhaus": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "time_bucket:2025-12": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "time_bucket:2026-01": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "time_bucket:2026-02": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "time_bucket:2026-03": [
+        "precision",
+        "f1",
+        "pr_auc",
+        "false_positive_rate",
+        "false_negative_rate",
+        "unsafe_recommendation_rate",
+        "rollback_rate"
+      ],
+      "time_bucket:2026-04": [
+        "rollback_rate"
+      ],
+      "trust_bucket:high": [
+        "rollback_rate"
+      ],
+      "trust_bucket:medium": [
+        "false_positive_rate",
+        "rollback_rate"
+      ]
+    }
+  },
+  "bundleFiles": {
+    "bundleDir": "C:\\Users\\xsspe\\Desktop\\IOC_Manager\\Workspace\\Project\\ai\\datasets\\processed\\evaluations\\decision-v1-unified-supervised-v1-cv5-20260426054616-unified-supervised-v1",
+    "reportJson": "C:\\Users\\xsspe\\Desktop\\IOC_Manager\\Workspace\\Project\\ai\\datasets\\processed\\evaluations\\decision-v1-unified-supervised-v1-cv5-20260426054616-unified-supervised-v1\\report.json",
+    "summaryMarkdown": "C:\\Users\\xsspe\\Desktop\\IOC_Manager\\Workspace\\Project\\ai\\datasets\\processed\\evaluations\\decision-v1-unified-supervised-v1-cv5-20260426054616-unified-supervised-v1\\summary.md",
+    "runManifest": "C:\\Users\\xsspe\\Desktop\\IOC_Manager\\Workspace\\Project\\ai\\datasets\\processed\\evaluations\\decision-v1-unified-supervised-v1-cv5-20260426054616-unified-supervised-v1\\run_manifest.json",
+    "calibrationJson": "C:\\Users\\xsspe\\Desktop\\IOC_Manager\\Workspace\\Project\\ai\\datasets\\processed\\evaluations\\decision-v1-unified-supervised-v1-cv5-20260426054616-unified-supervised-v1\\calibration_bins.json",
+    "calibrationCsv": "C:\\Users\\xsspe\\Desktop\\IOC_Manager\\Workspace\\Project\\ai\\datasets\\processed\\evaluations\\decision-v1-unified-supervised-v1-cv5-20260426054616-unified-supervised-v1\\calibration_bins.csv"
+  }
+}

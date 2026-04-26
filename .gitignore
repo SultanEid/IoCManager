@@ -62,6 +62,13 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+!Workspace/Project/ai/service/artifacts/
+!Workspace/Project/ai/service/artifacts/models/
+!Workspace/Project/ai/service/artifacts/models/v1-unified-supervised-v1-cv5-20260426060214/
+!Workspace/Project/ai/service/artifacts/models/v1-unified-supervised-v1-cv5-20260426060214/calibration.json
+!Workspace/Project/ai/service/artifacts/models/v1-unified-supervised-v1-cv5-20260426060214/cv_report.json
+!Workspace/Project/ai/service/artifacts/models/v1-unified-supervised-v1-cv5-20260426060214/metrics.json
+!Workspace/Project/ai/service/artifacts/models/v1-unified-supervised-v1-cv5-20260426060214/thresholds.json
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
@@ -407,6 +414,16 @@ FodyWeavers.xsd
 !/Workspace/Project/ai/datasets/raw/README.md
 !/Workspace/Project/ai/datasets/processed/README.md
 !/Workspace/Project/ai/datasets/processed/.gitkeep
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/manifest.json
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/observables.csv
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/detections.csv
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/outcomes.csv
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/source_trust.csv
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/training_eligibility_audit.json
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/training-final-sweep-summary.json
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/training-sweep-summary.json
+!/Workspace/Project/ai/datasets/processed/unified-supervised-v1/evaluation-current-best.json
 
 # AI local test scratch space
 /Workspace/Project/ai/service/tests/_tmp_*/
