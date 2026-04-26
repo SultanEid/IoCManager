@@ -191,6 +191,102 @@ def test_publish_model_refuses_failed_promotion_gates(tmp_path: Path) -> None:
     assert store.get_by_version("v1-a").status == "candidate"
 
 
+def test_publish_model_refuses_missing_ioc_required_slices(tmp_path: Path) -> None:
+    module = _load_job_module("publish_model")
+    artifacts_root = tmp_path / "artifacts"
+    artifact_path = artifacts_root / "models" / "v1-a" / "metrics.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text('{"precision":1.0}', encoding="utf-8")
+    digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    evaluation_report_path = tmp_path / "evaluation.json"
+    _write_evaluation_report(evaluation_report_path, model_version="v1-a", passed=True)
+    report = json.loads(evaluation_report_path.read_text(encoding="utf-8"))
+    report["slices"] = [row for row in report["slices"] if row["sliceField"] != "evidence_tier"]
+    evaluation_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    store = ModelRegistryStore(artifacts_root / "model_registry.json")
+    store.upsert(
+        ModelRegistryEntry(
+            model_id="cti-v1",
+            model_version="v1-a",
+            dataset_version="d-1",
+            status="candidate",
+            created_at_utc=datetime.now(timezone.utc),
+            artifact_paths={"metrics": "models/v1-a/metrics.json"},
+            artifact_hashes={"metrics": digest},
+        )
+    )
+
+    previous_argv = sys.argv
+    sys.argv = [
+        "publish_model.py",
+        "--registry-path",
+        str(store.path),
+        "--model-version",
+        "v1-a",
+        "--evaluation-report",
+        str(evaluation_report_path),
+    ]
+    try:
+        try:
+            module.main()
+        except RuntimeError as exc:
+            assert "missing required evaluation slice fields" in str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("publish_model.py should reject missing IOC slices")
+    finally:
+        sys.argv = previous_argv
+
+    assert store.get_by_version("v1-a").status == "candidate"
+
+
+def test_publish_model_refuses_ioc_protected_case_regression(tmp_path: Path) -> None:
+    module = _load_job_module("publish_model")
+    artifacts_root = tmp_path / "artifacts"
+    artifact_path = artifacts_root / "models" / "v1-a" / "metrics.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text('{"precision":1.0}', encoding="utf-8")
+    digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    evaluation_report_path = tmp_path / "evaluation.json"
+    _write_evaluation_report(evaluation_report_path, model_version="v1-a", passed=True)
+    report = json.loads(evaluation_report_path.read_text(encoding="utf-8"))
+    report["protectedCases"] = {"failed": 1}
+    evaluation_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    store = ModelRegistryStore(artifacts_root / "model_registry.json")
+    store.upsert(
+        ModelRegistryEntry(
+            model_id="cti-v1",
+            model_version="v1-a",
+            dataset_version="d-1",
+            status="candidate",
+            created_at_utc=datetime.now(timezone.utc),
+            artifact_paths={"metrics": "models/v1-a/metrics.json"},
+            artifact_hashes={"metrics": digest},
+        )
+    )
+
+    previous_argv = sys.argv
+    sys.argv = [
+        "publish_model.py",
+        "--registry-path",
+        str(store.path),
+        "--model-version",
+        "v1-a",
+        "--evaluation-report",
+        str(evaluation_report_path),
+    ]
+    try:
+        try:
+            module.main()
+        except RuntimeError as exc:
+            assert "protected false-positive" in str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("publish_model.py should reject protected-case regressions")
+    finally:
+        sys.argv = previous_argv
+
+    assert store.get_by_version("v1-a").status == "candidate"
+
+
 def _write_snapshot(*, snapshot_root: Path, dataset_version: str, row_count: int) -> None:
     snapshot_dir = snapshot_root / dataset_version
     snapshot_dir.mkdir(parents=True)
@@ -284,6 +380,7 @@ def _write_evaluation_report(path: Path, *, model_version: str, passed: bool) ->
                     "precision": metric_value,
                     "recall": metric_value,
                     "f1": metric_value,
+                    "likelyMaliciousPrecision": metric_value,
                     "prAuc": metric_value,
                     "calibrationError": 0.04,
                     "brierScore": 0.08,
@@ -295,11 +392,21 @@ def _write_evaluation_report(path: Path, *, model_version: str, passed: bool) ->
                 "slices": [
                     {"sliceField": "ioc_type", "sliceValue": "domain"},
                     {"sliceField": "source_system", "sliceValue": "feed"},
+                    {"sliceField": "source_name", "sliceValue": "feed"},
+                    {"sliceField": "source_type", "sliceValue": "trusted_feed"},
+                    {"sliceField": "severity", "sliceValue": "high"},
+                    {"sliceField": "table_confidence_bucket", "sliceValue": "high"},
+                    {"sliceField": "age_bucket", "sliceValue": "1_7d"},
+                    {"sliceField": "evidence_tier", "sliceValue": "attribute_only"},
+                    {"sliceField": "label_provenance", "sliceValue": "trusted_feed"},
+                    {"sliceField": "scan_evidence_available", "sliceValue": "missing"},
                     {"sliceField": "rule_family", "sliceValue": "sigma"},
                     {"sliceField": "recency_bucket", "sliceValue": "0_24h"},
                     {"sliceField": "trust_bucket", "sliceValue": "high"},
                     {"sliceField": "evidence_availability_bucket", "sliceValue": "sparse"},
                 ],
+                "protectedCases": {"failed": 0},
+                "highQualityAttributeOnly": {"abstainRate": 0.10},
             },
             indent=2,
         ),

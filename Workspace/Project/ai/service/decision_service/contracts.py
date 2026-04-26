@@ -957,11 +957,14 @@ class EvaluationOverallMetrics(ApiModel):
     brier_score: float | None = None
     false_positive_rate: float | None = None
     false_negative_rate: float | None = None
+    likely_malicious_precision: float | None = None
     unsafe_recommendation_rate: float | None = None
     analyst_override_rate: float | None = None
     rollback_rate: float | None = None
     abstain_rate: float | None = None
+    weak_evidence_rate: float | None = None
     coverage: float | None = None
+    confidence_distribution: dict[str, int] = Field(default_factory=dict)
     confusion_matrix: EvaluationConfusionMatrix = Field(default_factory=EvaluationConfusionMatrix)
     calibration_bins: list[EvaluationCalibrationBin] = Field(default_factory=list)
     outcomes: dict[str, int] = Field(default_factory=dict)
@@ -981,10 +984,13 @@ class EvaluationSliceMetrics(ApiModel):
     brier_score: float | None = None
     false_positive_rate: float | None = None
     false_negative_rate: float | None = None
+    likely_malicious_precision: float | None = None
     analyst_override_rate: float | None = None
     rollback_rate: float | None = None
     abstain_rate: float | None = None
+    weak_evidence_rate: float | None = None
     coverage: float | None = None
+    confidence_distribution: dict[str, int] = Field(default_factory=dict)
     confusion_matrix: EvaluationConfusionMatrix = Field(default_factory=EvaluationConfusionMatrix)
     calibration_bins: list[EvaluationCalibrationBin] = Field(default_factory=list)
     outcomes: dict[str, int] = Field(default_factory=dict)

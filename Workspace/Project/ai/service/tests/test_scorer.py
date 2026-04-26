@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from decision_service.calibration import LogisticCalibrator
 from decision_service.contracts import ScoreCaseRequest
-from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
+from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds, _compute_ioc_suspicion
 
 
 def test_scorer_is_deterministic_for_same_input() -> None:
@@ -516,4 +516,132 @@ def test_internal_allowlist_row_stays_non_positive_despite_high_trust() -> None:
 
     assert scored.decision_state in {"abstain", "defer"}
     assert scored.maliciousness_score < 0.45
+
+
+def test_ioc_value_features_cover_url_process_ip_and_hash_controls() -> None:
+    assert _compute_ioc_suspicion("url", "hxxps://login-wallet.example.zip/payload/dropper.exe") > 0.55
+    assert _compute_ioc_suspicion("process", "powershell.exe -NoP -EncodedCommand SQBFAFgA") > 0.45
+    assert _compute_ioc_suspicion("artifact", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\svc") > 0.35
+    assert _compute_ioc_suspicion("ip", "203.0.113.10") < 0.20
+    assert _compute_ioc_suspicion("hash_sha256", "a" * 64) > _compute_ioc_suspicion("hash_sha256", "not-a-real-hash")
+
+
+def test_table_confidence_source_trust_and_recency_are_monotonic_for_ioc_rows() -> None:
+    fixed_now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    weak = scorer.score_case(
+        _ioc_table_request(
+            case_id="weak",
+            now=fixed_now,
+            severity=0.55,
+            table_confidence=0.40,
+            source_trust=0.40,
+            last_seen_hours_ago=72,
+        )
+    )
+    strong = scorer.score_case(
+        _ioc_table_request(
+            case_id="strong",
+            now=fixed_now,
+            severity=0.90,
+            table_confidence=0.92,
+            source_trust=0.86,
+            last_seen_hours_ago=2,
+        )
+    )
+
+    assert strong.maliciousness_score > weak.maliciousness_score
+    assert strong.feature_groups["provider_confidence_signal"] > weak.feature_groups["provider_confidence_signal"]
+    assert strong.feature_groups["temporal_signal"] > weak.feature_groups["temporal_signal"]
+
+
+def test_correlation_and_analyst_outcomes_raise_or_downgrade_ioc_context() -> None:
+    fixed_now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    attribute_only = scorer.score_case(_ioc_table_request(case_id="attribute", now=fixed_now))
+    scan_correlated = scorer.score_case(
+        _ioc_table_request(
+            case_id="scan",
+            now=fixed_now,
+            linked_scan_count=4,
+            sightings_count=8,
+            target_exposure=0.7,
+        )
+    )
+    analyst_true_positive = scorer.score_case(
+        _ioc_table_request(
+            case_id="analyst-tp",
+            now=fixed_now,
+            linked_scan_count=4,
+            sightings_count=8,
+            analyst_outcome="true_positive",
+        )
+    )
+    analyst_false_positive = scorer.score_case(
+        _ioc_table_request(
+            case_id="analyst-fp",
+            now=fixed_now,
+            analyst_outcome="false_positive",
+        )
+    )
+
+    assert scan_correlated.feature_groups["enrichment_strength_signal"] > attribute_only.feature_groups["enrichment_strength_signal"]
+    assert scan_correlated.feature_groups["activity_signal"] > attribute_only.feature_groups["activity_signal"]
+    assert analyst_true_positive.maliciousness_score >= scan_correlated.maliciousness_score
+    assert analyst_false_positive.maliciousness_score < attribute_only.maliciousness_score
+    assert analyst_false_positive.feature_groups["benign_context_signal"] >= 0.80
+
+
+def _ioc_table_request(
+    *,
+    case_id: str,
+    now: datetime,
+    severity: float = 0.85,
+    table_confidence: float = 0.82,
+    source_trust: float = 0.75,
+    last_seen_hours_ago: int = 12,
+    linked_scan_count: int = 0,
+    sightings_count: int = 1,
+    target_exposure: float = 0.3,
+    analyst_outcome: str | None = None,
+) -> ScoreCaseRequest:
+    rule_context = {
+        "severityScore": severity,
+        "scannerAgreement": table_confidence,
+        "sourceTrust": source_trust,
+        "sourceType": "manual_entry",
+        "tableConfidence": table_confidence,
+        "linkedScanResultCount": linked_scan_count,
+        "sightingsCount": sightings_count,
+        "targetExposure": target_exposure,
+    }
+    if analyst_outcome:
+        rule_context["analystOutcome"] = analyst_outcome
+    return ScoreCaseRequest(
+        case_id=case_id,
+        as_of_time=now - timedelta(hours=last_seen_hours_ago),
+        source_system="ioc_manager_ioc_table",
+        ioc_type="domain",
+        ioc_value="login-wallet-update.example.zip",
+        host_context={"criticality": 0.5, "assetExposure": target_exposure},
+        rule_context=rule_context,
+        detection_package={
+            "rule_family": "generic",
+            "object_metadata": {
+                "object_id": case_id,
+                "object_type": "ioc",
+                "source_system": "ioc_manager_ioc_table",
+            },
+            "rule_metadata": {"rule_id": f"ioc-table-{case_id}"},
+            "raw_hit_payload": {"indicator": "login-wallet-update.example.zip"},
+        },
+    )
 

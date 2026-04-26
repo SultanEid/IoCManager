@@ -86,6 +86,41 @@ def test_score_case_response_contract_keeps_required_backend_fields(client) -> N
     assert grounded["actionPlan"]["neverAutoExecutes"] is True
 
 
+def test_ioc_table_attributes_produce_bounded_analyst_insight() -> None:
+    diagnostics, grounded = _score_ioc_table_grounded(
+        ioc_type="domain",
+        ioc_value="beacon.zombie-lab.test",
+        severity_score=0.95,
+        table_confidence=0.95,
+        source_trust=0.8,
+    )
+
+    assert diagnostics.maliciousness_score >= 0.60
+    assert grounded.verdict == "likely_malicious"
+    assert grounded.action == "monitor"
+    assert grounded.abstain_reason is None
+    assert grounded.confidence <= 0.66
+    assert grounded.safety_diagnostics.weak_evidence is True
+    assert grounded.safety_diagnostics.auto_remediation_allowed is False
+    assert grounded.action_plan.never_auto_executes is True
+    assert any("IOC attribute fallback" in reason for reason in grounded.reasons)
+
+
+def test_ioc_table_low_trust_still_abstains() -> None:
+    _, grounded = _score_ioc_table_grounded(
+        ioc_type="domain",
+        ioc_value="beacon.zombie-lab.test",
+        severity_score=0.95,
+        table_confidence=0.95,
+        source_trust=0.05,
+    )
+
+    assert grounded.verdict == "insufficient_evidence"
+    assert grounded.action == "hold"
+    assert grounded.abstain_reason is not None
+    assert grounded.safety_diagnostics.auto_remediation_allowed is False
+
+
 @pytest.mark.parametrize(
     ("case_id", "rule_context", "expected_reason"),
     [
@@ -149,6 +184,67 @@ def _score_grounded(*, case_id: str, rule_context: dict[str, object]):
                         "summary": "Non-string corroborating context.",
                     }
                 ]
+            },
+        },
+    )
+    diagnostics = scorer.score_case(request)
+    return diagnostics, build_grounded_decision(diagnostics, request)
+
+
+def _score_ioc_table_grounded(
+    *,
+    ioc_type: str,
+    ioc_value: str,
+    severity_score: float,
+    table_confidence: float,
+    source_trust: float,
+):
+    now = datetime(2026, 4, 26, 10, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: now,
+    )
+    request = ScoreCaseRequest(
+        case_id=f"ioc-table-{ioc_type}",
+        as_of_time=datetime(2026, 4, 24, 8, 17, tzinfo=timezone.utc),
+        source_system="ioc_manager_ioc_table",
+        ioc_type=ioc_type,
+        ioc_value=ioc_value,
+        host_context={"criticality": 0.3, "assetExposure": 0.2, "linkedScanResultCount": 0},
+        rule_context={
+            "severityScore": severity_score,
+            "scannerAgreement": table_confidence,
+            "sourceTrust": source_trust,
+            "tableConfidence": table_confidence,
+            "linkedScanResultCount": 0,
+        },
+        detection_package={
+            "rule_family": "suricata",
+            "object_metadata": {
+                "object_id": "ioc-table-fixture",
+                "object_type": "ioc",
+                "source_system": "ioc_manager_ioc_table",
+            },
+            "rule_metadata": {
+                "rule_id": f"ioc-table-{ioc_type}",
+                "title": f"IOC table {ioc_type} indicator",
+                "severity": "Critical",
+            },
+            "raw_hit_payload": {
+                "event_id": "ioc-table-fixture",
+                "indicator": ioc_value,
+                "indicator_type": ioc_type,
+                "linked_scan_result_count": 0,
+            },
+            "linked_enrichment": {
+                "enrichments": [
+                    {
+                        "kind": "ioc_table",
+                        "source": "unit-test",
+                        "confidence": table_confidence,
+                        "severity": "Critical",
+                    }
+                ],
             },
         },
     )

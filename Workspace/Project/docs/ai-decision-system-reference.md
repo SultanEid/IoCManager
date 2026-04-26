@@ -55,6 +55,27 @@ It does not currently provide:
 - Confidence is directional, not certainty.
 - Source provenance is first-class in both runtime and offline data.
 
+## IOC Decision Tiers
+IOC-native decisions use explicit evidence tiers so the sidecar can give useful
+analyst insight from IOC attributes without treating weak rows as confirmed
+detections.
+
+| Tier | Meaning | Allowed strength |
+| --- | --- | --- |
+| `attribute_only` | IOC table attributes, value shape, severity, confidence, source, and recency are available, but no linked scan or analyst outcome confirms the row. | May return `suspicious` or `likely_malicious`; confidence is capped and weak evidence is visible. |
+| `scan_correlated` | Linked scan results, sightings, enrichment, or target exposure corroborate the IOC. | May return stronger verdicts when false-positive and stale guards pass. |
+| `analyst_outcome` | Analyst closure, override, response outcome, or reviewed allowlist evidence exists. | Highest confidence tier when the outcome is consistent, recent, and provenance is retained. |
+| `low_trust_conflicting_stale` | Source trust is low, evidence conflicts, the IOC is stale/revoked, or an allowlist/false-positive signal exists. | Downgrade, suppress, mark stale, allowlist, or abstain. |
+
+Confidence bands used by IOC evaluation and review stubs are `very_low`
+0.00-0.20, `low` 0.20-0.40, `medium` 0.40-0.66, `high` 0.66-0.85, and
+`very_high` 0.85-1.00.
+
+Every evaluation row must include `label_provenance`, `evidence_tier`,
+`expected_verdict`, and an expected confidence band. Analyst outcomes, trusted
+feeds, weak table labels, internal allowlists, synthetic fixtures, and shadow
+reviews are intentionally tracked separately.
+
 ## Current Runtime Reference
 As of `2026-04-26`, the documented sidecar state is:
 
@@ -80,6 +101,11 @@ Promotion notes:
 - The active model is not selected by one metric alone.
 - Calibration quality, false-positive pressure, abstention behavior, slice
   coverage, and unsafe recommendation rate are part of release quality.
+- IOC-specific gates require `likely_malicious` precision, protected
+  false-positive/stale/allowlist cases, confidence calibration, high-quality
+  `attribute_only` abstain rate, and slices for IOC type, source name/type,
+  severity, table-confidence bucket, age bucket, evidence tier, label
+  provenance, and scan-evidence availability.
 - Near-perfect held-out metrics should trigger leakage, source-overlap, label
   policy, and time-window review before production reliance.
 

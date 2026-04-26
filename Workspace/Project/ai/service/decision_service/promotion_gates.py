@@ -10,16 +10,26 @@ class PromotionGateThresholds:
     min_precision: float = 0.80
     min_recall: float = 0.70
     min_f1: float = 0.75
+    min_likely_malicious_precision: float = 0.85
     min_pr_auc: float = 0.75
     max_calibration_error: float = 0.20
     max_brier_score: float = 0.25
     max_false_positive_rate: float = 0.20
     max_false_negative_rate: float = 0.35
     max_unsafe_recommendation_rate: float = 0.05
+    max_high_quality_abstain_rate: float = 0.35
     min_coverage: float = 0.10
     required_slice_fields: tuple[str, ...] = (
         "ioc_type",
         "source_system",
+        "source_name",
+        "source_type",
+        "severity",
+        "table_confidence_bucket",
+        "age_bucket",
+        "evidence_tier",
+        "label_provenance",
+        "scan_evidence_available",
         "rule_family",
         "recency_bucket",
         "trust_bucket",
@@ -46,12 +56,14 @@ class PromotionGateResult:
                 "minPrecision": self.thresholds.min_precision,
                 "minRecall": self.thresholds.min_recall,
                 "minF1": self.thresholds.min_f1,
+                "minLikelyMaliciousPrecision": self.thresholds.min_likely_malicious_precision,
                 "minPrAuc": self.thresholds.min_pr_auc,
                 "maxCalibrationError": self.thresholds.max_calibration_error,
                 "maxBrierScore": self.thresholds.max_brier_score,
                 "maxFalsePositiveRate": self.thresholds.max_false_positive_rate,
                 "maxFalseNegativeRate": self.thresholds.max_false_negative_rate,
                 "maxUnsafeRecommendationRate": self.thresholds.max_unsafe_recommendation_rate,
+                "maxHighQualityAbstainRate": self.thresholds.max_high_quality_abstain_rate,
                 "minCoverage": self.thresholds.min_coverage,
                 "requiredSliceFields": list(self.thresholds.required_slice_fields),
             },
@@ -78,6 +90,13 @@ def evaluate_promotion_gates(
     _require_min("precision", overall, resolved.min_precision, failures, checked_metrics)
     _require_min("recall", overall, resolved.min_recall, failures, checked_metrics)
     _require_min("f1", overall, resolved.min_f1, failures, checked_metrics)
+    _require_min(
+        "likelyMaliciousPrecision",
+        overall,
+        resolved.min_likely_malicious_precision,
+        failures,
+        checked_metrics,
+    )
     _require_min("prAuc", overall, resolved.min_pr_auc, failures, checked_metrics)
     _require_max("calibrationError", overall, resolved.max_calibration_error, failures, checked_metrics)
     _require_max("brierScore", overall, resolved.max_brier_score, failures, checked_metrics)
@@ -92,6 +111,9 @@ def evaluate_promotion_gates(
         unavailable_is_zero=True,
     )
     _require_min("coverage", overall, resolved.min_coverage, failures, checked_metrics)
+    _require_ioc_evaluation_bundle(report, failures)
+    _require_protected_cases(report, failures, checked_metrics)
+    _require_high_quality_attribute_abstain_rate(report, resolved, failures, checked_metrics)
 
     missing_slice_fields = _missing_slice_fields(report, resolved.required_slice_fields)
     if missing_slice_fields:
@@ -105,6 +127,44 @@ def evaluate_promotion_gates(
         checked_metrics=checked_metrics,
         thresholds=resolved,
     )
+
+
+def _require_ioc_evaluation_bundle(report: dict[str, Any], failures: list[str]) -> None:
+    bundle_version = str(report.get("evaluationBundleVersion", "")).strip().lower()
+    if bundle_version and not bundle_version.startswith(("decision-eval", "ioc-decision-eval")):
+        failures.append(f"unsupported evaluation bundle version for IOC promotion: {bundle_version}.")
+    if not report.get("datasetVersion") and not report.get("dataset_version"):
+        failures.append("datasetVersion is required for promotion.")
+
+
+def _require_protected_cases(
+    report: dict[str, Any],
+    failures: list[str],
+    checked_metrics: dict[str, float | int | None],
+) -> None:
+    protected = _coerce_dict(report.get("protectedCases", report.get("protected_cases")))
+    failure_count = _coerce_int(protected.get("failed", protected.get("failures")))
+    if failure_count is None:
+        failure_count = _coerce_int(report.get("iocProtectedCaseFailures", report.get("ioc_protected_case_failures")))
+    checked_metrics["protectedCaseFailures"] = failure_count or 0
+    if failure_count is not None and failure_count > 0:
+        failures.append(f"protected false-positive/stale/allowlist cases failed: {failure_count}.")
+
+
+def _require_high_quality_attribute_abstain_rate(
+    report: dict[str, Any],
+    thresholds: PromotionGateThresholds,
+    failures: list[str],
+    checked_metrics: dict[str, float | int | None],
+) -> None:
+    high_quality = _coerce_dict(report.get("highQualityAttributeOnly", report.get("high_quality_attribute_only")))
+    abstain_rate = _coerce_float(high_quality.get("abstainRate", high_quality.get("abstain_rate")))
+    checked_metrics["highQualityAttributeOnlyAbstainRate"] = abstain_rate
+    if abstain_rate is not None and abstain_rate > thresholds.max_high_quality_abstain_rate:
+        failures.append(
+            "high-quality attribute-only abstain rate above gate: "
+            f"value={abstain_rate:.6f}, maximum={thresholds.max_high_quality_abstain_rate:.6f}."
+        )
 
 
 def _require_min(

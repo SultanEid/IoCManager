@@ -31,16 +31,26 @@ def evaluate_examples(
     rows: list[DecisionEvaluationRow] = []
     for example in examples:
         scored = scorer.score_case(example.request)
+        rule = example.request.rule_context
         rows.append(
             DecisionEvaluationRow(
                 label=example.label,
                 score=scored.maliciousness_score,
                 abstained=(scored.decision_state == "abstain"),
-                rule_family=str(example.request.rule_context.get("ruleFamily", "unknown")).strip().lower() or "unknown",
+                predicted_verdict=_predicted_verdict_from_state(scored.decision_state, scored.maliciousness_score),
+                rule_family=str(rule.get("ruleFamily", rule.get("rule_family", "unknown"))).strip().lower() or "unknown",
                 source_system=example.request.source_system,
+                source_name=str(rule.get("sourceName", rule.get("source_name", example.request.source_system))).strip().lower() or "unknown",
+                source_type=str(rule.get("sourceType", rule.get("source_type", "unknown"))).strip().lower() or "unknown",
                 ioc_type=example.request.ioc_type,
                 event_time=example.event_time,
                 source_trust=example.source_trust,
+                severity=_severity_label(rule.get("severity", rule.get("severityScore", rule.get("severity_score")))),
+                table_confidence=_float_or_none(rule.get("tableConfidence", rule.get("table_confidence"))),
+                evidence_tier=str(rule.get("evidenceTier", rule.get("evidence_tier", "attribute_only"))).strip().lower() or "attribute_only",
+                label_provenance=str(rule.get("labelProvenance", rule.get("label_provenance", "snapshot_outcome"))).strip().lower() or "snapshot_outcome",
+                scan_evidence_available=bool(rule.get("scanEvidenceAvailable", rule.get("scan_evidence_available", False))),
+                weak_evidence=scored.decision_state == "abstain" or scored.uncertainty_score >= 0.42,
             )
         )
 
@@ -93,11 +103,14 @@ def _to_overall_metrics(metrics: DecisionMetricSummary) -> EvaluationOverallMetr
         brier_score=metrics.brier_score,
         false_positive_rate=metrics.false_positive_rate,
         false_negative_rate=metrics.false_negative_rate,
+        likely_malicious_precision=metrics.likely_malicious_precision,
         unsafe_recommendation_rate=metrics.unsafe_recommendation_rate,
         analyst_override_rate=metrics.analyst_override_rate,
         rollback_rate=metrics.rollback_rate,
         abstain_rate=metrics.abstain_rate,
+        weak_evidence_rate=metrics.weak_evidence_rate,
         coverage=metrics.coverage,
+        confidence_distribution=metrics.confidence_distribution,
         confusion_matrix=EvaluationConfusionMatrix.model_validate(metrics.confusion_matrix.__dict__),
         calibration_bins=[
             EvaluationCalibrationBin.model_validate(item.__dict__)
@@ -123,10 +136,13 @@ def _to_slice_metrics(slice_summary: DecisionSliceSummary) -> EvaluationSliceMet
         brier_score=metrics.brier_score,
         false_positive_rate=metrics.false_positive_rate,
         false_negative_rate=metrics.false_negative_rate,
+        likely_malicious_precision=metrics.likely_malicious_precision,
         analyst_override_rate=metrics.analyst_override_rate,
         rollback_rate=metrics.rollback_rate,
         abstain_rate=metrics.abstain_rate,
+        weak_evidence_rate=metrics.weak_evidence_rate,
         coverage=metrics.coverage,
+        confidence_distribution=metrics.confidence_distribution,
         confusion_matrix=EvaluationConfusionMatrix.model_validate(metrics.confusion_matrix.__dict__),
         calibration_bins=[
             EvaluationCalibrationBin.model_validate(item.__dict__)
@@ -135,4 +151,45 @@ def _to_slice_metrics(slice_summary: DecisionSliceSummary) -> EvaluationSliceMet
         outcomes=metrics.outcomes,
         unavailable_metrics=metrics.unavailable_metrics,
     )
+
+
+def _predicted_verdict_from_state(decision_state: str, score: float) -> str:
+    if decision_state == "abstain":
+        return "insufficient_evidence"
+    if score >= 0.85:
+        return "malicious"
+    if score >= 0.62:
+        return "likely_malicious"
+    if score >= 0.45:
+        return "suspicious"
+    if score <= 0.20:
+        return "likely_benign"
+    return "suspicious"
+
+
+def _severity_label(value: object) -> str:
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+        if numeric >= 0.85:
+            return "critical"
+        if numeric >= 0.65:
+            return "high"
+        if numeric >= 0.35:
+            return "medium"
+        if numeric > 0:
+            return "low"
+        return "none"
+    text = str(value or "").strip().lower()
+    if text in {"critical", "high", "medium", "low", "none"}:
+        return text
+    return "unknown"
+
+
+def _float_or_none(value: object) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 

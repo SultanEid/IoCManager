@@ -67,6 +67,7 @@ class _SafetyInputs:
     family: str
     lexical_only_gate_triggered: bool
     non_lexical_corroborated: bool
+    attribute_only_ioc_decision: bool
     contradiction_score: float
     missing_score: float
     confidence: float
@@ -557,6 +558,35 @@ def _finalize_grounded_decision(
         false_positive_risk=false_positive_risk,
         fusion_failure_reason=fusion_failure_reason,
     )
+    ioc_attribute_fallback = _ioc_attribute_supported_fallback(
+        score=score,
+        request=request,
+        verdict=verdict,
+        confidence=confidence,
+        false_positive_risk=false_positive_risk,
+        safety_inputs=safety_inputs,
+    )
+    if ioc_attribute_fallback is not None:
+        verdict, action, confidence, false_positive_risk, fallback_reason = ioc_attribute_fallback
+        abstain_reason = None
+        review_priority = _review_priority(verdict, confidence, score.blast_radius_score)
+        reasons = _merge_unique_text(list(reasons) + [fallback_reason])
+        next_best_evidence = _merge_unique_text(
+            list(next_best_evidence) + _next_best_evidence(score=score, verdict=verdict)
+        )
+        safety_inputs = _collect_safety_inputs(
+            request=request,
+            evidence_fusion=evidence_fusion,
+            family=family,
+            lexical_only_gate_triggered=lexical_only_gate_triggered,
+            non_lexical_corroborated=non_lexical_corroborated,
+            contradiction_score=contradiction_score,
+            missing_score=missing_score,
+            confidence=confidence,
+            false_positive_risk=false_positive_risk,
+            fusion_failure_reason=fusion_failure_reason,
+            attribute_only_ioc_decision=True,
+        )
     fallback = _family_model_supported_fallback(
         score=score,
         request=request,
@@ -779,6 +809,7 @@ def _collect_safety_inputs(
     confidence: float,
     false_positive_risk: float,
     fusion_failure_reason: str | None,
+    attribute_only_ioc_decision: bool = False,
 ) -> _SafetyInputs:
     missing_critical_fields = tuple(_missing_critical_fields(request=request, family=family))
     enrichment_status, degradation_reasons = _enrichment_status(
@@ -798,6 +829,7 @@ def _collect_safety_inputs(
         family=family,
         lexical_only_gate_triggered=lexical_only_gate_triggered,
         non_lexical_corroborated=non_lexical_corroborated,
+        attribute_only_ioc_decision=attribute_only_ioc_decision,
         contradiction_score=contradiction,
         missing_score=missing,
         confidence=_clip01(confidence),
@@ -806,6 +838,114 @@ def _collect_safety_inputs(
         enrichment_status=enrichment_status,
         degradation_reasons=tuple(degradation_reasons),
         partial_evidence=partial_evidence,
+    )
+
+
+def _ioc_attribute_supported_fallback(
+    *,
+    score: CaseScoreVectorResponse,
+    request: ScoreCaseRequest,
+    verdict: DecisionVerdict,
+    confidence: float,
+    false_positive_risk: float,
+    safety_inputs: _SafetyInputs,
+) -> tuple[DecisionVerdict, str, float, float, str] | None:
+    if verdict != "insufficient_evidence":
+        return None
+    if not _is_ioc_attribute_decision_context(request):
+        return None
+    if _false_positive_signal_present(request) or _stale_or_revoked_signal_present(request):
+        return None
+    if safety_inputs.missing_critical_fields:
+        return None
+    if safety_inputs.contradiction_score >= 0.30:
+        return None
+
+    source_trust = _context_float(
+        request.rule_context,
+        "sourceTrust",
+        "source_trust",
+        default=float(score.feature_groups.get("source_trust_signal", 0.5)),
+    )
+    if source_trust <= INSUFFICIENT_TRUST_MAX:
+        return None
+
+    severity = _context_float(
+        request.rule_context,
+        "severityScore",
+        "severity_score",
+        default=score.maliciousness_score,
+    )
+    table_confidence = _context_float(
+        request.rule_context,
+        "tableConfidence",
+        "table_confidence",
+        "providerConfidence",
+        "provider_confidence",
+        "scannerAgreement",
+        "scanner_agreement",
+        default=confidence,
+    )
+    indicator_strength = _clip01(float(score.feature_groups.get("indicator_strength_signal", 0.55)))
+    attribute_signal = _clip01(
+        0.34 * severity
+        + 0.26 * table_confidence
+        + 0.18 * source_trust
+        + 0.12 * indicator_strength
+        + 0.10 * score.maliciousness_score
+        - 0.18 * safety_inputs.contradiction_score
+    )
+
+    if attribute_signal < 0.66:
+        return None
+
+    fallback_verdict: DecisionVerdict = "likely_malicious" if attribute_signal >= 0.82 else "suspicious"
+    fallback_confidence = _clip01(
+        max(
+            confidence,
+            0.42 + (0.24 * attribute_signal) + (0.08 * source_trust) - (0.10 * safety_inputs.missing_score),
+        )
+    )
+    fallback_confidence = min(0.66, fallback_confidence)
+    fallback_false_positive_risk = _clip01(
+        max(
+            0.28,
+            min(false_positive_risk, 0.58 - (0.24 * attribute_signal) + (0.10 * (1.0 - source_trust))),
+        )
+    )
+    fallback_action = "quarantine_for_review" if score.blast_radius_score >= 0.65 else "monitor"
+    reason = (
+        "IOC attribute fallback produced a bounded analyst insight from table severity, table confidence, "
+        f"source trust, and indicator strength (attribute_signal={attribute_signal:.2f}); additional "
+        "sightings are still required before deployment or automated response."
+    )
+    return fallback_verdict, fallback_action, fallback_confidence, fallback_false_positive_risk, reason
+
+
+def _is_ioc_attribute_decision_context(request: ScoreCaseRequest) -> bool:
+    source_system = request.source_system.strip().lower()
+    package = request.detection_package if isinstance(request.detection_package, dict) else {}
+    object_metadata = _coerce_dict(package.get("object_metadata"))
+    raw_hit_payload = _coerce_dict(package.get("raw_hit_payload"))
+    rule_metadata = _coerce_dict(package.get("rule_metadata"))
+    object_type = str(object_metadata.get("object_type", "")).strip().lower()
+    rule_id = str(rule_metadata.get("rule_id", "")).strip().lower()
+    has_indicator = bool(
+        request.ioc_type.strip()
+        and request.ioc_value.strip()
+        and (
+            raw_hit_payload.get("indicator") is not None
+            or request.rule_context.get("tableConfidence") is not None
+            or request.rule_context.get("table_confidence") is not None
+        )
+    )
+    return (
+        has_indicator
+        and (
+            source_system == "ioc_manager_ioc_table"
+            or object_type == "ioc"
+            or rule_id.startswith("ioc-table-")
+        )
     )
 
 
@@ -834,19 +974,27 @@ def _apply_safety_rails(
         final_false_positive_risk = _clip01(final_false_positive_risk + 0.10)
 
     force_abstain = False
+    attribute_fallback_verdict = (
+        safety_inputs.attribute_only_ioc_decision
+        and final_verdict in {"suspicious", "likely_malicious"}
+    )
     if safety_inputs.missing_critical_fields:
         force_abstain = True
         final_abstain_reason = "missing_critical_fields"
-    elif safety_inputs.lexical_only_gate_triggered:
+    elif safety_inputs.lexical_only_gate_triggered and not attribute_fallback_verdict:
         force_abstain = True
         final_abstain_reason = final_abstain_reason or "missing_non_string_corroboration"
-    elif safety_inputs.missing_score >= 0.65:
+    elif safety_inputs.missing_score >= 0.65 and not attribute_fallback_verdict:
         force_abstain = True
         final_abstain_reason = final_abstain_reason or "insufficient_correlated_evidence"
     elif safety_inputs.contradiction_score >= 0.70:
         force_abstain = True
         final_abstain_reason = "high_evidence_conflict"
-    elif safety_inputs.enrichment_status == "unavailable" and not safety_inputs.non_lexical_corroborated:
+    elif (
+        safety_inputs.enrichment_status == "unavailable"
+        and not safety_inputs.non_lexical_corroborated
+        and not attribute_fallback_verdict
+    ):
         force_abstain = True
         final_abstain_reason = "enrichment_unavailable"
 
@@ -869,6 +1017,7 @@ def _apply_safety_rails(
         or safety_inputs.missing_score >= 0.65
         or safety_inputs.missing_critical_fields
         or not safety_inputs.non_lexical_corroborated
+        or safety_inputs.attribute_only_ioc_decision
     )
     safety_diagnostics = SafetyDiagnosticsResponse(
         auto_remediation_allowed=False,

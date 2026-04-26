@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/ioc-evaluation-row.schema.json",
+  "title": "IOC Evaluation Row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "example_id",
+    "ioc_type",
+    "ioc_value_masked",
+    "ioc_value_hash",
+    "source_name",
+    "source_type",
+    "source_trust",
+    "severity",
+    "table_confidence",
+    "age_bucket",
+    "evidence_tier",
+    "label_provenance",
+    "expected_verdict",
+    "expected_confidence_band",
+    "expected_confidence_min",
+    "expected_confidence_max",
+    "review_status"
+  ],
+  "properties": {
+    "example_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "ioc_type": {
+      "type": "string",
+      "enum": ["ip", "domain", "url", "hash", "hash_md5", "hash_sha1", "hash_sha256", "process", "artifact", "file"]
+    },
+    "ioc_value_masked": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ioc_value_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["trusted_feed", "low_trust_feed", "manual_entry", "api_import", "file_upload", "scanner", "internal_allowlist", "analyst_review", "unknown"]
+    },
+    "source_trust": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high", "critical"]
+    },
+    "table_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "first_seen_utc": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "last_seen_utc": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "age_bucket": {
+      "type": "string",
+      "enum": ["0_24h", "1_7d", "8_30d", "31_90d", "90d_plus", "unknown"]
+    },
+    "evidence_tier": {
+      "type": "string",
+      "enum": ["attribute_only", "scan_correlated", "analyst_outcome", "low_trust_conflicting_stale"]
+    },
+    "scan_evidence_available": {
+      "type": "boolean",
+      "default": false
+    },
+    "linked_scan_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "sightings_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "target_exposure": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0
+    },
+    "historical_decision": {
+      "type": ["string", "null"],
+      "enum": ["benign", "likely_benign", "suspicious", "likely_malicious", "malicious", "false_positive", "stale_or_revoked", "insufficient_evidence", null]
+    },
+    "analyst_outcome": {
+      "type": ["string", "null"],
+      "enum": ["true_positive", "false_positive", "benign", "stale", "revoked", "needs_review", null]
+    },
+    "label_provenance": {
+      "type": "string",
+      "enum": ["analyst_outcome", "trusted_feed", "internal_allowlist", "weak_table_label", "synthetic_fixture", "shadow_review"]
+    },
+    "expected_verdict": {
+      "type": "string",
+      "enum": ["benign", "likely_benign", "suspicious", "likely_malicious", "malicious", "false_positive", "stale_or_revoked", "insufficient_evidence"]
+    },
+    "expected_confidence_band": {
+      "type": "string",
+      "enum": ["very_low", "low", "medium", "high", "very_high"]
+    },
+    "expected_confidence_min": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "expected_confidence_max": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "review_status": {
+      "type": "string",
+      "enum": ["fixture", "needs_review", "reviewed", "approved", "rejected"]
+    },
+    "reviewer": {
+      "type": ["string", "null"]
+    },
+    "review_notes": {
+      "type": ["string", "null"]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "default": []
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "evidence_tier": {
+            "const": "analyst_outcome"
+          }
+        }
+      },
+      "then": {
+        "required": ["analyst_outcome"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evidence_tier": {
+            "const": "scan_correlated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scan_evidence_available": {
+            "const": true
+          },
+          "linked_scan_count": {
+            "minimum": 1
+          }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "example_id": "fixture-domain-suspicious-attribute",
+      "ioc_type": "domain",
+      "ioc_value_masked": "login-***.example",
+      "ioc_value_hash": "b0b6db9100f1cf0cb74dbba3c40a78f8b106b17d82ab1c2f4d2df939f1f7d2f1",
+      "source_name": "ioc_table",
+      "source_type": "manual_entry",
+      "source_trust": 0.7,
+      "severity": "high",
+      "table_confidence": 0.82,
+      "first_seen_utc": "2026-04-24T10:00:00Z",
+      "last_seen_utc": "2026-04-25T10:00:00Z",
+      "age_bucket": "1_7d",
+      "evidence_tier": "attribute_only",
+      "scan_evidence_available": false,
+      "linked_scan_count": 0,
+      "sightings_count": 1,
+      "target_exposure": 0.3,
+      "historical_decision": null,
+      "analyst_outcome": null,
+      "label_provenance": "synthetic_fixture",
+      "expected_verdict": "suspicious",
+      "expected_confidence_band": "medium",
+      "expected_confidence_min": 0.45,
+      "expected_confidence_max": 0.66,
+      "review_status": "fixture",
+      "reviewer": null,
+      "review_notes": "Attribute-only IOC should produce bounded insight.",
+      "tags": ["attribute_only", "suspicious"]
+    }
+  ]
+}

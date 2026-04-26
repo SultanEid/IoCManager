@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
+from urllib.parse import urlparse
 
 from .calibration import LogisticCalibrator
 from .contracts import (
@@ -132,7 +135,7 @@ class BaselineScorer:
             + 0.08 * features.enrichment_strength_signal
             + 0.05 * features.activity_signal
             - 0.07 * features.benign_context_signal
-            - 0.05 * features.heuristic_noise_signal
+            - 0.07 * features.heuristic_noise_signal
         )
         return _clip01(raw)
 
@@ -545,9 +548,9 @@ class BaselineScorer:
 
 
 def _sightings_signal(host_context: dict[str, object], rule_context: dict[str, object]) -> float:
-    sightings_count = _read_context_float(rule_context, "sightingsCount", "sightings_count", default=0.0)
+    sightings_count = _read_context_float_optional(rule_context, "sightingsCount", "sightings_count") or 0.0
     if sightings_count <= 0.0:
-        sightings_count = _read_context_float(host_context, "sightingsCount", "sightings_count", default=0.0)
+        sightings_count = _read_context_float_optional(host_context, "sightingsCount", "sightings_count") or 0.0
     count_signal = _clip01(sightings_count / 12.0)
 
     corroboration = _read_context_float_optional(
@@ -610,6 +613,8 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
     enrichments = _coerce_list(linked_enrichment.get("enrichments"))
     source_system = request.source_system.strip().lower()
     source_name = _read_context_text_optional(request.rule_context, "sourceName", "source_name") or source_system
+    source_type = _read_context_text_optional(request.rule_context, "sourceType", "source_type") or "unknown"
+    value_profile = _ioc_value_feature_profile(request.ioc_type, request.ioc_value)
     legacy_severity = _clip01(
         _read_context_float_optional(
             request.rule_context,
@@ -617,6 +622,11 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
             "severity_score",
         )
         or 0.5
+    )
+    table_confidence = _read_context_float_optional(
+        request.rule_context,
+        "tableConfidence",
+        "table_confidence",
     )
 
     provider_confidence = _read_context_float_optional(
@@ -627,6 +637,8 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
     if provider_confidence is None:
         provider_confidence = _provider_confidence_from_package(source_system, raw_hit_payload, enrichments)
     provider_confidence_signal = _clip01(provider_confidence or 0.0)
+    if table_confidence is not None and _is_ioc_table_context(source_system, object_metadata, raw_hit_payload, rule_metadata):
+        provider_confidence_signal = max(provider_confidence_signal, _clip01(table_confidence))
 
     indicator_strength = _read_context_float_optional(
         request.rule_context,
@@ -640,7 +652,7 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
             raw_hit_payload=raw_hit_payload,
             object_metadata=object_metadata,
         )
-    indicator_strength_signal = _clip01(indicator_strength or 0.0)
+    indicator_strength_signal = _clip01((indicator_strength or 0.0) + value_profile["indicator_strength_bonus"])
 
     enrichment_strength = _read_context_float_optional(
         request.rule_context,
@@ -687,6 +699,66 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
             or 0.0
         )
 
+    benign_context = _clip01(float(benign_context or 0.0) + value_profile["benign_context_bonus"])
+    heuristic_noise = _clip01(float(heuristic_noise or 0.0) + value_profile["heuristic_noise_bonus"])
+    threat_signal = _clip01(float(threat_signal or 0.0) + value_profile["threat_bonus"])
+
+    source_category = _source_category_signal(source_type=source_type, source_name=source_name, source_system=source_system)
+    provider_confidence_signal = _clip01(provider_confidence_signal + source_category["provider_bonus"])
+    indicator_strength_signal = _clip01(indicator_strength_signal + source_category["indicator_bonus"])
+    threat_signal = _clip01(threat_signal + source_category["threat_bonus"])
+    benign_context = _clip01(benign_context + source_category["benign_bonus"])
+    heuristic_noise = _clip01(heuristic_noise + source_category["heuristic_bonus"])
+
+    linked_scan_count = _read_context_float_optional(
+        request.rule_context,
+        "linkedScanResultCount",
+        "linked_scan_result_count",
+        "linkedScanCount",
+        "linked_scan_count",
+    )
+    if linked_scan_count is None:
+        linked_scan_count = _read_context_float_optional(request.host_context, "linkedScanResultCount", "linkedScanCount")
+    sightings_count = _read_context_float_optional(request.rule_context, "sightingsCount", "sightings_count") or 0.0
+    target_exposure = _read_context_float_optional(request.rule_context, "targetExposure", "target_exposure")
+    if target_exposure is None:
+        target_exposure = _read_context_float_optional(request.host_context, "targetExposure", "target_exposure", "assetExposure", "asset_exposure")
+    correlation = _clip01(
+        min(0.18, max(0.0, float(linked_scan_count or 0.0)) * 0.045)
+        + min(0.12, max(0.0, float(sightings_count or 0.0)) * 0.015)
+        + 0.06 * _clip01(float(target_exposure or 0.0))
+    )
+    if correlation:
+        enrichment_strength_signal = _clip01(enrichment_strength_signal + correlation)
+        activity_signal = _clip01(activity_signal + (0.70 * correlation))
+        threat_signal = _clip01(threat_signal + (0.65 * correlation))
+
+    historical_outcome = _read_context_text_optional(
+        request.rule_context,
+        "analystOutcome",
+        "analyst_outcome",
+        "responseOutcome",
+        "response_outcome",
+        "historicalDecision",
+        "historical_decision",
+    )
+    analyst_override = _read_context_text_optional(request.rule_context, "analystOverride", "analyst_override")
+    if historical_outcome in {"true_positive", "malicious", "likely_malicious", "containment_success"}:
+        provider_confidence_signal = max(provider_confidence_signal, 0.88)
+        indicator_strength_signal = max(indicator_strength_signal, 0.84)
+        enrichment_strength_signal = max(enrichment_strength_signal, 0.80)
+        activity_signal = max(activity_signal, 0.72)
+        threat_signal = max(threat_signal, 0.86)
+        heuristic_noise = min(heuristic_noise, 0.12)
+    elif historical_outcome in {"false_positive", "benign", "likely_benign", "allowlist", "stale", "revoked"} or analyst_override in {"false_positive", "benign", "allowlist"}:
+        provider_confidence_signal = min(provider_confidence_signal, 0.44)
+        indicator_strength_signal = min(indicator_strength_signal, 0.50)
+        enrichment_strength_signal = min(enrichment_strength_signal, 0.44)
+        activity_signal = min(activity_signal, 0.40)
+        threat_signal = min(threat_signal, 0.18)
+        benign_context = max(benign_context, 0.82)
+        heuristic_noise = max(heuristic_noise, 0.18)
+
     if source_name in {"internal-clean-baselines", "internal-allowlists"}:
         provider_confidence_signal = min(provider_confidence_signal, 0.28) if provider_confidence_signal else 0.28
         indicator_strength_signal = min(indicator_strength_signal, 0.42) if indicator_strength_signal else 0.42
@@ -710,6 +782,14 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
         enrichment_strength_signal = max(enrichment_strength_signal, 0.12 + (0.18 * legacy_severity))
         activity_signal = max(activity_signal, 0.26 + (0.20 * legacy_severity))
         threat_signal = max(threat_signal, 0.18 + (0.42 * legacy_severity))
+        heuristic_noise = min(float(heuristic_noise or 0.0), 0.18)
+    elif _is_ioc_table_context(source_system, object_metadata, raw_hit_payload, rule_metadata):
+        table_confidence_signal = _clip01(table_confidence if table_confidence is not None else provider_confidence_signal)
+        provider_confidence_signal = max(provider_confidence_signal, table_confidence_signal)
+        indicator_strength_signal = max(indicator_strength_signal, 0.42 + (0.24 * legacy_severity))
+        enrichment_strength_signal = max(enrichment_strength_signal, 0.18 + (0.22 * table_confidence_signal) + min(0.20, correlation))
+        activity_signal = max(activity_signal, 0.14 + (0.16 * table_confidence_signal) + (0.45 * correlation))
+        threat_signal = max(threat_signal, 0.24 + (0.46 * legacy_severity) + (0.12 * table_confidence_signal) + (0.35 * correlation))
         heuristic_noise = min(float(heuristic_noise or 0.0), 0.18)
     elif source_name == "sigmahq":
         provider_confidence_signal = max(provider_confidence_signal, 0.86)
@@ -753,6 +833,12 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
         external_source_signal = max(float(external_source_signal or 0.0), 0.82)
     elif source_name == "legacy-ioc-explorer":
         external_source_signal = max(float(external_source_signal or 0.0), 0.24 + (0.24 * legacy_severity))
+    elif _is_ioc_table_context(source_system, object_metadata, raw_hit_payload, rule_metadata):
+        table_confidence_signal = _clip01(table_confidence if table_confidence is not None else provider_confidence_signal)
+        external_source_signal = max(
+            float(external_source_signal or 0.0),
+            _clip01(0.18 + (0.28 * legacy_severity) + (0.22 * table_confidence_signal)),
+        )
     elif source_name == "internal-reviewed-telemetry":
         if float(benign_context or 0.0) >= 0.68:
             external_source_signal = min(max(float(external_source_signal or 0.0), 0.30), 0.42)
@@ -772,6 +858,22 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
         "benign_context_signal": _clip01(float(benign_context or 0.0)),
         "heuristic_noise_signal": _clip01(float(heuristic_noise or 0.0)),
     }
+
+
+def _is_ioc_table_context(
+    source_system: str,
+    object_metadata: dict[str, object],
+    raw_hit_payload: dict[str, object],
+    rule_metadata: dict[str, object],
+) -> bool:
+    object_type = str(object_metadata.get("object_type", "")).strip().lower()
+    rule_id = str(rule_metadata.get("rule_id", "")).strip().lower()
+    has_indicator = raw_hit_payload.get("indicator") is not None
+    return (
+        source_system == "ioc_manager_ioc_table"
+        or object_type == "ioc"
+        or (has_indicator and rule_id.startswith("ioc-table-"))
+    )
 
 
 def _read_context_float(context: dict[str, object], *keys: str, default: float) -> float:
@@ -988,10 +1090,118 @@ def _semantic_context_signals(
     return {"threat": threat, "benign": benign, "heuristic": heuristic}
 
 
+def _source_category_signal(*, source_type: str, source_name: str, source_system: str) -> dict[str, float]:
+    normalized_type = str(source_type or "").strip().lower().replace("-", "_")
+    normalized_name = str(source_name or source_system or "").strip().lower()
+    if normalized_type in {"trusted_feed", "scanner", "analyst_review"}:
+        return {
+            "provider_bonus": 0.08,
+            "indicator_bonus": 0.05,
+            "threat_bonus": 0.06,
+            "benign_bonus": 0.0,
+            "heuristic_bonus": 0.0,
+        }
+    if normalized_type in {"low_trust_feed", "file_upload"}:
+        return {
+            "provider_bonus": -0.08,
+            "indicator_bonus": -0.03,
+            "threat_bonus": -0.04,
+            "benign_bonus": 0.02,
+            "heuristic_bonus": 0.05,
+        }
+    if normalized_type in {"manual_entry", "api_import"} or normalized_name in {"ioc_table", "manual_triage"}:
+        return {
+            "provider_bonus": 0.02,
+            "indicator_bonus": 0.02,
+            "threat_bonus": 0.01,
+            "benign_bonus": 0.0,
+            "heuristic_bonus": 0.02,
+        }
+    return {
+        "provider_bonus": 0.0,
+        "indicator_bonus": 0.0,
+        "threat_bonus": 0.0,
+        "benign_bonus": 0.0,
+        "heuristic_bonus": 0.02,
+    }
+
+
+def _ioc_value_feature_profile(ioc_type: str, ioc_value: str) -> dict[str, float]:
+    normalized_type = ioc_type.strip().lower().replace("-", "_")
+    value = ioc_value.strip().lower()
+    profile = {
+        "suspicion_bonus": 0.0,
+        "indicator_strength_bonus": 0.0,
+        "benign_context_bonus": 0.0,
+        "heuristic_noise_bonus": 0.0,
+        "threat_bonus": 0.0,
+    }
+
+    if not value:
+        profile["heuristic_noise_bonus"] += 0.20
+        profile["benign_context_bonus"] += 0.08
+        return profile
+
+    if _is_documentation_or_private_ip(value):
+        profile["benign_context_bonus"] += 0.48
+        profile["heuristic_noise_bonus"] += 0.16
+        profile["indicator_strength_bonus"] -= 0.18
+        return profile
+
+    if normalized_type in {"url", "uri"} or "://" in value:
+        parsed = urlparse(value.replace("hxxp://", "http://").replace("hxxps://", "https://"))
+        path = parsed.path or value
+        host = parsed.hostname or ""
+        if parsed.username or "@" in value:
+            profile["suspicion_bonus"] += 0.10
+        if any(token in path for token in ("/wp-admin", "/gate", "/panel", "/payload", "/dropper", ".exe", ".scr", ".ps1")):
+            profile["suspicion_bonus"] += 0.20
+            profile["indicator_strength_bonus"] += 0.08
+            profile["threat_bonus"] += 0.08
+        if len(path) > 80 or value.count("/") >= 5:
+            profile["suspicion_bonus"] += 0.08
+        if _has_risky_tld(host):
+            profile["suspicion_bonus"] += 0.08
+            profile["threat_bonus"] += 0.04
+
+    if normalized_type == "domain":
+        if _has_risky_tld(value):
+            profile["suspicion_bonus"] += 0.08
+        if value.count("-") >= 2 or re.search(r"\d{4,}", value):
+            profile["suspicion_bonus"] += 0.08
+        if value.endswith((".internal", ".local", ".test", ".example")):
+            profile["benign_context_bonus"] += 0.10
+            profile["heuristic_noise_bonus"] += 0.08
+
+    if normalized_type in {"process", "artifact", "file"} or "\\" in value or "/" in value:
+        if any(token in value for token in ("powershell", "pwsh", "cmd.exe", "wscript", "cscript", "mshta", "rundll32", "regsvr32")):
+            profile["suspicion_bonus"] += 0.18
+            profile["indicator_strength_bonus"] += 0.08
+        if any(token in value for token in (" -enc", " -encodedcommand", " bypass", " hidden", "downloadstring", "frombase64string")):
+            profile["suspicion_bonus"] += 0.22
+            profile["threat_bonus"] += 0.10
+        if any(token in value for token in ("\\currentversion\\run", "\\startup\\", "\\programdata\\", "\\appdata\\roaming\\", "/tmp/", "/var/tmp/")):
+            profile["suspicion_bonus"] += 0.24
+            profile["indicator_strength_bonus"] += 0.06
+        if any(token in value for token in ("windows\\system32", "microsoft\\edge", "google\\chrome", "program files")):
+            profile["benign_context_bonus"] += 0.08
+
+    if normalized_type in {"hash", "hash_md5", "hash_sha1", "hash_sha256"}:
+        hash_len = len(value)
+        if re.fullmatch(r"[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}", value):
+            profile["indicator_strength_bonus"] += 0.10
+            profile["suspicion_bonus"] += 0.03
+        elif hash_len >= 16:
+            profile["heuristic_noise_bonus"] += 0.14
+
+    return {key: _clip01(val) if val >= 0 else val for key, val in profile.items()}
+
+
 def _compute_ioc_suspicion(ioc_type: str, ioc_value: str) -> float:
     value = ioc_value.strip().lower()
     ioc_type = ioc_type.strip().lower()
     suspicion = 0.0
+    value_profile = _ioc_value_feature_profile(ioc_type, ioc_value)
 
     if any(token in value for token in ("login", "verify", "secure", "update", "reset", "wallet")):
         suspicion += 0.22
@@ -1001,18 +1211,43 @@ def _compute_ioc_suspicion(ioc_type: str, ioc_value: str) -> float:
         suspicion += 0.16
     if value.count(".") >= 3:
         suspicion += 0.10
-    if ioc_type == "hash":
+    if ioc_type in {"hash", "hash_md5", "hash_sha1", "hash_sha256"}:
         suspicion += 0.18
+        if not re.fullmatch(r"[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}", value):
+            suspicion -= 0.10
     elif ioc_type == "url":
         suspicion += 0.12
     elif ioc_type == "ip":
         octets = [part for part in value.split(".") if part.isdigit()]
-        if octets and any(int(part) in {0, 255} for part in octets):
+        if octets and any(int(part) in {0, 255} for part in octets) and not _is_documentation_or_private_ip(value):
             suspicion += 0.06
 
     entropy = _shannon_entropy(value)
     suspicion += min(0.18, entropy / 30.0)
+    suspicion += value_profile["suspicion_bonus"]
+    suspicion -= value_profile["benign_context_bonus"] * 0.35
+    suspicion -= value_profile["heuristic_noise_bonus"] * 0.20
     return _clip01(suspicion)
+
+
+def _is_documentation_or_private_ip(value: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return False
+    return bool(
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or value.startswith(("192.0.2.", "198.51.100.", "203.0.113."))
+    )
+
+
+def _has_risky_tld(value: str) -> bool:
+    host = value.strip().lower().rstrip(".")
+    return host.endswith((".zip", ".mov", ".top", ".xyz", ".click", ".country", ".gq", ".tk", ".ru"))
 
 
 def _shannon_entropy(value: str) -> float:

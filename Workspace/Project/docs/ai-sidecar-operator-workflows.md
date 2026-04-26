@@ -124,6 +124,22 @@ Supported dataset and staging jobs live under `Workspace/Project/ai/jobs`.
 Treat unlisted feed, review, and experimental build scripts as local/operator
 work until they have fixture-based smoke tests.
 
+Build an IOC-specific evaluation JSONL from a reviewed fixture or app export:
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\build_ioc_evaluation_dataset.py `
+  --input-file .\fixtures\ioc_evaluation\golden_ioc_rows.jsonl `
+  --output-file .\datasets\processed\ioc-eval\rows.jsonl `
+  --report-file .\datasets\processed\ioc-eval\report.json
+Pop-Location
+```
+
+The builder masks IOC values by default and writes stable hashes for review and
+deduplication. Use `--include-raw-values` only for a controlled local review
+workspace that is not committed. Required row fields include `evidence_tier`,
+`label_provenance`, `expected_verdict`, and `expected_confidence_band`.
+
 Build a fixture-sized or configured processed dataset:
 
 ```powershell
@@ -192,6 +208,33 @@ artifact hashes. They cover quality metrics, calibration, false-positive and
 false-negative pressure, unsafe recommendations, coverage, and required slices
 for IOC type, source system, scanner family, recency, trust, and evidence
 availability.
+
+IOC promotion gates additionally require `likelyMaliciousPrecision`,
+calibration / Brier score checks, protected false-positive, stale, and
+allowlist cases, high-quality `attribute_only` abstain-rate checks, and slices
+for source name/type, severity, table confidence, age bucket, `evidence_tier`,
+`label_provenance`, and scan-evidence availability.
+
+## Shadow IOC Scoring
+
+Run shadow mode against a fixture or operator-provided IOC export. This does
+not write production decisions.
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\shadow_score_ioc_table.py `
+  --input-file .\fixtures\ioc_evaluation\golden_ioc_rows.jsonl `
+  --output-file .\datasets\processed\shadow\ioc-shadow-report.json `
+  --review-stubs-file .\datasets\processed\shadow\review-stubs.jsonl `
+  --review-csv-file .\datasets\processed\shadow\review-stubs.csv
+Pop-Location
+```
+
+The report includes verdict distribution, confidence bands,
+false-positive-risk bands, weak-evidence counts, abstain/downgrade reasons,
+slices, likely false positives, and rows needing analyst labels. Review stubs
+match the IOC evaluation-row schema and should be corrected or approved by an
+analyst before becoming evaluation or training labels.
 
 ## Rollback
 

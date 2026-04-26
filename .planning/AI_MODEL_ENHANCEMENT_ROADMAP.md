@@ -32,6 +32,7 @@ Enhance the existing IOC Manager AI sidecar into a well-understood, tested, repr
 | AI-6 | Test Expansion and Contract Safety | Add targeted tests for model, data, job, API, and registry risks. | testing |
 | AI-7 | Usage Documentation | Document model usage, data refresh, training, inference, evaluation, and troubleshooting. | docs |
 | AI-8 | Deployment Readiness | Package and harden the sidecar for production operation. | deployment |
+| AI-9 | IOC Decision Quality Foundation | Build IOC-specific labels, features, metrics, gates, and shadow review loop. | model quality |
 
 ## Phase Status
 
@@ -45,6 +46,7 @@ Enhance the existing IOC Manager AI sidecar into a well-understood, tested, repr
 | AI-6 | Complete - 2026-04-26 | Expanded API/runtime guard tests, decision contract golden tests, scanner evidence regression coverage, backend sidecar payload validation |
 | AI-7 | Complete - 2026-04-26 | Usage docs for Python 3.11 setup, sidecar start, inference smoke, confidence interpretation, dataset/training/evaluation/publish workflows, rollback, troubleshooting, and env names |
 | AI-8 | Complete - 2026-04-26 | `/livez` and `/readyz`, optional service-token auth, safe sidecar metrics/logging, Docker packaging, deployment env template, backend readiness probe alignment, CI install constraint, deployment docs, AI-8 tests |
+| AI-9 | Complete - 2026-04-26 | IOC evaluation schema/fixtures/builder, IOC attribute/source/correlation scoring improvements, IOC-specific metrics and promotion gates, shadow-mode scoring and review loop, AI-9 tests |
 
 ## Phase Details
 
@@ -296,6 +298,59 @@ Pop-Location
 ```
 
 Run the sidecar smoke check in a separate shell or automated script once the server is started.
+
+### AI-9: IOC Decision Quality Foundation
+
+**Goal:** Improve live IOC-table decision quality by creating an IOC-specific evaluation foundation, feature set, promotion gates, and analyst shadow-review loop.
+
+**Likely Areas:**
+
+- `Workspace/Project/ai/service/decision_service/scorer.py`
+- `Workspace/Project/ai/service/decision_service/decision_support.py`
+- `Workspace/Project/ai/service/decision_service/evaluation_metrics.py`
+- `Workspace/Project/ai/service/decision_service/evaluator.py`
+- `Workspace/Project/ai/service/decision_service/promotion_gates.py`
+- `Workspace/Project/ai/jobs/build_ioc_evaluation_dataset.py`
+- `Workspace/Project/ai/jobs/shadow_score_ioc_table.py`
+- `Workspace/Project/ai/schemas/ioc-evaluation-row.schema.json`
+- `Workspace/Project/ai/fixtures/ioc_evaluation/`
+- `Workspace/Project/docs/ai-decision-system-reference.md`
+- `Workspace/Project/docs/ai-sidecar-operator-workflows.md`
+
+**Success Criteria:**
+
+1. IOC decision tiers are documented and implemented consistently: attribute-only, scan-correlated, analyst-outcome, and downgrade-guarded.
+2. A schema-valid IOC evaluation dataset path exists with fixtures and a builder job for app-sourced IOC rows.
+3. Runtime scoring uses IOC type, value, source, table, correlation, and historical outcome features with bounded confidence semantics.
+4. Evaluation reports include IOC-specific metrics and required slices for IOC type, source, severity, confidence bucket, age bucket, evidence tier, label provenance, and scan evidence availability.
+5. Promotion gates block candidate models or thresholds that regress `likely_malicious` precision, false-positive protection, calibration/Brier score, required slices, or high-quality attribute-only abstain rate.
+6. Shadow-mode live IOC scoring produces review reports without writing production decisions and can feed analyst-reviewed labels back into evaluation.
+
+**Plans:**
+
+| Wave | Plan | Objective | Requirements |
+|------|------|-----------|--------------|
+| 1 | `AI-09-01-PLAN.md` | IOC decision tiers and evaluation dataset foundation | AI-03 |
+| 2 *(blocked on Wave 1 completion)* | `AI-09-02-PLAN.md` | IOC feature extraction and bounded scoring improvements | AI-03 |
+| 3 *(blocked on Waves 1-2 completion)* | `AI-09-03-PLAN.md` | IOC-specific metrics and promotion gates | AI-03 |
+| 4 *(blocked on Waves 1-3 completion)* | `AI-09-04-PLAN.md` | Shadow-mode live IOC scoring and analyst review loop | AI-03 |
+
+**Cross-cutting constraints:**
+
+- Keep AI output as analyst decision support; never auto-remediate.
+- Do not read or print `.env` files, connection strings, or secrets.
+- Mask or hash raw IOC values in generated reports by default.
+- Keep large generated datasets, reports, logs, and live exports untracked unless explicitly approved as small fixtures.
+- Work only inside `Workspace/Project/` active product roots.
+
+**Validation:**
+
+```powershell
+Push-Location Workspace/Project/ai/service
+.\.venv\Scripts\python.exe -m pytest
+Pop-Location
+powershell -NoProfile -ExecutionPolicy Bypass -File Workspace/Project/scripts/check-repository-boundaries.ps1
+```
 
 ## Cross-Phase Constraints
 
