@@ -19,10 +19,10 @@ Security operators can reliably run, review, and act on IOC and scanner intellig
 - Existing Python AI sidecar provides case scoring, report extraction, scan analyst recommendations, historical-learning queries, graph candidates, model evaluation, and feedback endpoints - existing.
 - Existing scanner orchestration paths execute PowerShell, managed connector, SSH/SCP, and result-ingestion workflows - existing.
 - Existing tests cover backend domain/application/integration paths, frontend unit/component/E2E paths, and AI sidecar pytest paths - existing.
+- Source-of-truth boundary around `Workspace/Project/` and validation entry points are documented and guarded - validated in Phase 1.
 
 ### Active
 
-- [ ] Establish a clean source-of-truth boundary around `Workspace/Project/` and reduce archive/generated-output noise in day-to-day engineering.
 - [ ] Harden authentication, authorization, rate limiting, and sidecar access boundaries.
 - [ ] Make scanner execution and rule-upload workflows safe under cancellation, concurrency, and adversarial inputs.
 - [ ] Consolidate durable database schema ownership and background-work reliability.
@@ -41,7 +41,7 @@ Security operators can reliably run, review, and act on IOC and scanner intellig
 
 - The codebase map was created on 2026-04-26 in `.planning/codebase/`.
 - `Workspace/README.md` and the map identify `Workspace/Project/` as the current application stack.
-- The repository also contains root `src/IocManager.Web`, archive folders, temporary copies, logs, screenshots, scanner result folders, and imported reference material. These are useful for context but create source-of-truth ambiguity.
+- The legacy `src/IocManager.Web` root is removed/decommissioned. Archive folders, temporary copies, logs, screenshots, scanner result folders, and imported reference material are reference/generated material unless explicitly targeted.
 - Main active backend paths are `Workspace/Project/backend/src/Backend.Api`, `Backend.Application`, `Backend.Domain`, `Backend.Infrastructure`, `Backend.Contracts`, and `Backend.Worker`.
 - Main active frontend path is `Workspace/Project/frontend/workbench`.
 - Main active AI sidecar path is `Workspace/Project/ai/service`.
@@ -84,4 +84,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state.
 
 ---
-*Last updated: 2026-04-26 after initialization*
+*Last updated: 2026-04-26 after Phase 1 completion*
