@@ -28,6 +28,7 @@ Subsystem documentation lives under `docs`:
 - [Action Plan Policy](../../docs/action-plan-policy.md)
 - [Dataset Sources](../../docs/dataset-sources.md)
 - [AI Model Pipeline](../../docs/ai-model-pipeline.md)
+- [AI Sidecar Operator Workflows](../../docs/ai-sidecar-operator-workflows.md)
 
 ## Current Model Pipeline
 The sidecar currently uses a deterministic `BaselineScorer`, not a neural network model. Feature extraction lives in `decision_service/scorer.py`; calibration and thresholds are loaded from `artifacts/model_registry.json`; dataset metadata is loaded from `artifacts/dataset_registry.json`; processed snapshots live under `../datasets/processed`.
@@ -112,9 +113,11 @@ Optional phrasing assist remains bounded by deterministic outputs:
 - The JSONL feedback store does not provide cross-process locking; use a durable external store before running multiple sidecar processes against the same feedback file.
 
 ## Run
-```bash
-python -m pip install -e ".[dev]" -c requirements.lock.txt
-uvicorn decision_service.main:app --host 0.0.0.0 --port 8100
+```powershell
+Push-Location Workspace/Project/ai/service
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]" -c requirements.lock.txt
+.\.venv\Scripts\python.exe -m uvicorn decision_service.main:app --host 127.0.0.1 --port 8100
+Pop-Location
 ```
 
 ## Reproducible Training And Inference
@@ -220,4 +223,20 @@ gates, historical learning, and runtime guard failure modes.
 Live/offline operator checks are not part of the fast gate. They include
 `probe_live_ioc_decisions.py` against a running backend and network feed fetch
 jobs. Run those only from an explicitly configured local/operator environment.
+
+## Operator Workflows
+
+Use [AI Sidecar Operator Workflows](../../docs/ai-sidecar-operator-workflows.md)
+for the complete command set:
+
+- Python 3.11 `.venv` setup
+- sidecar start and health checks
+- one-request inference smoke
+- confidence-score interpretation
+- dataset build and inventory commands
+- training, evaluation, publishing, and rollback
+- troubleshooting missing artifacts, dependency install failures, dataset
+  mismatches, sidecar startup failures, optional OpenAI fallback, and request
+  limit failures
+- environment variable names and behavior without secret values
 

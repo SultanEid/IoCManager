@@ -43,7 +43,7 @@ Enhance the existing IOC Manager AI sidecar into a well-understood, tested, repr
 | AI-4 | Complete - 2026-04-26 | Reproducible training/publish workflow, artifact hash validation, Python 3.11 lock snapshot, AI-4 tests |
 | AI-5 | Complete - 2026-04-26 | Promotion gate module, required evaluation reports for publish, expanded evaluation bundle metadata, AI-5 tests |
 | AI-6 | Complete - 2026-04-26 | Expanded API/runtime guard tests, decision contract golden tests, scanner evidence regression coverage, backend sidecar payload validation |
-| AI-7 | Pending | Not started |
+| AI-7 | Complete - 2026-04-26 | Usage docs for Python 3.11 setup, sidecar start, inference smoke, confidence interpretation, dataset/training/evaluation/publish workflows, rollback, troubleshooting, and env names |
 | AI-8 | Pending | Not started |
 
 ## Phase Details

@@ -55,47 +55,33 @@ It does not currently provide:
 - Confidence is directional, not certainty.
 - Source provenance is first-class in both runtime and offline data.
 
-## Current Live Runtime
-As of `2026-04-22`, the live service state is:
+## Current Runtime Reference
+As of `2026-04-26`, the documented sidecar state is:
 
-- Active model version: `v1-reliable-mix-v3-20260422124041`
-- Active dataset version: `reliable-mix-v3`
+- Active model version: `v1-unified-supervised-v1-cv5-20260426060214`
+- Active dataset version: `unified-supervised-v1`
 - Sidecar health endpoint: `http://127.0.0.1:8100/health`
 - Backend readiness endpoint: `http://localhost:5127/health/ready`
 
-### Active Model Metrics
-- Precision: `0.8966`
-- Recall: `0.8966`
-- PR AUC: `0.9887`
-- Calibration error: `0.0618`
-- Abstain rate: `0.0`
-- Coverage: `1.0`
-- Validation sample size: `60`
-
-### Active Thresholds
-- Recommend: `0.5293`
-- Escalate: `0.7093`
-- Abstain: `0.3293`
-
-### Active Calibration
-- Method: `logistic`
-- Slope: `5.0255`
-- Intercept: `0.4932`
+Use `/health` and `Workspace/Project/ai/service/artifacts/model_registry.json`
+as the runtime source of truth for the exact active model metadata on a given
+machine. Use `Workspace/Project/docs/ai-sidecar-operator-workflows.md` for the
+setup, smoke-test, training, evaluation, publishing, rollback, and
+troubleshooting commands.
 
 ## Model Lineage
-Current local model registry contains four recorded versions:
+Model lineage is recorded in
+`Workspace/Project/ai/service/artifacts/model_registry.json`. A model should be
+treated as promotable only when its artifact hashes validate and it has a
+matching machine-readable evaluation report that passes promotion gates.
 
-| Model version | Dataset | Status | Precision | Recall | Calibration error |
-| --- | --- | --- | ---: | ---: | ---: |
-| `v1-reliable-mix-v2-20260422115235` | `reliable-mix-v2` | archived | 1.0000 | 0.5714 | 0.1256 |
-| `v1-reliable-mix-v3-20260422121843` | `reliable-mix-v3` | archived | 0.8966 | 0.8966 | 0.4358 |
-| `v1-reliable-mix-v3-20260422124041` | `reliable-mix-v3` | active | 0.8966 | 0.8966 | 0.0618 |
-| `v1-reliable-mix-v3-20260422131539` | `reliable-mix-v3` | candidate | 0.9000 | 0.9310 | 0.3800 |
+Promotion notes:
 
-### Promotion Notes
-- The active model is not the highest-recall candidate ever trained.
-- The current active version was chosen because it materially improved calibration while keeping precision and recall strong.
-- The later candidate was not promoted because calibration degraded too much.
+- The active model is not selected by one metric alone.
+- Calibration quality, false-positive pressure, abstention behavior, slice
+  coverage, and unsafe recommendation rate are part of release quality.
+- Near-perfect held-out metrics should trigger leakage, source-overlap, label
+  policy, and time-window review before production reliance.
 
 ## System Architecture
 The AI subsystem has four main layers:
@@ -223,71 +209,49 @@ Additional linkage hardening already exists:
 - IOC-level latest-decision read model
 
 ## Dataset Stack
-### Current registered datasets
-| Dataset version | Created UTC | Manifest hash |
-| --- | --- | --- |
-| `external-seed-v1` | `2026-04-22T07:29:50Z` | `54037cd7038145c5eb8978a69fff3f7980b058dc1bab29c99a60a44b23f5a679` |
-| `external-seed-v2` | `2026-04-22T08:10:42Z` | `370a4c9717e9bd9d967fbdcd31322d7261a7cf5fdda1bd055b6581925ed79081` |
-| `reliable-mix-v1` | `2026-04-22T11:19:07Z` | `c914ce48dd121e62fe71d0b9fb9c0aa5198c75269e279d0e74fc7da2e61747fc` |
-| `reliable-mix-v2` | `2026-04-22T11:37:10Z` | `bbab6c1a5bc2abc90ac0defb865bb7c68c0dd9ed0e2efbda7c90f12978ccb237` |
-| `reliable-mix-v3` | `2026-04-22T12:15:29Z` | `83ee14509bb8a391721e6f02138750f7db1478a92b2ad09805c7e079d530d76a` |
+### Processed dataset inventory
+The local dataset registry and processed snapshots are the source of truth for
+exact manifest hashes. The current documented processed inventory includes:
+
+| Dataset version | Rows | Notes |
+| --- | ---: | --- |
+| `external-seed-v1` | 25 | early external seed |
+| `external-seed-v2` | 47 | early external seed |
+| `reliable-mix-v1` | 267 | reliable mixed sources |
+| `reliable-mix-v2` | 279 | reliable mixed sources |
+| `reliable-mix-v3` | 297 | reliable mixed sources |
+| `reliable-mix-v4` | 7321 | larger reliable mixed source |
+| `strict-labeled-v1` | 4063 | strict labeled snapshot |
+| `strict-labeled-v2` | 4087 | strict labeled snapshot |
+| `strict-labeled-v3` | 3000 | strict labeled snapshot |
+| `strict-labeled-v4` | 1800 | strict labeled snapshot |
+| `strict-labeled-v5` | 1800 | strict labeled snapshot with label review artifacts |
+| `strict-labeled-v6` | 2746 | strict labeled snapshot |
+| `unified-supervised-v1` | 5178 | active supervised dataset |
 
 ### Current active dataset
-`reliable-mix-v3`
+`unified-supervised-v1`
 
-Dataset manifest:
-- [manifest.json](C:/Users/xsspe/Desktop/IOC_Manager/Workspace/Project/ai/datasets/processed/reliable-mix-v3/manifest.json)
+Dataset manifest and quality report paths are recorded in the dataset registry
+and the processed snapshot under
+`Workspace/Project/ai/datasets/processed/unified-supervised-v1`.
 
-Dataset quality report:
-- [quality_report.json](C:/Users/xsspe/Desktop/IOC_Manager/Workspace/Project/ai/datasets/processed/reliable-mix-v3/quality_report.json)
+## Current Dataset Quality: `unified-supervised-v1`
+Dataset quality is tracked by the processed snapshot `quality_report.json` and
+dataset registry metadata. Before training or publishing a model, review:
 
-Training-row format reference:
-- [training_row_format.md](C:/Users/xsspe/Desktop/IOC_Manager/Workspace/Project/ai/datasets/processed/reliable-mix-v3/training_row_format.md)
+- label distribution
+- source distribution
+- partial-row rate
+- rejection reasons
+- provenance coverage
+- parser diagnostics
+- split leakage assertions
+- label-review artifact links where present
 
-## Current Dataset Quality: `reliable-mix-v3`
-### Size and family mix
-- Total rows: `297`
-- Sigma: `141`
-- Snort: `66`
-- Suricata: `69`
-- YARA: `21`
-
-### Source mix
-- `sigmahq`: `96`
-- `et-open-suricata`: `64`
-- `snort-community`: `48`
-- `internal-reviewed-telemetry`: `18`
-- `internal-clean-baselines`: `12`
-- `internal-allowlists`: `12`
-- `malwarebazaar`: `7`
-- `yaraify`: `7`
-- `threatfox`: `6`
-- `urlhaus`: `6`
-- fixture rows across families and wrappers: `21`
-
-### Label distribution
-- `likely_malicious`: `164`
-- `suspicious`: `49`
-- `malicious`: `34`
-- `benign`: `27`
-- `false_positive`: `8`
-- `insufficient_evidence`: `8`
-- `likely_benign`: `7`
-
-### Quality gates
-- Partial row rate: `0.0`
-- Missing critical field counts: none
-- Provenance completeness rate: `1.0`
-- Active-use eligibility: `passed`
-
-### Duplicate pressure
-Duplicate pressure is low. The only current duplicate key reported is:
-
-- `domain:relay-check.example.internal` inside `internal-reviewed-telemetry`
-
-Duplicate rate for that source:
-
-- `0.0556`
+The active supervised dataset is larger than the earlier reliable-mix snapshots
+and should be treated as the release input only when its quality report and
+matching evaluation bundle are both present.
 
 ## Approved and Supported Data Sources
 ### Currently supported external staging
@@ -385,23 +349,15 @@ The shipped fixture benchmark is currently clean:
 This is useful as a regression gate, but it is not enough on its own to claim strong real-world performance.
 
 ### Built-dataset performance
-The current active model on `reliable-mix-v3` has:
-
-- precision `0.8966`
-- recall `0.8966`
-- strong ranking quality
-- materially improved calibration compared with earlier `v3` candidates
+The current active model is trained from `unified-supervised-v1` with
+cross-validation artifacts and a required evaluation report. Treat strong
+held-out metrics as release evidence, not proof of production generalization.
 
 ### Calibration status
-Calibration was a real problem earlier in the day. That was improved without promoting the looser weighted candidate.
-
-Current state:
-
-- active model calibration error: `0.0618`
-- earlier `v3` version: `0.4358`
-- later weighted candidate: `0.3800`
-
-The current active model was chosen because calibration improved sharply while the main ranking behavior stayed strong.
+Calibration quality is part of promotion. A candidate should not become active
+unless the evaluation bundle shows acceptable calibration, Brier score,
+confidence distribution, abstention behavior, and false-positive /
+false-negative pressure across required slices.
 
 ## Product Positioning
 ### One-sentence description

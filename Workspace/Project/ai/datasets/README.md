@@ -12,6 +12,9 @@ Current scope:
 Model pipeline reference:
 - `Workspace/Project/docs/ai-model-pipeline.md`
 
+Operator workflow reference:
+- `Workspace/Project/docs/ai-sidecar-operator-workflows.md`
+
 Phase 1 supported external feeds:
 - `malwarebazaar`
 - `yaraify`
@@ -49,6 +52,35 @@ Processed snapshots used by the sidecar and training jobs should contain:
 `ai/service/decision_service/snapshots.py` loads these files and converts them into training examples for evaluation and calibration.
 
 The current active dataset version is `unified-supervised-v1`.
+
+## Dataset Build Workflow
+
+Build processed datasets only from explicit source manifests and keep generated
+raw, staged, and processed outputs out of active runtime artifacts until they
+are deliberately promoted.
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\build_decision_dataset.py `
+  --manifest .\datasets\manifests\<manifest-file>.json `
+  --output-root .\datasets\processed `
+  --dataset-version <dataset-version>
+Pop-Location
+```
+
+Inventory available processed datasets before choosing a training input:
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\inventory_datasets.py `
+  --processed-root .\datasets\processed
+Pop-Location
+```
+
+Before training, review the dataset `quality_report.json` and confirm the
+snapshot manifest, label distribution, source distribution, provenance
+coverage, partial-row rate, rejection reasons, parser diagnostics, and split
+leakage assertions are appropriate for the intended model release.
 
 ## Retention And Provenance Policy
 

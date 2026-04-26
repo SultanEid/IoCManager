@@ -21,6 +21,7 @@ Related policy documents:
 - [Verdict Taxonomy](./verdict-taxonomy.md)
 - [Action Plan Policy](./action-plan-policy.md)
 - [Dataset Sources](./dataset-sources.md)
+- [AI Sidecar Operator Workflows](./ai-sidecar-operator-workflows.md)
 
 ## What It Is Not
 This subsystem is not:
@@ -201,6 +202,25 @@ Expected control flow:
 4. Final closure and override events feed back into historical learning and offline evaluation datasets.
 
 The subsystem is designed to support override, not to resist it. Analyst closure remains the authoritative operational outcome.
+
+## Confidence Score Interpretation
+
+Confidence is a decision-support score. It indicates how strongly the current
+evidence, deterministic scorer, calibration metadata, scanner-family
+adjudicator, and safety layer support the returned verdict. It is not a promise
+of ground truth and it does not remove the analyst review requirement.
+
+Analysts should read confidence together with:
+
+- `false_positive_risk`
+- `abstain_reason`
+- `next_best_evidence`
+- `safety_diagnostics`
+- cited evidence and historical context
+
+Low confidence, high false-positive risk, missing critical fields, or
+contradictory evidence should push the workflow toward manual review and
+evidence collection. `insufficient_evidence` is a valid safety decision.
 
 ## Evaluation Pipeline
 Offline evaluation is part of the subsystem, not an afterthought.

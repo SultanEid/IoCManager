@@ -8,6 +8,7 @@ Primary policy set:
 - [Action Plan Policy](../docs/action-plan-policy.md)
 - [Dataset Sources](../docs/dataset-sources.md)
 - [AI Model Pipeline](../docs/ai-model-pipeline.md)
+- [AI Sidecar Operator Workflows](../docs/ai-sidecar-operator-workflows.md)
 - [Labeling Guidelines Prompt](prompts/labeling-guidelines.md)
 
 Purpose:
@@ -15,6 +16,7 @@ Purpose:
 - Preserve explicit abstain pathways when evidence is insufficient.
 - Ensure verdict/action language aligns with the sidecar contracts.
 - Keep the current model, data, training, inference, and artifact flow explicit before changing scoring behavior.
+- Give developers and operators reproducible setup, test, training, evaluation, publishing, smoke-test, rollback, and troubleshooting commands.
 
 Notes:
 - This repository is an IoC Manager, not a CTI platform.
@@ -32,5 +34,5 @@ Notes:
 - `prompts/` contains labeling guidance used for human-governed dataset work.
 
 The current model pipeline is documented in [AI Model Pipeline](../docs/ai-model-pipeline.md).
-
+Day-to-day setup and operator workflows are documented in [AI Sidecar Operator Workflows](../docs/ai-sidecar-operator-workflows.md).
 

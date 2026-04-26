@@ -126,6 +126,38 @@ gateway.
    Pop-Location
    ```
 
+   In a separate shell, check health and run one deterministic inference smoke:
+
+   ```powershell
+   Invoke-RestMethod http://127.0.0.1:8100/health
+
+   $payload = @{
+     caseId = "validation-smoke-1"
+     asOfTime = (Get-Date).ToUniversalTime().ToString("o")
+     sourceSystem = "validation-smoke"
+     iocType = "domain"
+     iocValue = "login-secure-update.test"
+     hostContext = @{ criticality = 0.6; assetExposure = 0.5 }
+     ruleContext = @{ severityScore = 0.8; scannerAgreement = 0.7 }
+     detectionPackage = @{
+       rule_family = "sigma"
+       full_rule_text = "title: Suspicious Script Host"
+       rule_metadata = @{ rule_id = "SIG-VALIDATION-1"; title = "Suspicious Script Host" }
+       raw_hit_payload = @{ event_id = "evt-validation-1"; command_line = "wscript.exe launcher.js" }
+       object_metadata = @{
+         object_id = "obj-validation-1"
+         object_type = "process_event"
+         source_system = "siem"
+       }
+     }
+   } | ConvertTo-Json -Depth 10
+
+   Invoke-RestMethod http://127.0.0.1:8100/score_case `
+     -Method Post `
+     -ContentType "application/json" `
+     -Body $payload
+   ```
+
 5. Start the backend with configured non-secret local settings when manual API
    smoke testing is required:
 
@@ -157,3 +189,6 @@ does not belong in the fast gate.
 - If the boundary guard fails, inspect the reported paths and decide whether to
   untrack, move, or explicitly target them. Do not delete user material by
   default.
+- For AI sidecar setup, training, evaluation, publishing, rollback, and
+  troubleshooting details, see
+  `Workspace/Project/docs/ai-sidecar-operator-workflows.md`.
