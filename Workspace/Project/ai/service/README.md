@@ -120,6 +120,17 @@ Push-Location Workspace/Project/ai/service
 Pop-Location
 ```
 
+Health endpoints:
+
+- `GET /livez` checks process liveness.
+- `GET /readyz` checks registry, artifact, action-policy, feedback-path, model,
+  and dataset readiness.
+- `GET /health` is the compatibility health endpoint used by older tooling.
+- `GET /metrics` exposes sanitized in-process request counters.
+
+Deployment packaging and backend-to-sidecar token configuration are documented
+in [AI Sidecar Deployment](../../deploy/ai-sidecar.md).
+
 ## Reproducible Training And Inference
 
 Use Python 3.11. The repository-local virtual environment is expected at

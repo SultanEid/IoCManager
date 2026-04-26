@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import secrets
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -51,6 +54,16 @@ from .snapshots import SnapshotDataset, SnapshotLoader
 
 logger = logging.getLogger(__name__)
 EXPENSIVE_BODY_LIMIT_PATHS = {"/score_batch"}
+AUTH_EXEMPT_PATHS = {"/livez"}
+TOKEN_HEADER_NAME = "x-ioc-manager-sidecar-token"
+
+
+@dataclass
+class RuntimeMetrics:
+    requests_total: int = 0
+    errors_total: int = 0
+    by_path: dict[str, int] = field(default_factory=dict)
+    last_request_at_utc: str | None = None
 
 
 @dataclass
@@ -65,6 +78,7 @@ class ServiceRuntime:
     active_model_entry: ModelRegistryEntry | None
     active_dataset_entry: DatasetRegistryEntry | None
     startup_warnings: list[str]
+    metrics: RuntimeMetrics = field(default_factory=RuntimeMetrics)
 
 
 def create_app(settings: ServiceSettings | None = None) -> FastAPI:
@@ -81,7 +95,14 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
     )
 
     @app.middleware("http")
-    async def enforce_expensive_request_body_limit(request: Request, call_next):
+    async def enforce_deployment_guards(request: Request, call_next):
+        started = time.perf_counter()
+        path = request.url.path
+        if not _is_authorized_request(runtime.settings, request):
+            response = JSONResponse(status_code=401, content={"detail": "AI sidecar authentication required."})
+            _record_request_metric(runtime, path=path, status_code=response.status_code, started=started)
+            return response
+
         if request.method in {"POST", "PUT", "PATCH"} and request.url.path in EXPENSIVE_BODY_LIMIT_PATHS:
             content_length = request.headers.get("content-length")
             if content_length:
@@ -97,10 +118,42 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
                             "limitBytes": runtime.settings.max_expensive_request_body_bytes,
                         },
                     )
-        return await call_next(request)
+                    _record_request_metric(runtime, path=path, status_code=response.status_code, started=started)
+                    return response
+
+        response = await call_next(request)
+        _record_request_metric(runtime, path=path, status_code=response.status_code, started=started)
+        return response
+
+    @app.get("/livez")
+    def livez() -> dict[str, object]:
+        return {
+            "status": "alive",
+            "service": runtime.settings.service_name,
+            "environment": runtime.settings.environment,
+            "timeUtc": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @app.get("/readyz")
+    def readyz() -> JSONResponse:
+        payload = _readiness_payload(runtime)
+        status_code = 200 if payload["status"] == "ready" else 503
+        return JSONResponse(status_code=status_code, content=payload)
+
+    @app.get("/metrics")
+    def metrics() -> dict[str, object]:
+        return {
+            "service": runtime.settings.service_name,
+            "requestsTotal": runtime.metrics.requests_total,
+            "errorsTotal": runtime.metrics.errors_total,
+            "byPath": dict(sorted(runtime.metrics.by_path.items(), key=lambda item: item[0])),
+            "lastRequestAtUtc": runtime.metrics.last_request_at_utc,
+            "readinessStatus": _readiness_payload(runtime)["status"],
+        }
 
     @app.get("/health")
     def health() -> dict[str, object]:
+        readiness = _readiness_payload(runtime)
         return {
             "status": "ok",
             "service": runtime.settings.service_name,
@@ -111,6 +164,7 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
             "featureSchemaVersion": runtime.scorer.feature_schema_version,
             "datasetManifestHash": runtime.active_dataset_entry.manifest_hash if runtime.active_dataset_entry else None,
             "runtimeWarnings": runtime.startup_warnings,
+            "readinessStatus": readiness["status"],
         }
 
     @app.post("/score_case", response_model=CaseScoreVectorResponse, deprecated=True)
@@ -297,6 +351,8 @@ def _build_runtime(settings: ServiceSettings) -> ServiceRuntime:
         decay_half_life_days=settings.historical_learning_decay_half_life_days,
     )
     active_model_entry = model_registry.get_active()
+    if _is_production_like(settings.environment) and not settings.service_auth_token:
+        startup_warnings.append("service_auth_token_not_configured")
     if active_model_entry is not None:
         try:
             model_registry.validate_artifacts(active_model_entry)
@@ -342,6 +398,113 @@ def _build_runtime(settings: ServiceSettings) -> ServiceRuntime:
         active_dataset_entry=active_dataset_entry,
         startup_warnings=startup_warnings,
     )
+
+
+def _is_authorized_request(settings: ServiceSettings, request: Request) -> bool:
+    if request.url.path in AUTH_EXEMPT_PATHS:
+        return True
+    if not settings.service_auth_token:
+        return True
+
+    header_token = request.headers.get(TOKEN_HEADER_NAME, "").strip()
+    auth_header = request.headers.get("authorization", "").strip()
+    bearer_token = ""
+    if auth_header.lower().startswith("bearer "):
+        bearer_token = auth_header[7:].strip()
+
+    return secrets.compare_digest(header_token, settings.service_auth_token) or secrets.compare_digest(
+        bearer_token,
+        settings.service_auth_token,
+    )
+
+
+def _record_request_metric(runtime: ServiceRuntime, *, path: str, status_code: int, started: float) -> None:
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+    runtime.metrics.requests_total += 1
+    if status_code >= 500:
+        runtime.metrics.errors_total += 1
+    runtime.metrics.by_path[path] = runtime.metrics.by_path.get(path, 0) + 1
+    runtime.metrics.last_request_at_utc = datetime.now(timezone.utc).isoformat()
+    logger.info(
+        "sidecar_request",
+        extra={
+            "sidecar_event": "request_completed",
+            "path": path,
+            "status_code": status_code,
+            "duration_ms": elapsed_ms,
+        },
+    )
+
+
+def _readiness_payload(runtime: ServiceRuntime) -> dict[str, object]:
+    checks = [
+        _check_path_readable("model_registry_readable", runtime.settings.registry_path),
+        _check_path_readable("dataset_registry_readable", runtime.settings.dataset_registry_path),
+        _check_action_policy_matrix(runtime),
+        _check_feedback_path(runtime.settings.feedback_store_path),
+        _check_active_model(runtime),
+        _check_active_dataset(runtime),
+    ]
+    ready = all(bool(item["ok"]) for item in checks)
+    return {
+        "status": "ready" if ready else "not_ready",
+        "service": runtime.settings.service_name,
+        "environment": runtime.settings.environment,
+        "modelVersion": runtime.scorer.model_version,
+        "datasetVersion": runtime.scorer.dataset_version,
+        "runtimeWarnings": runtime.startup_warnings,
+        "authMode": "service_token" if runtime.settings.service_auth_token else "private_ingress_or_local",
+        "checks": checks,
+    }
+
+
+def _check_path_readable(name: str, path: Any) -> dict[str, object]:
+    try:
+        resolved = Path(path)
+        if not resolved.exists() or not resolved.is_file():
+            return {"name": name, "ok": False, "code": "missing"}
+        resolved.open("r", encoding="utf-8").close()
+        return {"name": name, "ok": True, "code": "ok"}
+    except Exception:
+        return {"name": name, "ok": False, "code": "unreadable"}
+
+
+def _check_action_policy_matrix(runtime: ServiceRuntime) -> dict[str, object]:
+    configured_path = runtime.settings.action_policy_matrix_path
+    if configured_path.exists() and configured_path.is_file():
+        return {"name": "action_policy_matrix_readable", "ok": True, "code": "ok"}
+    default_path = runtime.settings.artifacts_root / "action_policy_matrix.v1.json"
+    if default_path.exists() and default_path.is_file():
+        return {"name": "action_policy_matrix_readable", "ok": True, "code": "ok"}
+    return {"name": "action_policy_matrix_readable", "ok": False, "code": "missing"}
+
+
+def _check_feedback_path(path: Any) -> dict[str, object]:
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return {"name": "feedback_parent_writable", "ok": False, "code": "unavailable"}
+    return {"name": "feedback_parent_writable", "ok": True, "code": "ok"}
+
+
+def _check_active_model(runtime: ServiceRuntime) -> dict[str, object]:
+    if runtime.active_model_entry is None:
+        return {"name": "active_model_configured", "ok": False, "code": "missing"}
+    if "model_artifact_validation_failed" in runtime.startup_warnings:
+        return {"name": "active_model_configured", "ok": False, "code": "artifact_validation_failed"}
+    return {"name": "active_model_configured", "ok": True, "code": "ok"}
+
+
+def _check_active_dataset(runtime: ServiceRuntime) -> dict[str, object]:
+    if runtime.active_dataset_entry is None:
+        return {"name": "active_dataset_loaded", "ok": False, "code": "missing"}
+    if "dataset_snapshot_load_failed" in runtime.startup_warnings:
+        return {"name": "active_dataset_loaded", "ok": False, "code": "snapshot_load_failed"}
+    return {"name": "active_dataset_loaded", "ok": True, "code": "ok"}
+
+
+def _is_production_like(environment: str) -> bool:
+    return environment.strip().lower() in {"production", "prod", "staging", "stage"}
 
 
 def _resolve_model_registry_entry(runtime: ServiceRuntime, model_version: str | None) -> ModelRegistryEntry | None:

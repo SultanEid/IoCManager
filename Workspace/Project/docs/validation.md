@@ -129,7 +129,10 @@ gateway.
    In a separate shell, check health and run one deterministic inference smoke:
 
    ```powershell
+   Invoke-RestMethod http://127.0.0.1:8100/livez
+   Invoke-RestMethod http://127.0.0.1:8100/readyz
    Invoke-RestMethod http://127.0.0.1:8100/health
+   Invoke-RestMethod http://127.0.0.1:8100/metrics
 
    $payload = @{
      caseId = "validation-smoke-1"

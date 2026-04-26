@@ -67,6 +67,48 @@ def test_health_includes_empty_runtime_warnings(client) -> None:
     assert response.json()["runtimeWarnings"] == []
 
 
+def test_livez_remains_available_when_service_token_is_required(settings) -> None:
+    protected_settings = replace(settings, service_auth_token="test-token")
+    protected_client = TestClient(create_app(protected_settings))
+
+    response = protected_client.get("/livez")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "alive"
+
+
+def test_sidecar_service_token_protects_runtime_routes(settings) -> None:
+    protected_settings = replace(settings, service_auth_token="test-token")
+    protected_client = TestClient(create_app(protected_settings))
+
+    rejected = protected_client.get("/health")
+    accepted = protected_client.get("/health", headers={"X-IOC-Manager-Sidecar-Token": "test-token"})
+    bearer = protected_client.get("/health", headers={"Authorization": "Bearer test-token"})
+
+    assert rejected.status_code == 401
+    assert accepted.status_code == 200
+    assert bearer.status_code == 200
+
+
+def test_readyz_reports_registry_artifact_and_feedback_checks(settings) -> None:
+    settings.action_policy_matrix_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.action_policy_matrix_path.write_text("{}", encoding="utf-8")
+    readiness_client = TestClient(create_app(settings))
+
+    response = readiness_client.get("/readyz")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    check_map = {item["name"]: item for item in body["checks"]}
+    assert check_map["model_registry_readable"]["ok"] is True
+    assert check_map["dataset_registry_readable"]["ok"] is True
+    assert check_map["action_policy_matrix_readable"]["ok"] is True
+    assert check_map["feedback_parent_writable"]["ok"] is True
+    assert check_map["active_model_configured"]["ok"] is True
+    assert check_map["active_dataset_loaded"]["ok"] is True
+
+
 def test_health_surfaces_sanitized_dataset_startup_warning(settings) -> None:
     degraded_settings = replace(settings, default_dataset_version="missing-dataset")
     degraded_client = TestClient(create_app(degraded_settings))
@@ -116,6 +158,29 @@ def test_health_surfaces_sanitized_model_artifact_warning(settings, tmp_path: Pa
     assert "bad-hash" not in warnings_payload
     assert "C:" not in warnings_payload
 
+    readiness = degraded_client.get("/readyz")
+    assert readiness.status_code == 503
+    readiness_payload = json.dumps(readiness.json())
+    assert "model_artifact_validation_failed" in readiness_payload
+    assert "bad-hash" not in readiness_payload
+    assert "C:" not in readiness_payload
+
+
+def test_metrics_reports_sanitized_counts_without_request_payload(client) -> None:
+    client.get("/health")
+    client.get("/livez")
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requestsTotal"] >= 2
+    assert body["byPath"]["/health"] == 1
+    assert body["byPath"]["/livez"] == 1
+    serialized = json.dumps(body)
+    assert "login-secure-update.test" not in serialized
+    assert "iocValue" not in serialized
+
 
 def test_score_case_rejects_malformed_required_fields(client) -> None:
     response = client.post(
@@ -151,3 +216,12 @@ def test_load_settings_accepts_runtime_guard_aliases(monkeypatch, tmp_path) -> N
     assert settings.max_score_batch_items == 7
     assert settings.max_expensive_request_body_bytes == 4096
     assert settings.enable_http_model_evaluation is True
+
+
+def test_load_settings_accepts_sidecar_service_token_name(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("IOC_MANAGER_AI_ARTIFACTS_ROOT", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("IOC_MANAGER_AI_SERVICE_TOKEN", "configured-token")
+
+    settings = load_settings()
+
+    assert settings.service_auth_token == "configured-token"

@@ -41,6 +41,7 @@ class ServiceSettings:
     max_score_batch_items: int = 100
     max_expensive_request_body_bytes: int = 1_048_576
     enable_http_model_evaluation: bool = True
+    service_auth_token: str | None = None
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_planner_model: str = "gpt-5.4-mini"
@@ -102,7 +103,7 @@ def load_settings() -> ServiceSettings:
         _env_value(
             "IOC_MANAGER_AI_SNAPSHOT_ROOT",
             "CTI_SIDECAR_SNAPSHOT_ROOT",
-            default=str(ai_root / "data" / "snapshots"),
+            default=str(ai_root / "datasets" / "processed"),
         )
     )
     registry_path = Path(
@@ -166,6 +167,7 @@ def load_settings() -> ServiceSettings:
         "CTI_SIDECAR_ENABLE_HTTP_MODEL_EVALUATION",
         default=_default_http_model_evaluation_enabled(environment or "development"),
     )
+    service_auth_token = _env_value("IOC_MANAGER_AI_SERVICE_TOKEN", "CTI_SIDECAR_SERVICE_TOKEN")
 
     return ServiceSettings(
         service_name=_env_value("IOC_MANAGER_AI_SERVICE_NAME", "CTI_SIDECAR_SERVICE_NAME", default="ioc-manager-ai-sidecar"),
@@ -183,6 +185,7 @@ def load_settings() -> ServiceSettings:
         max_score_batch_items=max(1, min(max_score_batch_items, 1000)),
         max_expensive_request_body_bytes=max(1024, min(max_expensive_request_body_bytes, 10_485_760)),
         enable_http_model_evaluation=enable_http_model_evaluation,
+        service_auth_token=service_auth_token,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url.rstrip("/"),
         openai_planner_model=openai_planner_model,

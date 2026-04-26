@@ -42,6 +42,13 @@ Check liveness and startup warnings:
 Invoke-RestMethod http://127.0.0.1:8100/health
 ```
 
+Deployment health endpoints:
+
+- `GET /livez` checks process liveness.
+- `GET /readyz` checks registry, artifact, action-policy, feedback-path, model,
+  and dataset readiness.
+- `GET /metrics` returns sanitized in-process request counters.
+
 ## Inference Smoke
 
 Run this from a second shell while the sidecar is running:
@@ -260,6 +267,8 @@ Runtime paths and environment:
 - `CTI_SIDECAR_ENV`
 - `IOC_MANAGER_AI_SERVICE_NAME`
 - `CTI_SIDECAR_SERVICE_NAME`
+- `IOC_MANAGER_AI_SERVICE_TOKEN`
+- `CTI_SIDECAR_SERVICE_TOKEN`
 - `IOC_MANAGER_AI_ARTIFACTS_ROOT`
 - `CTI_SIDECAR_ARTIFACTS_ROOT`
 - `IOC_MANAGER_AI_ACTION_POLICY_MATRIX_PATH`
@@ -315,3 +324,4 @@ Backend integration names:
 - `AISIDECAR__BASEURL`
 - `AISIDECAR__REPORTEXTRACTIONPATH`
 - `AISIDECAR__TIMEOUTSECONDS`
+- `AISIDECAR__SERVICETOKEN`

@@ -59,10 +59,16 @@ dotnet run --project src/Backend.Worker
 
 - Backend report ingestion calls the sidecar endpoint configured under `AiSidecar`.
 - Defaults are `BaseUrl=http://localhost:8100` and `ReportExtractionPath=/extract_report`.
+- Backend readiness probes the sidecar `/readyz` endpoint and treats sidecar
+  unavailability as optional component degradation.
+- If the sidecar is configured with `IOC_MANAGER_AI_SERVICE_TOKEN`, set the
+  matching backend `AiSidecar:ServiceToken` value through the deployment secret
+  store or `AISIDECAR__SERVICETOKEN`.
 - Override via environment variables in `backend/.env`:
   - `AISIDECAR__BASEURL`
   - `AISIDECAR__REPORTEXTRACTIONPATH`
   - `AISIDECAR__TIMEOUTSECONDS`
+  - `AISIDECAR__SERVICETOKEN`
 
 Run sidecar locally before report ingestion endpoints:
 
