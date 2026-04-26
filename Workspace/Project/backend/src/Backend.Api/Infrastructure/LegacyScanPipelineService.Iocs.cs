@@ -13,6 +13,11 @@ public sealed partial class LegacyScanPipelineService
     private static readonly string[] PainLevelDisplayOrder = ["Ttp", "Tool", "HostArtifact", "Domain", "IP", "Hash"];
     private static readonly Regex HashRegex = new(@"\b(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})\b", RegexOptions.Compiled);
     private static readonly Regex DomainRegex = new(@"\b(?=.{4,253}\b)(?!-)(?:[a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,63}\b", RegexOptions.Compiled);
+    private static readonly Regex MitreTechniqueRegex = new(@"\bT\d{4}(?:\.\d{3})?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex UrlRegex = new(@"\b[a-z][a-z0-9+.-]*://\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex WindowsPathRegex = new(@"(?:^|[\s""'])(?:[A-Za-z]:\\|\\\\)[^\s""']+", RegexOptions.Compiled);
+    private static readonly Regex UnixPathRegex = new(@"(?:^|[\s""'])/(?:bin|boot|dev|etc|home|lib|opt|proc|root|sbin|tmp|usr|var)/[^\s""']+", RegexOptions.Compiled);
+    private static readonly Regex RegistryPathRegex = new(@"\b(?:HKLM|HKCU|HKCR|HKU|HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER)\\[^\s""']+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly string[] ToolKeywords =
     [
         "mimikatz",
@@ -81,6 +86,21 @@ public sealed partial class LegacyScanPipelineService
     {
         var boundedPage = Math.Max(page ?? 1, 1);
         var boundedPageSize = Math.Clamp(pageSize ?? 100, 25, 250);
+
+        if (LegacyScanPipelineHelpers.CleanOrNull(painLevel) is null)
+        {
+            return await ListIocFindingsPageAsync(
+                scannerFamily,
+                targetId,
+                severity,
+                fromUtc,
+                toUtc,
+                q,
+                boundedPage,
+                boundedPageSize,
+                cancellationToken);
+        }
+
         var filteredRows = await GetFilteredIocFindingRowsAsync(scannerFamily, targetId, severity, fromUtc, toUtc, q, painLevel, cancellationToken);
 
         var totalCount = filteredRows.Length;
@@ -92,6 +112,74 @@ public sealed partial class LegacyScanPipelineService
         var pageItems = filteredRows
             .Skip((effectivePage - 1) * boundedPageSize)
             .Take(boundedPageSize)
+            .Select(ToIocFindingResponse)
+            .ToArray();
+
+        return new LegacyPipelineIocFindingListResponse(
+            pageItems,
+            totalCount,
+            effectivePage,
+            boundedPageSize,
+            availableSeverities);
+    }
+
+    private async Task<LegacyPipelineIocFindingListResponse> ListIocFindingsPageAsync(
+        string? scannerFamily,
+        string? targetId,
+        string? severity,
+        string? fromUtc,
+        string? toUtc,
+        string? q,
+        int boundedPage,
+        int boundedPageSize,
+        CancellationToken cancellationToken)
+    {
+        var parsedTargetId = LegacyScanPipelineHelpers.ParseOptionalIntId(targetId, nameof(targetId));
+        var fromDate = LegacyScanPipelineHelpers.ParseOptionalDateTimeOffset(fromUtc);
+        var toDate = LegacyScanPipelineHelpers.ParseOptionalDateTimeOffset(toUtc);
+        var normalizedFamily = string.IsNullOrWhiteSpace(scannerFamily)
+            ? null
+            : LegacyScanPipelineHelpers.NormalizeScannerFamily(scannerFamily).ToUpperInvariant();
+        var normalizedSeverity = NormalizeFindingSeverity(LegacyScanPipelineHelpers.CleanOrNull(severity));
+        var normalizedQuery = LegacyScanPipelineHelpers.CleanOrNull(q);
+
+        if (fromDate.HasValue && toDate.HasValue && fromDate > toDate)
+        {
+            throw new ArgumentException("'fromUtc' must be less than or equal to 'toUtc'.");
+        }
+
+        var query = BuildIocFindingBaseQuery(normalizedFamily, fromDate, toDate, normalizedQuery);
+
+        if (parsedTargetId.HasValue)
+        {
+            var targetIp = await _dbContext.Targets.AsNoTracking()
+                .Where(item => item.TargetId == parsedTargetId.Value)
+                .Select(item => item.IPAddress)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            query = ApplyTargetFilter(query, parsedTargetId.Value, targetIp);
+        }
+
+        query = ApplySeverityFilter(query, normalizedSeverity);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)boundedPageSize));
+        var effectivePage = Math.Min(boundedPage, totalPages);
+        var availableSeverities = await GetAvailableSeveritiesAsync(query, cancellationToken);
+
+        var pageRows = await query
+            .Include(item => item.ScanResult)
+            .Include(item => item.YaraDetail)
+            .Include(item => item.SigmaDetail)
+            .Include(item => item.NetworkDetail)
+            .OrderByDescending(item => item.TimestampUtc)
+            .Skip((effectivePage - 1) * boundedPageSize)
+            .Take(boundedPageSize)
+            .ToArrayAsync(cancellationToken);
+
+        var resolvedRows = await ResolveIocFindingRowsAsync(pageRows, cancellationToken);
+        var pageItems = resolvedRows
+            .OrderByDescending(row => row.Ioc.TimestampUtc)
             .Select(ToIocFindingResponse)
             .ToArray();
 
@@ -301,7 +389,7 @@ public sealed partial class LegacyScanPipelineService
                     row.Ioc.NetworkDetail.FlowId));
     }
 
-    private static (string Value, string Kind) ResolveIndicator(LegacyPipelineIocEntity ioc)
+    internal static (string Value, string Kind) ResolveIndicator(LegacyPipelineIocEntity ioc)
     {
         if (string.Equals(ioc.ScannerType, "YARA", StringComparison.OrdinalIgnoreCase))
         {
@@ -310,7 +398,12 @@ public sealed partial class LegacyScanPipelineService
 
         if (string.Equals(ioc.ScannerType, "SIGMA", StringComparison.OrdinalIgnoreCase))
         {
-            return (ioc.SigmaDetail?.CommandLine ?? ioc.RawPayload ?? ioc.RuleName, "event");
+            if (LegacyScanPipelineHelpers.CleanOrNull(ioc.SigmaDetail?.CommandLine) is string commandLine)
+            {
+                return (commandLine, "event");
+            }
+
+            return (ioc.RawPayload ?? ioc.RuleName, "payload");
         }
 
         if (ioc.NetworkDetail is not null)
@@ -411,6 +504,124 @@ public sealed partial class LegacyScanPipelineService
             .ToArray();
     }
 
+    private IQueryable<LegacyPipelineIocEntity> BuildIocFindingBaseQuery(
+        string? normalizedFamily,
+        DateTimeOffset? fromDate,
+        DateTimeOffset? toDate,
+        string? normalizedQuery)
+    {
+        var query = _dbContext.Iocs
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (normalizedFamily is not null)
+        {
+            query = query.Where(item => item.ScannerType == normalizedFamily);
+        }
+
+        if (fromDate.HasValue)
+        {
+            query = query.Where(item => item.TimestampUtc >= fromDate.Value.UtcDateTime);
+        }
+
+        if (toDate.HasValue)
+        {
+            query = query.Where(item => item.TimestampUtc <= toDate.Value.UtcDateTime);
+        }
+
+        if (normalizedQuery is not null)
+        {
+            var pattern = $"%{normalizedQuery}%";
+            query = query.Where(item =>
+                EF.Functions.Like(item.RuleName, pattern)
+                || (item.RawPayload != null && EF.Functions.Like(item.RawPayload, pattern))
+                || EF.Functions.Like(item.TargetServer, pattern)
+                || (item.YaraDetail != null && EF.Functions.Like(item.YaraDetail.FilePath, pattern))
+                || (item.YaraDetail != null && item.YaraDetail.FileHash != null && EF.Functions.Like(item.YaraDetail.FileHash, pattern))
+                || (item.SigmaDetail != null && (
+                    (item.SigmaDetail.CommandLine != null && EF.Functions.Like(item.SigmaDetail.CommandLine, pattern))
+                    || (item.SigmaDetail.LogSource != null && EF.Functions.Like(item.SigmaDetail.LogSource, pattern))))
+                || (item.NetworkDetail != null && (
+                    (item.NetworkDetail.SourceIP != null && EF.Functions.Like(item.NetworkDetail.SourceIP, pattern))
+                    || (item.NetworkDetail.DestIP != null && EF.Functions.Like(item.NetworkDetail.DestIP, pattern))
+                    || (item.NetworkDetail.Protocol != null && EF.Functions.Like(item.NetworkDetail.Protocol, pattern)))));
+        }
+
+        return query;
+    }
+
+    private static IQueryable<LegacyPipelineIocEntity> ApplyTargetFilter(
+        IQueryable<LegacyPipelineIocEntity> query,
+        int targetId,
+        string? targetIp)
+    {
+        if (string.IsNullOrWhiteSpace(targetIp))
+        {
+            return query.Where(item => item.ScanResult != null && item.ScanResult.TargetId == targetId);
+        }
+
+        var historicalTargetSuffix = $"%@{targetIp}";
+        return query.Where(item =>
+            (item.ScanResult != null && item.ScanResult.TargetId == targetId)
+            || item.TargetServer == targetIp
+            || EF.Functions.Like(item.TargetServer, historicalTargetSuffix));
+    }
+
+    private static IQueryable<LegacyPipelineIocEntity> ApplySeverityFilter(
+        IQueryable<LegacyPipelineIocEntity> query,
+        string? normalizedSeverity)
+    {
+        if (normalizedSeverity is null)
+        {
+            return query;
+        }
+
+        return normalizedSeverity switch
+        {
+            "Critical" => ApplyKnownSeverityFilter(query, ["1", "critical", "severe", "veryhigh", "very high"]),
+            "High" => ApplyKnownSeverityFilter(query, ["2", "high", "major"]),
+            "Medium" => ApplyKnownSeverityFilter(query, ["3", "medium", "meduim", "moderate", "warning", "warn"]),
+            "Low" => ApplyKnownSeverityFilter(query, ["4", "low", "minor", "informational", "info"]),
+            "Unknown" => query.Where(item =>
+                (item.SigmaDetail == null || item.SigmaDetail.Severity == null || item.SigmaDetail.Severity.Trim() == "" || item.SigmaDetail.Severity.Trim().ToLower() == "unknown")
+                && (item.NetworkDetail == null || item.NetworkDetail.Severity == null || item.NetworkDetail.Severity.Trim() == "" || item.NetworkDetail.Severity.Trim().ToLower() == "unknown")),
+            _ => query.Where(item =>
+                (item.SigmaDetail != null && item.SigmaDetail.Severity != null && item.SigmaDetail.Severity.Trim().ToLower() == normalizedSeverity.ToLowerInvariant())
+                || (item.NetworkDetail != null && item.NetworkDetail.Severity != null && item.NetworkDetail.Severity.Trim().ToLower() == normalizedSeverity.ToLowerInvariant()))
+        };
+    }
+
+    private static IQueryable<LegacyPipelineIocEntity> ApplyKnownSeverityFilter(
+        IQueryable<LegacyPipelineIocEntity> query,
+        string[] rawSeverities)
+        => query.Where(item =>
+            (item.SigmaDetail != null && item.SigmaDetail.Severity != null && rawSeverities.Contains(item.SigmaDetail.Severity.Trim().ToLower()))
+            || (item.NetworkDetail != null && item.NetworkDetail.Severity != null && rawSeverities.Contains(item.NetworkDetail.Severity.Trim().ToLower())));
+
+    private async Task<string[]> GetAvailableSeveritiesAsync(
+        IQueryable<LegacyPipelineIocEntity> query,
+        CancellationToken cancellationToken)
+    {
+        var severityRows = await query
+            .Select(item => new
+            {
+                SigmaSeverity = item.SigmaDetail == null ? null : item.SigmaDetail.Severity,
+                NetworkSeverity = item.NetworkDetail == null ? null : item.NetworkDetail.Severity
+            })
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        var severities = severityRows
+            .Select(item => NormalizeFindingSeverity(item.SigmaSeverity) ?? NormalizeFindingSeverity(item.NetworkSeverity) ?? "Unknown")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return SeverityOrder
+            .Where(severityValue => severities.Contains(severityValue, StringComparer.OrdinalIgnoreCase))
+            .Concat(severities.Where(severityValue => !SeverityOrder.Contains(severityValue, StringComparer.OrdinalIgnoreCase)).Order(StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
     internal static string[] GetPainLevelDisplayOrder()
         => PainLevelDisplayOrder;
 
@@ -422,13 +633,28 @@ public sealed partial class LegacyScanPipelineService
             _ => painLevel
         };
 
-    private static string ResolvePainLevel(LegacyPipelineIocEntity ioc, string indicatorValue, string indicatorKind)
+    internal static string ResolvePainLevel(LegacyPipelineIocEntity ioc, string indicatorValue, string indicatorKind)
     {
         var corpus = BuildClassificationCorpus(ioc, indicatorValue);
 
-        if (ShouldClassifyAsTtp(ioc, corpus, indicatorKind))
+        if (HasExplicitHashIndicator(ioc, indicatorValue))
         {
-            return "Ttp";
+            return "Hash";
+        }
+
+        if (HasExplicitIpIndicator(ioc, indicatorValue))
+        {
+            return "IP";
+        }
+
+        if (ShouldClassifyAsHostArtifact(ioc, corpus, indicatorValue, indicatorKind))
+        {
+            return "HostArtifact";
+        }
+
+        if (HasBareDomainIndicator(ioc, indicatorValue))
+        {
+            return "Domain";
         }
 
         if (ContainsKeyword(corpus, ToolKeywords))
@@ -436,24 +662,9 @@ public sealed partial class LegacyScanPipelineService
             return "Tool";
         }
 
-        if (ShouldClassifyAsHostArtifact(ioc, corpus, indicatorKind))
+        if (ShouldClassifyAsTtp(corpus))
         {
-            return "HostArtifact";
-        }
-
-        if (ContainsDomain(corpus))
-        {
-            return "Domain";
-        }
-
-        if (ShouldClassifyAsIp(ioc, corpus))
-        {
-            return "IP";
-        }
-
-        if (ContainsHash(corpus))
-        {
-            return "Hash";
+            return "Ttp";
         }
 
         return "HostArtifact";
@@ -539,37 +750,82 @@ public sealed partial class LegacyScanPipelineService
             }.Where(value => !string.IsNullOrWhiteSpace(value)))
             .ToLowerInvariant();
 
-    private static bool ShouldClassifyAsTtp(LegacyPipelineIocEntity ioc, string corpus, string indicatorKind)
-        => string.Equals(ioc.ScannerType, "SIGMA", StringComparison.OrdinalIgnoreCase)
-            || ContainsKeyword(corpus, TtpKeywords)
-            || (string.Equals(indicatorKind, "event", StringComparison.OrdinalIgnoreCase) && corpus.Contains("process", StringComparison.Ordinal));
+    private static bool ShouldClassifyAsTtp(string corpus)
+        => ContainsKeyword(corpus, TtpKeywords) || MitreTechniqueRegex.IsMatch(corpus);
 
-    private static bool ShouldClassifyAsHostArtifact(LegacyPipelineIocEntity ioc, string corpus, string indicatorKind)
+    private static bool ShouldClassifyAsHostArtifact(
+        LegacyPipelineIocEntity ioc,
+        string corpus,
+        string indicatorValue,
+        string indicatorKind)
         => string.Equals(indicatorKind, "file", StringComparison.OrdinalIgnoreCase)
             || string.Equals(indicatorKind, "event", StringComparison.OrdinalIgnoreCase)
-            || corpus.Contains(@":\", StringComparison.Ordinal)
-            || corpus.Contains("/", StringComparison.Ordinal)
+            || ContainsUrl(indicatorValue)
+            || ContainsPathLikeArtifact(indicatorValue)
+            || ContainsPathLikeArtifact(corpus)
             || (ioc.NetworkDetail?.Protocol is not null)
             || (ioc.SigmaDetail?.CommandLine is not null)
             || (ioc.YaraDetail?.FilePath is not null);
 
-    private static bool ShouldClassifyAsIp(LegacyPipelineIocEntity ioc, string corpus)
+    private static bool HasExplicitHashIndicator(LegacyPipelineIocEntity ioc, string indicatorValue)
+        => ContainsHash(ioc.YaraDetail?.FileHash)
+            || IsStandaloneHash(indicatorValue)
+            || IsStandaloneHash(ioc.RawPayload);
+
+    private static bool HasExplicitIpIndicator(LegacyPipelineIocEntity ioc, string indicatorValue)
+        => HasIpAddress(ioc.NetworkDetail?.SourceIP)
+            || HasIpAddress(ioc.NetworkDetail?.DestIP)
+            || IsStandaloneIp(indicatorValue)
+            || IsStandaloneIp(ioc.RawPayload);
+
+    private static bool HasBareDomainIndicator(LegacyPipelineIocEntity ioc, string indicatorValue)
+        => ContainsBareDomain(indicatorValue) || ContainsBareDomain(ioc.RawPayload);
+
+    private static bool ContainsHash(string? value)
+        => !string.IsNullOrWhiteSpace(value) && HashRegex.IsMatch(value);
+
+    private static bool ContainsBareDomain(string? value)
     {
-        if (HasIpAddress(ioc.NetworkDetail?.SourceIP) || HasIpAddress(ioc.NetworkDetail?.DestIP))
+        if (string.IsNullOrWhiteSpace(value) || ContainsUrl(value) || ContainsPathLikeArtifact(value))
         {
-            return true;
+            return false;
         }
 
-        return ExtractTokens(corpus).Any(HasIpAddress);
+        return ExtractTokens(value.ToLowerInvariant())
+            .Where(token => !HasIpAddress(token))
+            .Any(IsBareDomainToken);
     }
 
-    private static bool ContainsHash(string corpus)
-        => HashRegex.IsMatch(corpus);
+    private static bool IsBareDomainToken(string token)
+        => DomainRegex.IsMatch(token)
+            && !IsLikelyFileName(token)
+            && !token.Contains("..", StringComparison.Ordinal);
 
-    private static bool ContainsDomain(string corpus)
-        => ExtractTokens(corpus)
-            .Where(token => !HasIpAddress(token))
-            .Any(token => DomainRegex.IsMatch(token) && !token.EndsWith(".log", StringComparison.OrdinalIgnoreCase));
+    private static bool IsLikelyFileName(string token)
+        => token.EndsWith(".log", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)
+            || token.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsStandaloneHash(string? value)
+        => !string.IsNullOrWhiteSpace(value) && HashRegex.Match(value.Trim()) is { Success: true } match && match.Value.Length == value.Trim().Length;
+
+    private static bool IsStandaloneIp(string? value)
+        => !string.IsNullOrWhiteSpace(value) && HasIpAddress(value.Trim());
+
+    private static bool ContainsUrl(string value)
+        => UrlRegex.IsMatch(value);
+
+    private static bool ContainsPathLikeArtifact(string value)
+        => WindowsPathRegex.IsMatch(value)
+            || UnixPathRegex.IsMatch(value)
+            || RegistryPathRegex.IsMatch(value);
 
     private static bool ContainsKeyword(string corpus, IReadOnlyList<string> keywords)
         => keywords.Any(keyword => corpus.Contains(keyword, StringComparison.Ordinal));

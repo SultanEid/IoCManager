@@ -170,21 +170,35 @@ public static class ServiceCollectionExtensions
             var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
+            ApplyAiSidecarHeaders(client, sidecarOptions);
         });
         services.AddHttpClient<IAiDecisionClient, AiDecisionClient>((sp, client) =>
         {
             var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
+            ApplyAiSidecarHeaders(client, sidecarOptions);
         });
         services.AddHttpClient<IAiScanAnalystClient, AiScanAnalystClient>((sp, client) =>
         {
             var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
+            ApplyAiSidecarHeaders(client, sidecarOptions);
         });
 
         return services;
+    }
+
+    private static void ApplyAiSidecarHeaders(HttpClient client, AiSidecarOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.ServiceToken))
+        {
+            return;
+        }
+
+        client.DefaultRequestHeaders.Remove("X-IOC-Manager-Sidecar-Token");
+        client.DefaultRequestHeaders.Add("X-IOC-Manager-Sidecar-Token", options.ServiceToken.Trim());
     }
 
     private static bool ShouldEnableSqlRetries(string connectionString)

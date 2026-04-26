@@ -120,8 +120,12 @@ def test_manifest_ingestion_records_disabled_remote_and_missing_local_sources(tm
 def test_new_dataset_schemas_compile() -> None:
     row_schema = _read_json(SCHEMAS_DIR / "decision-training-row.schema.json")
     split_schema = _read_json(SCHEMAS_DIR / "decision-split-manifest.schema.json")
+    quality_schema = _read_json(SCHEMAS_DIR / "decision-dataset-quality-report.schema.json")
+    label_review_schema = _read_json(SCHEMAS_DIR / "label-review-artifact.schema.json")
     Draft202012Validator.check_schema(row_schema)
     Draft202012Validator.check_schema(split_schema)
+    Draft202012Validator.check_schema(quality_schema)
+    Draft202012Validator.check_schema(label_review_schema)
 
 
 def test_normalization_preserves_provenance_and_evidence_from_import_rows() -> None:
@@ -668,6 +672,7 @@ def test_end_to_end_build_writes_canonical_task_split_and_report_files(tmp_path:
     assert "activeUseEligibility" in quality_report
     assert snapshot_manifest["datasetVersion"] == "integration-v1"
     assert snapshot_manifest["files"]["observables"] == "observables.csv"
+    assert snapshot_manifest["labelReviewArtifacts"] == []
     for task_name, task_report in split_manifest["tasks"].items():
         assert "splitRowCounts" in task_report
         assert task_report["leakageAssertions"]["passed"] is True
@@ -677,9 +682,12 @@ def test_end_to_end_build_writes_canonical_task_split_and_report_files(tmp_path:
     canonical_rows = _read_jsonl(canonical_path)
     row_schema = _read_json(SCHEMAS_DIR / "decision-training-row.schema.json")
     split_schema = _read_json(SCHEMAS_DIR / "decision-split-manifest.schema.json")
+    quality_schema = _read_json(SCHEMAS_DIR / "decision-dataset-quality-report.schema.json")
     row_validator = Draft202012Validator(row_schema)
     split_validator = Draft202012Validator(split_schema)
+    quality_validator = Draft202012Validator(quality_schema)
     split_validator.validate(split_manifest)
+    quality_validator.validate(quality_report)
     for row in canonical_rows:
         row_validator.validate(row)
         assert set(row.keys()) == set(CANONICAL_ROW_FIELDS)
@@ -692,6 +700,17 @@ def test_end_to_end_build_writes_canonical_task_split_and_report_files(tmp_path:
     assert all(isinstance(row["parser_diagnostics"], list) for row in imported_rows)
     assert all(isinstance(row["source_file"]["parser_name"], str) and row["source_file"]["parser_name"] for row in imported_rows)
     assert all(any(item["key"] == "source_path" for item in row["provenance"]) for row in imported_rows)
+    assert quality_report["sourceDistribution"]
+    assert quality_report["labelDistribution"]
+    assert "partialRowRate" in quality_report
+    assert "rejectionReasons" in quality_report
+    assert quality_report["provenanceCoverage"]["totalRows"] == quality_report["rowCounts"]["total"]
+    assert quality_report["splitLeakageAssertions"]
+    assert all(
+        assertion["passed"] is True
+        for assertion in quality_report["splitLeakageAssertions"].values()
+        if assertion
+    )
 
     yara_task_rows = _read_jsonl(Path(split_manifest["files"]["tasks"]["yara_package_decision"]))
     yara_split_rows = []

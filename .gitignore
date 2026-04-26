@@ -367,6 +367,7 @@ FodyWeavers.xsd
 /.dotnet-home/
 /.dotnet/
 /Project/
+/*_Results/
 /SIGMA_Results/
 /SNORT_Results/
 /SURICATA_Results/
@@ -380,17 +381,25 @@ FodyWeavers.xsd
 /snort-validation/
 /src/
 /tmp/
+/tmp*/
 /tmp_script_validation/
 /IocManager.Web.sln
 /*.pdf
 
 # Local diagnostics, screenshots, and probe outputs
+/*.err.log
+/*.out.log
+/*.log
 /db_schema_*.txt
 /ioc_*.png
 /login_*.png
 /output_ioc_*.png
 /live_ioc_probe_*.json
 /backend_live*.log
+
+# Phase 1 repository boundary: keep planning docs and active Workspace/Project files tracked.
+# Ignore generated/local output going forward; do not delete existing user material without
+# an explicit cleanup request.
 
 # AI local staging and generated evaluation bundles
 /Workspace/Project/ai/datasets/raw/**

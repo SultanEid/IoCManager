@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/decision-dataset-quality-report.schema.json",
+  "title": "Decision Dataset Quality Report",
+  "description": "Quality and provenance summary emitted by decision dataset builds.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "generatedAtUtc",
+    "rowCounts",
+    "sourceDistribution",
+    "labelDistribution",
+    "partialRowRate",
+    "missingCriticalFieldCounts",
+    "provenanceCoverage",
+    "splitLeakageAssertions",
+    "parserDiagnostics",
+    "rejectionReasons",
+    "activeUseEligibility"
+  ],
+  "properties": {
+    "generatedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "rowCounts": {
+      "type": "object",
+      "required": ["total", "bySource", "byRuleFamily"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bySource": {
+          "type": "object"
+        },
+        "byRuleFamily": {
+          "type": "object"
+        }
+      }
+    },
+    "sourceDistribution": {
+      "type": "object"
+    },
+    "labelDistribution": {
+      "type": "object"
+    },
+    "partialRowRate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "missingCriticalFieldCounts": {
+      "type": "object"
+    },
+    "provenanceCoverage": {
+      "type": "object",
+      "required": ["completeRows", "totalRows", "completeRowsRatio"],
+      "properties": {
+        "completeRows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalRows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completeRowsRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "splitLeakageAssertions": {
+      "type": "object"
+    },
+    "parserDiagnostics": {
+      "type": "object",
+      "required": ["bySource", "skippedItems"],
+      "properties": {
+        "bySource": {
+          "type": "object"
+        },
+        "skippedItems": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "rejectionReasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "activeUseEligibility": {
+      "type": "object",
+      "required": ["passed", "reasons", "thresholds"],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "thresholds": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

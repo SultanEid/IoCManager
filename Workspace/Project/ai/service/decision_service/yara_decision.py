@@ -225,9 +225,22 @@ def _normalize_input(
     if category in {"packer", "installer"}:
         explicit_false_positive_signal = max(explicit_false_positive_signal, 1.10)
 
+    raw_evidence = _coerce_dict(raw_hit.get("evidence"))
+    matched_strings = (
+        _coerce_list_of_strings(raw_hit.get("matched_strings"))
+        or _coerce_list_of_strings(raw_hit.get("matchedStrings"))
+        or _coerce_list_of_strings(raw_evidence.get("matched_strings"))
+        or _coerce_list_of_strings(raw_evidence.get("matchedStrings"))
+    )
+    match_count = _first_positive_float(
+        raw_hit.get("match_count"),
+        raw_hit.get("matchCount"),
+        raw_evidence.get("match_count"),
+        raw_evidence.get("matchCount"),
+    )
     match_details = {
-        "matched_strings": _coerce_list_of_strings(raw_hit.get("matched_strings")),
-        "match_count": _float(raw_hit.get("match_count"), default=0.0),
+        "matched_strings": matched_strings,
+        "match_count": match_count,
     }
     if match_details["match_count"] <= 0 and match_details["matched_strings"]:
         match_details["match_count"] = float(len(match_details["matched_strings"]))
@@ -235,7 +248,16 @@ def _normalize_input(
     file_metadata = {
         "object_id": _first_non_empty(object_metadata.get("object_id")),
         "object_type": _first_non_empty(object_metadata.get("object_type")),
-        "target_path": _first_non_empty(raw_hit.get("target_path")),
+        "target_path": _first_non_empty(
+            raw_hit.get("target_path"),
+            raw_hit.get("targetPath"),
+            raw_hit.get("file_path"),
+            raw_hit.get("filePath"),
+            raw_evidence.get("target_path"),
+            raw_evidence.get("targetPath"),
+            raw_evidence.get("file_path"),
+            raw_evidence.get("filePath"),
+        ),
         "source_system": _first_non_empty(object_metadata.get("source_system")),
     }
 
@@ -862,6 +884,14 @@ def _float(value: Any, *, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _first_positive_float(*values: Any) -> float:
+    for value in values:
+        parsed = _float(value, default=0.0)
+        if parsed > 0:
+            return parsed
+    return 0.0
 
 
 def _first_non_empty(*values: Any) -> str | None:

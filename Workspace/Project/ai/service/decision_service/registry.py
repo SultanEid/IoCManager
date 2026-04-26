@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -12,6 +15,45 @@ from .calibration import LogisticCalibrator
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def artifact_path_for_registry(path: Path, artifact_root: Path) -> str:
+    resolved_path = path.resolve()
+    resolved_root = artifact_root.resolve()
+    try:
+        return resolved_path.relative_to(resolved_root).as_posix()
+    except ValueError:
+        return str(resolved_path)
 
 
 class RegistryModel(BaseModel):
@@ -65,9 +107,8 @@ class ModelRegistryStore:
         return ModelRegistryDocument.model_validate(payload)
 
     def save(self, document: ModelRegistryDocument) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         updated_document = document.model_copy(update={"updated_at_utc": _utcnow()})
-        self._path.write_text(updated_document.model_dump_json(indent=2), encoding="utf-8")
+        _atomic_write_text(self._path, updated_document.model_dump_json(indent=2))
 
     def upsert(self, entry: ModelRegistryEntry) -> ModelRegistryDocument:
         document = self.load()
@@ -101,9 +142,62 @@ class ModelRegistryStore:
                 return entry
         return None
 
-    def promote(self, model_version: str) -> ModelRegistryEntry:
+    def resolve_artifact_path(self, artifact_path: str | Path) -> Path:
+        path = Path(artifact_path)
+        if path.is_absolute():
+            return path
+        return (self._path.parent / path).resolve()
+
+    def validate_artifacts(
+        self,
+        entry: ModelRegistryEntry,
+        *,
+        require_hashes: bool = False,
+    ) -> dict[str, Path]:
+        if require_hashes and not entry.artifact_hashes:
+            raise ValueError(f"Model version '{entry.model_version}' has no artifact hashes.")
+
+        resolved: dict[str, Path] = {}
+        for artifact_key, expected_hash in entry.artifact_hashes.items():
+            artifact_path = entry.artifact_paths.get(artifact_key)
+            if not artifact_path:
+                raise ValueError(
+                    f"Model version '{entry.model_version}' is missing artifact path '{artifact_key}'."
+                )
+            resolved_path = self.resolve_artifact_path(artifact_path)
+            if not resolved_path.exists():
+                raise FileNotFoundError(
+                    f"Model version '{entry.model_version}' artifact '{artifact_key}' was not found: {resolved_path}"
+                )
+            actual_hash = _sha256_file(resolved_path)
+            if actual_hash != expected_hash:
+                raise ValueError(
+                    f"Model version '{entry.model_version}' artifact '{artifact_key}' hash mismatch."
+                )
+            resolved[artifact_key] = resolved_path
+        return resolved
+
+    def promote(
+        self,
+        model_version: str,
+        *,
+        validate_artifacts: bool = False,
+        require_artifact_hashes: bool = False,
+    ) -> ModelRegistryEntry:
         document = self.load()
         target: ModelRegistryEntry | None = None
+        for entry in document.entries:
+            if entry.model_version == model_version:
+                target = entry
+                break
+
+        if target is None:
+            raise ValueError(f"Model version '{model_version}' was not found in registry.")
+
+        if validate_artifacts:
+            self.validate_artifacts(target, require_hashes=require_artifact_hashes)
+
+        target = None
         updated_entries: list[ModelRegistryEntry] = []
         now = _utcnow()
         for entry in document.entries:
@@ -115,9 +209,6 @@ class ModelRegistryStore:
                 updated_entries.append(entry.model_copy(update={"status": "archived"}))
             else:
                 updated_entries.append(entry)
-
-        if target is None:
-            raise ValueError(f"Model version '{model_version}' was not found in registry.")
 
         updated = document.model_copy(update={"entries": updated_entries, "updated_at_utc": now})
         self.save(updated)

@@ -53,6 +53,16 @@ class DecisionEvaluationRow:
     ioc_type: str
     event_time: datetime
     source_trust: float
+    predicted_verdict: str | None = None
+    source_name: str = "unknown"
+    source_type: str = "unknown"
+    severity: str = "unknown"
+    table_confidence: float | None = None
+    age_bucket: str | None = None
+    evidence_tier: str = "unknown"
+    label_provenance: str = "unknown"
+    scan_evidence_available: bool = False
+    weak_evidence: bool = False
     evidence_used_count: int = 0
     evidence_missing_count: int = 0
     contradictory_evidence_count: int = 0
@@ -72,11 +82,14 @@ class DecisionMetricSummary:
     brier_score: float | None
     false_positive_rate: float | None
     false_negative_rate: float | None
+    likely_malicious_precision: float | None
     unsafe_recommendation_rate: float | None
     analyst_override_rate: float | None
     rollback_rate: float | None
     abstain_rate: float | None
+    weak_evidence_rate: float | None
     coverage: float | None
+    confidence_distribution: dict[str, int]
     confusion_matrix: EvaluationConfusionMatrix
     calibration_bins: list[CalibrationBin]
     outcomes: dict[str, int]
@@ -148,11 +161,14 @@ def compute_decision_metrics(
             brier_score=None,
             false_positive_rate=None,
             false_negative_rate=None,
+            likely_malicious_precision=None,
             unsafe_recommendation_rate=None,
             analyst_override_rate=None,
             rollback_rate=None,
             abstain_rate=None,
+            weak_evidence_rate=None,
             coverage=None,
+            confidence_distribution={},
             confusion_matrix=EvaluationConfusionMatrix(0, 0, 0, 0, 0, 0),
             calibration_bins=[],
             outcomes={},
@@ -167,11 +183,14 @@ def compute_decision_metrics(
                 "brier_score",
                 "false_positive_rate",
                 "false_negative_rate",
+                "likely_malicious_precision",
                 "unsafe_recommendation_rate",
                 "analyst_override_rate",
                 "rollback_rate",
                 "abstain_rate",
+                "weak_evidence_rate",
                 "coverage",
+                "confidence_distribution",
                 "confusion_matrix",
                 "calibration_bins",
             ],
@@ -220,6 +239,16 @@ def compute_decision_metrics(
     brier_score = float(np.mean(np.square(scores - labels.astype(float)))) if len(items) else None
     false_positive_rate = _safe_ratio(fp, fp + tn)
     false_negative_rate = _safe_ratio(fn, fn + tp)
+    likely_malicious_mask = np.asarray(
+        [
+            _predicted_likely_malicious(item, threshold=max(0.62, threshold))
+            for item in items
+        ],
+        dtype=int,
+    )
+    likely_malicious_tp = int(((likely_malicious_mask == 1) & (labels == 1)).sum())
+    likely_malicious_fp = int(((likely_malicious_mask == 1) & (labels == 0)).sum())
+    likely_malicious_precision = _safe_ratio(likely_malicious_tp, likely_malicious_tp + likely_malicious_fp)
     unsafe_recommendation_rate = _safe_ratio(fp, recommendation_count)
     analyst_override_rate = _safe_ratio(
         sum(1 for item in items if item.analyst_overrode),
@@ -228,7 +257,9 @@ def compute_decision_metrics(
     rollback_rows = [item for item in items if item.rolled_back is not None]
     rollback_rate = _safe_ratio(sum(1 for item in rollback_rows if item.rolled_back), len(rollback_rows))
     abstain_rate = _safe_ratio(abstentions.sum().item(), len(items))
+    weak_evidence_rate = _safe_ratio(sum(1 for item in items if item.weak_evidence), len(items))
     coverage = None if abstain_rate is None else float(1.0 - abstain_rate)
+    confidence_distribution = _confidence_distribution(scores.tolist())
     bins = build_calibration_bins(labels, scores, bins=calibration_bins)
 
     unavailable_metrics: list[str] = []
@@ -243,8 +274,10 @@ def compute_decision_metrics(
         ("brier_score", brier_score),
         ("false_positive_rate", false_positive_rate),
         ("false_negative_rate", false_negative_rate),
+        ("likely_malicious_precision", likely_malicious_precision),
         ("unsafe_recommendation_rate", unsafe_recommendation_rate),
         ("abstain_rate", abstain_rate),
+        ("weak_evidence_rate", weak_evidence_rate),
         ("coverage", coverage),
     ):
         if metric_value is None:
@@ -267,11 +300,14 @@ def compute_decision_metrics(
         brier_score=brier_score,
         false_positive_rate=false_positive_rate,
         false_negative_rate=false_negative_rate,
+        likely_malicious_precision=likely_malicious_precision,
         unsafe_recommendation_rate=unsafe_recommendation_rate,
         analyst_override_rate=analyst_override_rate,
         rollback_rate=rollback_rate,
         abstain_rate=abstain_rate,
+        weak_evidence_rate=weak_evidence_rate,
         coverage=coverage,
+        confidence_distribution=confidence_distribution,
         confusion_matrix=confusion_matrix,
         calibration_bins=bins,
         outcomes={
@@ -585,15 +621,26 @@ def _decision_slice_value(field: str, row: DecisionEvaluationRow, reference_time
         return row.ioc_type or "unknown"
     if field == "source_system":
         return row.source_system or "unknown"
+    if field == "source_name":
+        return row.source_name or "unknown"
+    if field == "source_type":
+        return row.source_type or "unknown"
+    if field == "severity":
+        return row.severity or "unknown"
+    if field == "table_confidence_bucket":
+        return _confidence_bucket(row.table_confidence)
+    if field == "age_bucket":
+        return row.age_bucket or _age_bucket(row.event_time, reference_time)
+    if field == "evidence_tier":
+        return row.evidence_tier or "unknown"
+    if field == "label_provenance":
+        return row.label_provenance or "unknown"
+    if field == "scan_evidence_available":
+        return "available" if row.scan_evidence_available else "missing"
     if field == "time_bucket":
         return _ensure_utc(row.event_time).strftime("%Y-%m")
     if field == "recency_bucket":
-        age_hours = max(0.0, (_ensure_utc(reference_time) - _ensure_utc(row.event_time)).total_seconds() / 3600.0)
-        if age_hours <= 24:
-            return "0_24h"
-        if age_hours <= 168:
-            return "24_168h"
-        return "168h_plus"
+        return _age_bucket(row.event_time, reference_time)
     if field == "trust_bucket":
         if row.source_trust < 0.33:
             return "low"
@@ -620,6 +667,48 @@ def _action_plan_slice_value(field: str, row: ActionPlanEvaluationRow, reference
     if field == "evidence_availability_bucket":
         return determine_evidence_availability_bucket(row.evidence_used_count, row.evidence_missing_count)
     return "unknown"
+
+
+def _predicted_likely_malicious(item: DecisionEvaluationRow, *, threshold: float) -> bool:
+    predicted = str(item.predicted_verdict or "").strip().lower()
+    if predicted:
+        return predicted in {"likely_malicious", "malicious"}
+    return bool(item.score >= threshold and not item.abstained)
+
+
+def _confidence_distribution(scores: list[float]) -> dict[str, int]:
+    output = {"very_low": 0, "low": 0, "medium": 0, "high": 0, "very_high": 0}
+    for score in scores:
+        output[_confidence_bucket(score)] += 1
+    return output
+
+
+def _confidence_bucket(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    score = _clip01(float(value))
+    if score < 0.20:
+        return "very_low"
+    if score < 0.40:
+        return "low"
+    if score < 0.66:
+        return "medium"
+    if score < 0.85:
+        return "high"
+    return "very_high"
+
+
+def _age_bucket(event_time: datetime, reference_time: datetime) -> str:
+    age_hours = max(0.0, (_ensure_utc(reference_time) - _ensure_utc(event_time)).total_seconds() / 3600.0)
+    if age_hours <= 24:
+        return "0_24h"
+    if age_hours <= 168:
+        return "1_7d"
+    if age_hours <= 720:
+        return "8_30d"
+    if age_hours <= 2160:
+        return "31_90d"
+    return "90d_plus"
 
 
 def _highest_action_severity(actions: tuple[str, ...]) -> int | None:

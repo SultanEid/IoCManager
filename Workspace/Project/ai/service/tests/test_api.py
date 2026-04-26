@@ -183,6 +183,99 @@ def test_score_case_endpoint_uses_deterministic_yara_decision_for_lexical_only_i
     assert grounded["safetyDiagnostics"]["weakEvidence"] is True
 
 
+def test_score_case_endpoint_promotes_nested_yara_scanner_evidence(client) -> None:
+    response = client.post(
+        "/score_case",
+        json={
+            "caseId": "case-yara-nested-scanner-evidence",
+            "asOfTime": datetime.now(timezone.utc).isoformat(),
+            "sourceSystem": "yara",
+            "iocType": "file_path",
+            "iocValue": "C:/Temp/sample.bin",
+            "hostContext": {"criticality": 0.72, "assetExposure": 0.25},
+            "ruleContext": {
+                "ruleFamily": "yara",
+                "severityScore": 0.82,
+                "scannerAgreement": 0.78,
+                "sourceTrust": 0.74,
+                "providerConfidence": 0.82,
+                "indicatorStrength": 0.82,
+                "enrichmentStrength": 0.65,
+                "activitySignal": 0.70,
+                "externalSourceSignal": 0.68,
+                "sightingsCount": 1,
+                "sightingsCorroboration": 0.48,
+                "evidenceConflict": 0.0,
+            },
+            "detectionPackage": {
+                "rule_family": "yara",
+                "full_rule_text": "rule LabDetection { strings: $a = \"MALWARE_TEST_STRING\" ascii condition: $a }",
+                "rule_metadata": {
+                    "source": "manual",
+                    "rule_id": "YARA-LAB-1",
+                    "rule_name": "LabDetection",
+                    "tags": ["malware", "lab"],
+                    "meta": {"severity": "high"},
+                },
+                "raw_hit_payload": {
+                    "filePath": "C:/Temp/sample.bin",
+                    "evidence": {
+                        "matchedStrings": ["MALWARE_TEST_STRING"],
+                        "filePath": "C:/Temp/sample.bin",
+                        "matchCount": 1,
+                        "engine": "yara",
+                    },
+                },
+                "object_metadata": {
+                    "object_id": "scan-result-yara-1",
+                    "object_type": "file",
+                    "source_system": "yara",
+                },
+                "asset_context": {
+                    "asset_id": "zombie-vm",
+                    "asset_name": "Zombie",
+                    "asset_type": "scan_target",
+                    "criticality": "high",
+                    "environment": "lab",
+                    "internet_exposed": False,
+                },
+                "time_prevalence_context": {
+                    "hit_count_24h": 1,
+                    "hit_count_7d": 1,
+                    "prevalence_ratio": 0.001,
+                    "recency_bucket": "recent",
+                    "trend": "new",
+                },
+                "linked_enrichment": {
+                    "enrichments": [
+                        {
+                            "kind": "scanner_result_high",
+                            "source": "app-db-scan-results",
+                            "confidence": 0.82,
+                            "value": {"scanner_family": "yara", "severity": "high"},
+                        }
+                    ]
+                },
+                "behavior_report_references": {
+                    "reports": [
+                        {
+                            "report_id": "scan-result-yara-1",
+                            "source": "app-db-scan-results",
+                            "summary": "YARA scanner reported high severity malicious scanner evidence.",
+                        }
+                    ]
+                },
+            },
+        },
+    )
+    assert response.status_code == 200
+    grounded = response.json()["groundedDecision"]
+    assert grounded["verdict"] in {"suspicious", "likely_malicious", "malicious"}
+    assert grounded["action"] != "hold"
+    assert grounded["abstainReason"] is None
+    assert grounded["safetyDiagnostics"]["weakEvidence"] is False
+
+
 def test_score_case_endpoint_uses_deterministic_sigma_decision_for_lexical_only_input(client) -> None:
     response = client.post(
         "/score_case",
@@ -755,5 +848,3 @@ def test_load_settings_prefers_ioc_manager_aliases(monkeypatch, tmp_path) -> Non
     assert settings.service_name == "ioc-manager-sidecar-alias"
     assert settings.environment == "staging"
     assert settings.artifacts_root == tmp_path / "ioc-manager-artifacts"
-
-

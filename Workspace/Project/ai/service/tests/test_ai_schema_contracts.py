@@ -20,6 +20,7 @@ SCHEMA_FILES = {
     "snort": "snort-package.schema.json",
     "decision": "decision-result.schema.json",
     "action_plan": "action-plan.schema.json",
+    "ioc_evaluation": "ioc-evaluation-row.schema.json",
 }
 
 FIXTURE_FILES = {
@@ -29,6 +30,10 @@ FIXTURE_FILES = {
     "snort": FIXTURES_DIR / "snort" / "snort-package.example.json",
     "decision": FIXTURES_DIR / "labels" / "decision-result.example.json",
     "action_plan": FIXTURES_DIR / "labels" / "action-plan.example.json",
+}
+
+JSONL_FIXTURE_FILES = {
+    "ioc_evaluation": FIXTURES_DIR / "ioc_evaluation" / "golden_ioc_rows.jsonl",
 }
 
 
@@ -71,6 +76,14 @@ def test_canonical_fixture_examples_validate() -> None:
     for schema_name, fixture_path in FIXTURE_FILES.items():
         payload = _read_json(fixture_path)
         _validator(schema_name).validate(payload)
+
+
+def test_canonical_jsonl_fixture_examples_validate() -> None:
+    for schema_name, fixture_path in JSONL_FIXTURE_FILES.items():
+        validator = _validator(schema_name)
+        for line in fixture_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                validator.validate(json.loads(line))
 
 
 def test_detection_package_rejects_bare_string() -> None:

@@ -9,9 +9,10 @@ from _bootstrap import bootstrap_service_path
 
 bootstrap_service_path()
 
-from decision_service.evaluation_artifacts import hash_payload, write_report_bundle
+from decision_service.evaluation_artifacts import hash_file, hash_payload, write_report_bundle
 from decision_service.calibration import LogisticCalibrator
 from decision_service.evaluator import evaluate_snapshot
+from decision_service.promotion_gates import evaluate_promotion_gates
 from decision_service.registry import ModelRegistryStore
 from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
 from decision_service.snapshots import SnapshotLoader
@@ -63,15 +64,33 @@ def main() -> None:
         horizon_hours=args.horizon_hours,
         window_start_utc=window_start,
         window_end_utc=window_end,
-        slice_fields=["ioc_type", "source_system", "time_bucket", "recency_bucket", "trust_bucket"],
+        slice_fields=[
+            "ioc_type",
+            "source_system",
+            "source_name",
+            "source_type",
+            "severity",
+            "table_confidence_bucket",
+            "age_bucket",
+            "evidence_tier",
+            "label_provenance",
+            "scan_evidence_available",
+            "time_bucket",
+            "recency_bucket",
+            "trust_bucket",
+            "rule_family",
+            "evidence_availability_bucket",
+        ],
     )
 
     report = {
+        "evaluationBundleVersion": "decision-eval-v2",
         "modelVersion": entry.model_version,
         "scoringProfileVersion": entry.scoring_profile_version,
         "featureSchemaVersion": entry.feature_schema_version,
         "datasetVersion": args.dataset_version,
         "datasetManifestHash": entry.dataset_manifest_hash,
+        "snapshotManifestHash": snapshot.manifest_hash,
         "windowStartUtc": window_start.isoformat() if window_start else None,
         "windowEndUtc": window_end.isoformat() if window_end else None,
         "sampleSize": sample_size,
@@ -84,7 +103,14 @@ def main() -> None:
                 for row in slices
             },
         },
+        "inputHashes": {
+            "snapshotManifest": snapshot.manifest_hash,
+            "registryDocument": hash_file(args.registry_path) if args.registry_path.exists() else None,
+            "registryEntry": hash_payload(entry.model_dump(mode="json", by_alias=True)),
+        },
     }
+    gate_result = evaluate_promotion_gates(report)
+    report["promotionGates"] = gate_result.to_dict()
     args.output_file.parent.mkdir(parents=True, exist_ok=True)
     args.output_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
@@ -116,11 +142,35 @@ def main() -> None:
             "escalate": scorer.thresholds.escalate,
             "abstain": scorer.thresholds.abstain,
         },
-        "sliceFields": ["ioc_type", "source_system", "time_bucket", "recency_bucket", "trust_bucket", "rule_family", "evidence_availability_bucket"],
+        "sliceFields": [
+            "ioc_type",
+            "source_system",
+            "source_name",
+            "source_type",
+            "severity",
+            "table_confidence_bucket",
+            "age_bucket",
+            "evidence_tier",
+            "label_provenance",
+            "scan_evidence_available",
+            "time_bucket",
+            "recency_bucket",
+            "trust_bucket",
+            "rule_family",
+            "evidence_availability_bucket",
+        ],
+        "commandMetadata": {
+            "job": "evaluate_model.py",
+            "horizonHours": args.horizon_hours,
+            "promotionGatesPassed": gate_result.passed,
+            "promotionGateFailures": gate_result.failures,
+            "promotionGateWarnings": gate_result.warnings,
+        },
         "inputPaths": {
             "snapshotRoot": str(args.snapshot_root.resolve()),
             "registryPath": str(args.registry_path.resolve()),
         },
+        "inputHashes": report["inputHashes"],
         "windowStartUtc": window_start.isoformat() if window_start else None,
         "windowEndUtc": window_end.isoformat() if window_end else None,
     }

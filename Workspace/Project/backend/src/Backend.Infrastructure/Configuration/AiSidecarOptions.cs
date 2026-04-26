@@ -12,4 +12,5 @@ public sealed class AiSidecarOptions
     public string RecommendActionPath { get; set; } = "/recommend_action";
     public string HistoricalLearningPath { get; set; } = "/historical_learning/query";
     public int TimeoutSeconds { get; set; } = 30;
+    public string? ServiceToken { get; set; }
 }

@@ -26,6 +26,10 @@ public sealed class AiSidecarHealthCheck : IHealthCheck
     {
         var client = _httpClientFactory.CreateClient(ProbeClientName);
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildProbeUri(_options.BaseUrl));
+        if (!string.IsNullOrWhiteSpace(_options.ServiceToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-IOC-Manager-Sidecar-Token", _options.ServiceToken.Trim());
+        }
 
         try
         {
@@ -62,6 +66,6 @@ public sealed class AiSidecarHealthCheck : IHealthCheck
     private static Uri BuildProbeUri(string baseUrl)
     {
         var baseUri = new Uri(baseUrl, UriKind.Absolute);
-        return new Uri(baseUri, "/health");
+        return new Uri(baseUri, "/readyz");
     }
 }

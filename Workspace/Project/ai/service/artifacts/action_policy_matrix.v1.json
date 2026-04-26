@@ -1,0 +1,311 @@
+{
+  "version": "v1",
+  "confidence_buckets": [
+    {
+      "name": "low",
+      "min": 0.0,
+      "max": 0.5,
+      "min_inclusive": true,
+      "max_inclusive": false
+    },
+    {
+      "name": "medium",
+      "min": 0.5,
+      "max": 0.8,
+      "min_inclusive": true,
+      "max_inclusive": false
+    },
+    {
+      "name": "high",
+      "min": 0.8,
+      "max": 1.0,
+      "min_inclusive": true,
+      "max_inclusive": true
+    }
+  ],
+  "false_positive_risk_buckets": [
+    {
+      "name": "low",
+      "min": 0.0,
+      "max": 0.25,
+      "min_inclusive": true,
+      "max_inclusive": true
+    },
+    {
+      "name": "medium",
+      "min": 0.25,
+      "max": 0.6,
+      "min_inclusive": false,
+      "max_inclusive": true
+    },
+    {
+      "name": "high",
+      "min": 0.6,
+      "max": 1.0,
+      "min_inclusive": false,
+      "max_inclusive": true
+    }
+  ],
+  "rows": [
+    {
+      "id": "malicious_high_low_critical",
+      "priority": 120,
+      "family": "*",
+      "verdict": "malicious",
+      "confidence_bucket": "high",
+      "false_positive_risk_bucket": "low",
+      "asset_criticality": "critical",
+      "object_type": "*",
+      "allowed_actions": [
+        "isolate_host",
+        "quarantine_file",
+        "block_hash",
+        "block_domain",
+        "block_url",
+        "block_ip",
+        "search_fleet",
+        "collect_memory",
+        "collect_process_tree",
+        "collect_persistence_artifacts",
+        "collect_network_context",
+        "open_review",
+        "notify_admin",
+        "notify_it_operator",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "incident_response",
+      "required_reviewer_role": "incident_responder"
+    },
+    {
+      "id": "malicious_high_low_default",
+      "priority": 110,
+      "family": "*",
+      "verdict": "malicious",
+      "confidence_bucket": "high",
+      "false_positive_risk_bucket": "low",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "isolate_host",
+        "quarantine_file",
+        "block_hash",
+        "block_domain",
+        "block_url",
+        "block_ip",
+        "search_fleet",
+        "collect_memory",
+        "collect_process_tree",
+        "collect_persistence_artifacts",
+        "collect_network_context",
+        "open_review",
+        "notify_admin",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "security_admin",
+      "required_reviewer_role": "incident_responder"
+    },
+    {
+      "id": "likely_malicious_high_low",
+      "priority": 105,
+      "family": "*",
+      "verdict": "likely_malicious",
+      "confidence_bucket": "high",
+      "false_positive_risk_bucket": "low",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "isolate_host",
+        "quarantine_file",
+        "block_hash",
+        "block_domain",
+        "block_url",
+        "block_ip",
+        "search_fleet",
+        "collect_memory",
+        "collect_process_tree",
+        "collect_persistence_artifacts",
+        "collect_network_context",
+        "open_review",
+        "notify_admin",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "security_admin",
+      "required_reviewer_role": "incident_responder"
+    },
+    {
+      "id": "likely_malicious_medium_medium",
+      "priority": 95,
+      "family": "*",
+      "verdict": "likely_malicious",
+      "confidence_bucket": "medium",
+      "false_positive_risk_bucket": "medium",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "search_fleet",
+        "collect_process_tree",
+        "collect_persistence_artifacts",
+        "collect_network_context",
+        "open_review",
+        "notify_analyst",
+        "notify_it_operator",
+        "no_immediate_action"
+      ],
+      "escalation_target": "analyst_queue",
+      "required_reviewer_role": "tier2_detection_engineer"
+    },
+    {
+      "id": "suspicious_high_low",
+      "priority": 90,
+      "family": "*",
+      "verdict": "suspicious",
+      "confidence_bucket": "high",
+      "false_positive_risk_bucket": "low",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "search_fleet",
+        "collect_process_tree",
+        "collect_network_context",
+        "open_review",
+        "notify_analyst",
+        "notify_it_operator",
+        "no_immediate_action"
+      ],
+      "escalation_target": "analyst_queue",
+      "required_reviewer_role": "tier2_detection_engineer"
+    },
+    {
+      "id": "suspicious_default",
+      "priority": 85,
+      "family": "*",
+      "verdict": "suspicious",
+      "confidence_bucket": "*",
+      "false_positive_risk_bucket": "*",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "search_fleet",
+        "collect_network_context",
+        "open_review",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "analyst_queue",
+      "required_reviewer_role": "tier1_analyst"
+    },
+    {
+      "id": "false_positive_default",
+      "priority": 88,
+      "family": "*",
+      "verdict": "false_positive",
+      "confidence_bucket": "*",
+      "false_positive_risk_bucket": "*",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "suppress_rule_candidate",
+        "tighten_rule",
+        "open_review",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "analyst_queue",
+      "required_reviewer_role": "tier2_detection_engineer"
+    },
+    {
+      "id": "likely_benign_default",
+      "priority": 82,
+      "family": "*",
+      "verdict": "likely_benign",
+      "confidence_bucket": "*",
+      "false_positive_risk_bucket": "*",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "suppress_rule_candidate",
+        "tighten_rule",
+        "open_review",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "analyst_queue",
+      "required_reviewer_role": "tier2_detection_engineer"
+    },
+    {
+      "id": "benign_default",
+      "priority": 78,
+      "family": "*",
+      "verdict": "benign",
+      "confidence_bucket": "*",
+      "false_positive_risk_bucket": "*",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "tighten_rule",
+        "open_review",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "none",
+      "required_reviewer_role": "tier1_analyst"
+    },
+    {
+      "id": "stale_or_revoked_default",
+      "priority": 80,
+      "family": "*",
+      "verdict": "stale_or_revoked",
+      "confidence_bucket": "*",
+      "false_positive_risk_bucket": "*",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "suppress_rule_candidate",
+        "tighten_rule",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "none",
+      "required_reviewer_role": "tier2_detection_engineer"
+    },
+    {
+      "id": "insufficient_evidence_default",
+      "priority": 92,
+      "family": "*",
+      "verdict": "insufficient_evidence",
+      "confidence_bucket": "*",
+      "false_positive_risk_bucket": "*",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "open_review",
+        "search_fleet",
+        "collect_network_context",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "analyst_queue",
+      "required_reviewer_role": "tier1_analyst"
+    },
+    {
+      "id": "catch_all_default",
+      "priority": 1,
+      "family": "*",
+      "verdict": "*",
+      "confidence_bucket": "*",
+      "false_positive_risk_bucket": "*",
+      "asset_criticality": "*",
+      "object_type": "*",
+      "allowed_actions": [
+        "open_review",
+        "notify_analyst",
+        "no_immediate_action"
+      ],
+      "escalation_target": "none",
+      "required_reviewer_role": "tier1_analyst"
+    }
+  ]
+}

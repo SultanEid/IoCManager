@@ -1,0 +1,8 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+tests/
+ioc_ingestion_sidecar.egg-info/
