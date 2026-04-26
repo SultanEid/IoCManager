@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import hashlib
+import math
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -15,7 +17,7 @@ bootstrap_service_path()
 from decision_service.calibration import train_logistic_calibrator
 from decision_service.dataset_registry import DatasetRegistryStore
 from decision_service.evaluator import evaluate_examples
-from decision_service.registry import ModelRegistryEntry, ModelRegistryStore
+from decision_service.registry import ModelRegistryEntry, ModelRegistryStore, artifact_path_for_registry
 from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
 from decision_service.snapshots import SnapshotLoader, build_training_examples
 
@@ -90,7 +92,7 @@ def main() -> None:
         examples=val_examples,
         slice_fields=["ioc_type", "source_system", "time_bucket"],
     )
-    metrics = {
+    metrics_payload = {
         "precision": overall.precision,
         "recall": overall.recall,
         "pr_auc": overall.pr_auc,
@@ -99,8 +101,10 @@ def main() -> None:
         "coverage": overall.coverage,
         "validation_sample_size": float(sample_size),
     }
+    metrics = _finite_metric_dict(metrics_payload)
 
     model_dir = args.artifacts_dir / "models" / model_version
+    artifact_root = args.registry_path.resolve().parent
     model_dir.mkdir(parents=True, exist_ok=True)
     calibration_path = model_dir / "calibration.json"
     thresholds_path = model_dir / "thresholds.json"
@@ -132,9 +136,9 @@ def main() -> None:
         calibration=calibrator.to_dict(),
         calibration_metadata={"method": "logistic_regression", "library": "scikit-learn"},
         artifact_paths={
-            "calibration": str(calibration_path.resolve()),
-            "thresholds": str(thresholds_path.resolve()),
-            "metrics": str(metrics_path.resolve()),
+            "calibration": artifact_path_for_registry(calibration_path, artifact_root),
+            "thresholds": artifact_path_for_registry(thresholds_path, artifact_root),
+            "metrics": artifact_path_for_registry(metrics_path, artifact_root),
         },
         artifact_hashes=artifact_hashes,
         dataset_manifest_hash=dataset_manifest_hash,
@@ -217,6 +221,20 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(8192), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _finite_metric_dict(payload: dict[str, Any]) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    for key, value in payload.items():
+        if value is None:
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(parsed):
+            metrics[key] = parsed
+    return metrics
 
 
 if __name__ == "__main__":

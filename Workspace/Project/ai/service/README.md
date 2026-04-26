@@ -113,9 +113,72 @@ Optional phrasing assist remains bounded by deterministic outputs:
 
 ## Run
 ```bash
-pip install -e .
+python -m pip install -e ".[dev]" -c requirements.lock.txt
 uvicorn decision_service.main:app --host 0.0.0.0 --port 8100
 ```
+
+## Reproducible Training And Inference
+
+Use Python 3.11. The repository-local virtual environment is expected at
+`.venv` during local development.
+
+```powershell
+Push-Location Workspace/Project/ai/service
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]" -c requirements.lock.txt
+.\.venv\Scripts\python.exe -m pytest
+Pop-Location
+```
+
+Train a deterministic candidate model from a named processed dataset snapshot:
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\train_baseline_cv.py `
+  --snapshot-root .\datasets\processed `
+  --dataset-version unified-supervised-v1 `
+  --registry-path .\service\artifacts\model_registry.json `
+  --dataset-registry-path .\service\artifacts\dataset_registry.json `
+  --artifacts-dir .\service\artifacts
+Pop-Location
+```
+
+Evaluate the candidate before promotion:
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\evaluate_model.py `
+  --snapshot-root .\datasets\processed `
+  --dataset-version unified-supervised-v1 `
+  --registry-path .\service\artifacts\model_registry.json `
+  --model-version <candidate-model-version> `
+  --output-file .\datasets\processed\evaluations\<candidate-model-version>.json
+Pop-Location
+```
+
+Promote only after artifact hashes validate:
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\publish_model.py `
+  --registry-path .\service\artifacts\model_registry.json `
+  --model-version <candidate-model-version>
+Pop-Location
+```
+
+Run a live backend inference probe when a backend instance and credentials are
+available:
+
+```powershell
+Push-Location Workspace/Project/ai
+.\service\.venv\Scripts\python.exe .\jobs\probe_live_ioc_decisions.py `
+  --base-url http://localhost:5127 `
+  --username <operator-user> `
+  --password <operator-password>
+Pop-Location
+```
+
+Model registry artifact paths are artifact-root-relative, and
+`publish_model.py` validates every registered artifact hash before promotion.
 
 ## Offline Jobs
 Offline jobs live under `ai/jobs`:
@@ -128,10 +191,10 @@ Offline jobs live under `ai/jobs`:
 | `inventory_datasets.py` | supported | `tests/test_inventory_datasets_job.py` | Dataset inventory reporting. |
 | `probe_live_ioc_decisions.py` | supported utility | `tests/test_probe_live_ioc_decisions_job.py` | Requires a live backend when run outside tests. |
 | `stage_reliable_source_exports.py` | supported staging utility | `tests/test_stage_reliable_source_exports_job.py` | Uses temp outputs in tests; real runs stage source exports. |
-| `evaluate_model.py` | experimental | none | Use from a controlled developer shell until job-level smoke coverage is added. |
-| `train_baseline.py` | experimental | none | Reproducible training workflow is planned for AI-4. |
-| `train_baseline_cv.py` | experimental | none | Reproducible training workflow is planned for AI-4. |
-| `publish_model.py` | experimental | none | Promotion gates are planned for AI-5. |
+| `evaluate_model.py` | supported developer utility | `tests/test_evaluation_harness_job.py` plus API evaluation tests | Writes machine-readable reports and bundles from a registry model and snapshot. |
+| `train_baseline.py` | supported developer utility | `tests/test_train_and_publish_jobs.py` covers shared registry artifact validation | Single split baseline training. Prefer CV for release candidates. |
+| `train_baseline_cv.py` | supported developer utility | `tests/test_train_and_publish_jobs.py` | Reproducible candidate training with held-out test split and CV. |
+| `publish_model.py` | supported developer utility | `tests/test_train_and_publish_jobs.py` | Validates artifact hashes before promotion; AI-5 will add metric gates. |
 | Other feed/review/build scripts under `ai/jobs` | experimental | varies | Treat as draft or network/data-dependent unless this table marks them supported. |
 
 See [AI Model Pipeline](../../docs/ai-model-pipeline.md) before changing model, dataset, training, or evaluation behavior.

@@ -53,12 +53,13 @@ Pop-Location
 
 ### AI sidecar tests
 
-Use Python 3.11 or newer.
+Use Python 3.11. Local development keeps the sidecar virtual environment under
+`Workspace/Project/ai/service/.venv`.
 
 ```powershell
 Push-Location Workspace/Project/ai/service
-python -m pip install -e ".[dev]"
-pytest
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]" -c requirements.lock.txt
+.\.venv\Scripts\python.exe -m pytest
 Pop-Location
 ```
 
@@ -120,8 +121,8 @@ gateway.
 
    ```powershell
    Push-Location Workspace/Project/ai/service
-   python -m pip install -e ".[dev]"
-   uvicorn decision_service.main:app --host 127.0.0.1 --port 8100
+   .\.venv\Scripts\python.exe -m pip install -e ".[dev]" -c requirements.lock.txt
+   .\.venv\Scripts\python.exe -m uvicorn decision_service.main:app --host 127.0.0.1 --port 8100
    Pop-Location
    ```
 

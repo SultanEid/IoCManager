@@ -297,6 +297,13 @@ def _build_runtime(settings: ServiceSettings) -> ServiceRuntime:
         decay_half_life_days=settings.historical_learning_decay_half_life_days,
     )
     active_model_entry = model_registry.get_active()
+    if active_model_entry is not None:
+        try:
+            model_registry.validate_artifacts(active_model_entry)
+        except Exception:
+            warning_code = "model_artifact_validation_failed"
+            startup_warnings.append(warning_code)
+            logger.warning("%s; continuing with registry calibration payload", warning_code)
 
     source_trust_map: dict[str, float] = {}
     active_dataset_entry = dataset_registry.get_latest()

@@ -40,7 +40,7 @@ Enhance the existing IOC Manager AI sidecar into a well-understood, tested, repr
 | AI-1 | Complete - 2026-04-26 | `Workspace/Project/docs/ai-model-pipeline.md`, README links, `.planning/phases/ai-01-pipeline-understanding-baseline/AI-01-EXECUTION.md` |
 | AI-2 | Complete - 2026-04-26 | Runtime guards, atomic registry writes, feedback safety tests, job support labels, `.planning/phases/ai-02-broken-path-stabilization/AI-02-VERIFICATION.md` |
 | AI-3 | Complete - 2026-04-26 | Quality report contract, dataset retention policy, `.planning/phases/ai-03-data-preprocessing-and-provenance/AI-03-VERIFICATION.md` |
-| AI-4 | Pending | Not started |
+| AI-4 | Complete - 2026-04-26 | Reproducible training/publish workflow, artifact hash validation, Python 3.11 lock snapshot, AI-4 tests |
 | AI-5 | Pending | Not started |
 | AI-6 | Pending | Not started |
 | AI-7 | Pending | Not started |

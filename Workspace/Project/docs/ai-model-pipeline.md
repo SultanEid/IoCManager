@@ -231,10 +231,10 @@ is trusted.
 | `Workspace/Project/ai/jobs/inventory_datasets.py` | supported | `tests/test_inventory_datasets_job.py` | Dataset inventory reporting. |
 | `Workspace/Project/ai/jobs/probe_live_ioc_decisions.py` | supported utility | `tests/test_probe_live_ioc_decisions_job.py` | Requires a live backend when run outside tests. |
 | `Workspace/Project/ai/jobs/stage_reliable_source_exports.py` | supported staging utility | `tests/test_stage_reliable_source_exports_job.py` | Real runs stage source exports; tests use temp outputs. |
-| `Workspace/Project/ai/jobs/evaluate_model.py` | experimental | none | Prefer controlled developer use until job smoke coverage exists. |
-| `Workspace/Project/ai/jobs/train_baseline.py` | experimental | none | AI-4 owns reproducible training workflow. |
-| `Workspace/Project/ai/jobs/train_baseline_cv.py` | experimental | none | AI-4 owns reproducible training workflow. |
-| `Workspace/Project/ai/jobs/publish_model.py` | experimental | none | AI-5 owns promotion gates before production use. |
+| `Workspace/Project/ai/jobs/evaluate_model.py` | supported developer utility | API evaluation and report bundle tests | Produces machine-readable reports and bundles from a registry model and snapshot. |
+| `Workspace/Project/ai/jobs/train_baseline.py` | supported developer utility | shared registry artifact validation tests | Single split baseline training. Prefer CV for release candidates. |
+| `Workspace/Project/ai/jobs/train_baseline_cv.py` | supported developer utility | `Workspace/Project/ai/service/tests/test_train_and_publish_jobs.py` | Reproducible candidate training with held-out test split and CV. |
+| `Workspace/Project/ai/jobs/publish_model.py` | supported developer utility | `Workspace/Project/ai/service/tests/test_train_and_publish_jobs.py` | Validates registered artifact hashes before promotion; AI-5 adds metric gates. |
 
 Any other feed, review, or build script under `Workspace/Project/ai/jobs` should
 be treated as experimental unless this table marks it supported. Network fetch

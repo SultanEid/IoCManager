@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
@@ -16,7 +18,7 @@ bootstrap_service_path()
 from decision_service.calibration import train_logistic_calibrator
 from decision_service.dataset_registry import DatasetRegistryStore
 from decision_service.evaluator import evaluate_examples
-from decision_service.registry import ModelRegistryEntry, ModelRegistryStore
+from decision_service.registry import ModelRegistryEntry, ModelRegistryStore, artifact_path_for_registry
 from decision_service.scorer import BaselineScorer, ScorerContext, ScoringThresholds
 from decision_service.snapshots import SnapshotLoader, build_training_examples
 
@@ -121,6 +123,7 @@ def main() -> None:
     }
 
     model_dir = args.artifacts_dir / "models" / model_version
+    artifact_root = args.registry_path.resolve().parent
     model_dir.mkdir(parents=True, exist_ok=True)
     calibration_path = model_dir / "calibration.json"
     thresholds_path = model_dir / "thresholds.json"
@@ -150,28 +153,30 @@ def main() -> None:
         training_window_end_utc=max(example.event_time for example in dev_examples),
         evaluation_window_start_utc=min(example.event_time for example in test_examples),
         evaluation_window_end_utc=max(example.event_time for example in test_examples),
-        metrics={
-            "precision": test_metrics["precision"],
-            "recall": test_metrics["recall"],
-            "pr_auc": test_metrics["pr_auc"],
-            "calibration_error": test_metrics["calibration_error"],
-            "abstain_rate": test_metrics["abstain_rate"],
-            "coverage": test_metrics["coverage"],
-            "validation_sample_size": test_metrics["test_sample_size"],
-            "cv_precision_mean": cv_summary["precision_mean"],
-            "cv_recall_mean": cv_summary["recall_mean"],
-            "cv_calibration_error_mean": cv_summary["calibration_error_mean"],
-        },
+        metrics=_finite_metric_dict(
+            {
+                "precision": test_metrics["precision"],
+                "recall": test_metrics["recall"],
+                "pr_auc": test_metrics["pr_auc"],
+                "calibration_error": test_metrics["calibration_error"],
+                "abstain_rate": test_metrics["abstain_rate"],
+                "coverage": test_metrics["coverage"],
+                "validation_sample_size": test_metrics["test_sample_size"],
+                "cv_precision_mean": cv_summary["precision_mean"],
+                "cv_recall_mean": cv_summary["recall_mean"],
+                "cv_calibration_error_mean": cv_summary["calibration_error_mean"],
+            }
+        ),
         scoring_profile_version="heuristic-v1",
         feature_schema_version="cti-feature-schema-v1",
         thresholds=final_thresholds,
         calibration=final_scorer.calibrator.to_dict(),
         calibration_metadata={"method": "logistic_regression", "library": "scikit-learn", "cv_folds": str(args.folds)},
         artifact_paths={
-            "calibration": str(calibration_path.resolve()),
-            "thresholds": str(thresholds_path.resolve()),
-            "metrics": str(metrics_path.resolve()),
-            "cv_report": str(cv_report_path.resolve()),
+            "calibration": artifact_path_for_registry(calibration_path, artifact_root),
+            "thresholds": artifact_path_for_registry(thresholds_path, artifact_root),
+            "metrics": artifact_path_for_registry(metrics_path, artifact_root),
+            "cv_report": artifact_path_for_registry(cv_report_path, artifact_root),
         },
         artifact_hashes=artifact_hashes,
         dataset_manifest_hash=dataset_manifest_hash,
@@ -248,9 +253,13 @@ def _class_weights(labels: list[int]) -> dict[int, float]:
 
 def _summarize_cv_metrics(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     keys = ["precision", "recall", "pr_auc", "calibration_error", "abstain_rate", "coverage"]
-    summary: dict[str, float] = {}
+    summary: dict[str, Any] = {}
     for key in keys:
-        values = np.array([metric[key] for metric in fold_metrics], dtype=float)
+        values = np.array([float(metric[key]) for metric in fold_metrics if metric.get(key) is not None], dtype=float)
+        if values.size == 0:
+            summary[f"{key}_mean"] = None
+            summary[f"{key}_std"] = None
+            continue
         summary[f"{key}_mean"] = float(values.mean())
         summary[f"{key}_std"] = float(values.std(ddof=0))
     summary["folds"] = float(len(fold_metrics))
@@ -333,6 +342,20 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(8192), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _finite_metric_dict(payload: dict[str, Any]) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    for key, value in payload.items():
+        if value is None:
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(parsed):
+            metrics[key] = parsed
+    return metrics
 
 
 if __name__ == "__main__":
