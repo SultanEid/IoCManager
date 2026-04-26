@@ -1,0 +1,5 @@
+{
+  "recommend": 0.95,
+  "escalate": 0.99,
+  "abstain": 0.75
+}

@@ -1,0 +1,74 @@
+﻿[
+    {
+        "modelVersion":  "v1-unified-supervised-v1-cv5-20260426060214",
+        "targetRecall":  0.9,
+        "horizonHours":  168,
+        "seed":  42,
+        "precision":  1,
+        "recall":  0.99628252788104077,
+        "prAuc":  0.99993216291753717,
+        "calibrationError":  0.0008943957528957531,
+        "abstainRate":  0.4826254826254826,
+        "coverage":  0.51737451737451745
+    },
+    {
+        "modelVersion":  "v1-unified-supervised-v1-cv5-20260426060224",
+        "targetRecall":  0.93,
+        "horizonHours":  24,
+        "seed":  42,
+        "precision":  1,
+        "recall":  0.99628252788104077,
+        "prAuc":  0.99993216291753717,
+        "calibrationError":  0.0008943957528957531,
+        "abstainRate":  0.4826254826254826,
+        "coverage":  0.51737451737451745
+    },
+    {
+        "modelVersion":  "v1-unified-supervised-v1-cv5-20260426060234",
+        "targetRecall":  0.93,
+        "horizonHours":  168,
+        "seed":  42,
+        "precision":  1,
+        "recall":  0.99628252788104077,
+        "prAuc":  0.99993216291753717,
+        "calibrationError":  0.0008943957528957531,
+        "abstainRate":  0.4826254826254826,
+        "coverage":  0.51737451737451745
+    },
+    {
+        "modelVersion":  "v1-unified-supervised-v1-cv5-20260426060145",
+        "targetRecall":  0.85,
+        "horizonHours":  24,
+        "seed":  42,
+        "precision":  1,
+        "recall":  0.99628252788104077,
+        "prAuc":  0.99993216291753717,
+        "calibrationError":  0.0008943957528957531,
+        "abstainRate":  0.4826254826254826,
+        "coverage":  0.51737451737451745
+    },
+    {
+        "modelVersion":  "v1-unified-supervised-v1-cv5-20260426060155",
+        "targetRecall":  0.85,
+        "horizonHours":  168,
+        "seed":  42,
+        "precision":  1,
+        "recall":  0.99628252788104077,
+        "prAuc":  0.99993216291753717,
+        "calibrationError":  0.0008943957528957531,
+        "abstainRate":  0.4826254826254826,
+        "coverage":  0.51737451737451745
+    },
+    {
+        "modelVersion":  "v1-unified-supervised-v1-cv5-20260426060205",
+        "targetRecall":  0.9,
+        "horizonHours":  24,
+        "seed":  42,
+        "precision":  1,
+        "recall":  0.99628252788104077,
+        "prAuc":  0.99993216291753717,
+        "calibrationError":  0.0008943957528957531,
+        "abstainRate":  0.4826254826254826,
+        "coverage":  0.51737451737451745
+    }
+]

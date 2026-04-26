@@ -1,5 +1,19 @@
 {
   "schema_version": 1,
-  "updated_at_utc": "2026-01-01T00:00:00+00:00",
-  "entries": []
+  "updated_at_utc": "2026-04-26T06:03:09.648455Z",
+  "entries": [
+    {
+      "dataset_version": "unified-supervised-v1",
+      "created_at_utc": "2026-04-26T06:01:19.498829Z",
+      "manifest_path": "../../datasets/processed/unified-supervised-v1/manifest.json",
+      "manifest_hash": "84e9e49e0840c6664615c6ad518567038f2ed9d8ec221d530469262bf398cfba",
+      "source_files": {
+        "observables": "observables.csv",
+        "detections": "detections.csv",
+        "outcomes": "outcomes.csv",
+        "source_trust": "source_trust.csv"
+      },
+      "notes": "Unified supervised snapshot built from strict labels, abuse.ch feeds, Majestic benign domains, and explicit app DB dispositions."
+    }
+  ]
 }

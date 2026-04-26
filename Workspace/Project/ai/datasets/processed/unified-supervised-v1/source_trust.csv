@@ -1,0 +1,14 @@
+source_system,trust_score
+db_scan_results,0.62
+edr,0.55
+ids,0.55
+majestic,0.78
+malwarebazaar,0.72
+siem,0.90
+snort,0.71
+suricata,0.71
+threatfox,0.72
+urlhaus,0.72
+vx-underground,0.78
+yara,0.72
+yaraify,0.72
