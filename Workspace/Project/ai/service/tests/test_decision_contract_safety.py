@@ -89,7 +89,7 @@ def test_score_case_response_contract_keeps_required_backend_fields(client) -> N
 def test_ioc_table_attributes_produce_bounded_analyst_insight() -> None:
     diagnostics, grounded = _score_ioc_table_grounded(
         ioc_type="domain",
-        ioc_value="beacon.zombie-lab.test",
+        ioc_value="beacon.zombie-lab.example.zip",
         severity_score=0.95,
         table_confidence=0.95,
         source_trust=0.8,
@@ -104,6 +104,57 @@ def test_ioc_table_attributes_produce_bounded_analyst_insight() -> None:
     assert grounded.safety_diagnostics.auto_remediation_allowed is False
     assert grounded.action_plan.never_auto_executes is True
     assert any("IOC attribute fallback" in reason for reason in grounded.reasons)
+
+
+def test_critical_documentation_ip_is_suspicious_not_likely_malicious() -> None:
+    _, grounded = _score_ioc_table_grounded(
+        ioc_type="ip",
+        ioc_value="203.0.113.10",
+        severity_score=0.95,
+        table_confidence=0.95,
+        source_trust=0.8,
+        source_name="Lab Network Sensors",
+        source_type="api_import",
+    )
+
+    assert grounded.verdict == "suspicious"
+    assert grounded.confidence <= 0.66
+    assert grounded.false_positive_risk >= 0.50
+    assert grounded.safety_diagnostics.weak_evidence is True
+    assert any("Protected lab/test/documentation IOC context" in reason for reason in grounded.reasons)
+
+
+def test_medium_protected_lab_ioc_returns_likely_benign_decision() -> None:
+    _, grounded = _score_ioc_table_grounded(
+        ioc_type="domain",
+        ioc_value="vpn.identity-lab.test",
+        severity_score=0.55,
+        table_confidence=0.84,
+        source_trust=0.72,
+        source_name="Threat Intel Sandbox Corpus",
+        source_type="file_upload",
+    )
+
+    assert grounded.verdict == "likely_benign"
+    assert grounded.action == "monitor"
+    assert grounded.confidence >= 0.60
+    assert grounded.abstain_reason is None
+    assert grounded.false_positive_risk >= 0.50
+    assert grounded.action_plan.never_auto_executes is True
+
+
+def test_analyst_true_positive_can_override_protected_context() -> None:
+    _, grounded = _score_ioc_table_grounded(
+        ioc_type="domain",
+        ioc_value="beacon.zombie-lab.test",
+        severity_score=0.95,
+        table_confidence=0.95,
+        source_trust=0.8,
+        analyst_outcome="true_positive",
+    )
+
+    assert grounded.verdict in {"suspicious", "likely_malicious", "malicious"}
+    assert not any("Protected lab/test/documentation IOC context" in reason for reason in grounded.reasons)
 
 
 def test_ioc_table_low_trust_still_abstains() -> None:
@@ -198,6 +249,9 @@ def _score_ioc_table_grounded(
     severity_score: float,
     table_confidence: float,
     source_trust: float,
+    source_name: str = "ioc_table",
+    source_type: str = "manual_entry",
+    analyst_outcome: str | None = None,
 ):
     now = datetime(2026, 4, 26, 10, 0, tzinfo=timezone.utc)
     scorer = BaselineScorer(
@@ -215,6 +269,8 @@ def _score_ioc_table_grounded(
             "severityScore": severity_score,
             "scannerAgreement": table_confidence,
             "sourceTrust": source_trust,
+            "sourceName": source_name,
+            "sourceType": source_type,
             "tableConfidence": table_confidence,
             "linkedScanResultCount": 0,
         },
@@ -248,5 +304,7 @@ def _score_ioc_table_grounded(
             },
         },
     )
+    if analyst_outcome:
+        request.rule_context["analystOutcome"] = analyst_outcome
     diagnostics = scorer.score_case(request)
     return diagnostics, build_grounded_decision(diagnostics, request)

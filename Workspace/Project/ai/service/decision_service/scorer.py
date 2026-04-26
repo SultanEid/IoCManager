@@ -61,6 +61,7 @@ class FeatureVector:
     activity_signal: float
     benign_context_signal: float
     heuristic_noise_signal: float
+    protected_context_signal: float
 
     @property
     def feature_groups(self) -> dict[str, float]:
@@ -77,6 +78,7 @@ class FeatureVector:
             "activity_signal": self.activity_signal,
             "benign_context_signal": self.benign_context_signal,
             "heuristic_noise_signal": self.heuristic_noise_signal,
+            "protected_context_signal": self.protected_context_signal,
         }
 
 
@@ -136,6 +138,7 @@ class BaselineScorer:
             + 0.05 * features.activity_signal
             - 0.07 * features.benign_context_signal
             - 0.07 * features.heuristic_noise_signal
+            - 0.10 * features.protected_context_signal
         )
         return _clip01(raw)
 
@@ -258,6 +261,7 @@ class BaselineScorer:
             activity_signal=source_aware["activity_signal"],
             benign_context_signal=source_aware["benign_context_signal"],
             heuristic_noise_signal=source_aware["heuristic_noise_signal"],
+            protected_context_signal=source_aware["protected_context_signal"],
         )
 
     def _graph_signal(self, request: ScoreCaseRequest) -> float:
@@ -306,6 +310,7 @@ class BaselineScorer:
             - 0.06 * features.provider_confidence_signal
             - 0.05 * features.enrichment_strength_signal
             + 0.06 * features.heuristic_noise_signal
+            + 0.04 * features.protected_context_signal
         )
         return _clip(float(uncertainty), 0.05, 0.55)
 
@@ -615,6 +620,13 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
     source_name = _read_context_text_optional(request.rule_context, "sourceName", "source_name") or source_system
     source_type = _read_context_text_optional(request.rule_context, "sourceType", "source_type") or "unknown"
     value_profile = _ioc_value_feature_profile(request.ioc_type, request.ioc_value)
+    protected_context = _protected_ioc_context(
+        ioc_type=request.ioc_type,
+        ioc_value=request.ioc_value,
+        source_name=source_name,
+        source_type=source_type,
+        source_system=source_system,
+    )
     legacy_severity = _clip01(
         _read_context_float_optional(
             request.rule_context,
@@ -702,6 +714,11 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
     benign_context = _clip01(float(benign_context or 0.0) + value_profile["benign_context_bonus"])
     heuristic_noise = _clip01(float(heuristic_noise or 0.0) + value_profile["heuristic_noise_bonus"])
     threat_signal = _clip01(float(threat_signal or 0.0) + value_profile["threat_bonus"])
+    protected_signal = protected_context["signal"]
+    if protected_signal > 0.0:
+        benign_context = _clip01(float(benign_context or 0.0) + (0.42 * protected_signal))
+        heuristic_noise = _clip01(float(heuristic_noise or 0.0) + (0.30 * protected_signal))
+        threat_signal = _clip01(float(threat_signal or 0.0) - (0.36 * protected_signal))
 
     source_category = _source_category_signal(source_type=source_type, source_name=source_name, source_system=source_system)
     provider_confidence_signal = _clip01(provider_confidence_signal + source_category["provider_bonus"])
@@ -750,6 +767,7 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
         activity_signal = max(activity_signal, 0.72)
         threat_signal = max(threat_signal, 0.86)
         heuristic_noise = min(heuristic_noise, 0.12)
+        protected_signal = 0.0
     elif historical_outcome in {"false_positive", "benign", "likely_benign", "allowlist", "stale", "revoked"} or analyst_override in {"false_positive", "benign", "allowlist"}:
         provider_confidence_signal = min(provider_confidence_signal, 0.44)
         indicator_strength_signal = min(indicator_strength_signal, 0.50)
@@ -758,6 +776,7 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
         threat_signal = min(threat_signal, 0.18)
         benign_context = max(benign_context, 0.82)
         heuristic_noise = max(heuristic_noise, 0.18)
+        protected_signal = max(0.70, protected_signal)
 
     if source_name in {"internal-clean-baselines", "internal-allowlists"}:
         provider_confidence_signal = min(provider_confidence_signal, 0.28) if provider_confidence_signal else 0.28
@@ -791,6 +810,10 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
         activity_signal = max(activity_signal, 0.14 + (0.16 * table_confidence_signal) + (0.45 * correlation))
         threat_signal = max(threat_signal, 0.24 + (0.46 * legacy_severity) + (0.12 * table_confidence_signal) + (0.35 * correlation))
         heuristic_noise = min(float(heuristic_noise or 0.0), 0.18)
+        if protected_signal > 0.0 and not correlation:
+            threat_signal = min(threat_signal, 0.34 + (0.12 * legacy_severity))
+            benign_context = max(benign_context, 0.58 + (0.24 * protected_signal))
+            heuristic_noise = max(heuristic_noise, 0.28 + (0.22 * protected_signal))
     elif source_name == "sigmahq":
         provider_confidence_signal = max(provider_confidence_signal, 0.86)
         indicator_strength_signal = max(indicator_strength_signal, 0.66)
@@ -857,6 +880,7 @@ def _source_aware_signals(request: ScoreCaseRequest) -> dict[str, float]:
         "activity_signal": activity_signal,
         "benign_context_signal": _clip01(float(benign_context or 0.0)),
         "heuristic_noise_signal": _clip01(float(heuristic_noise or 0.0)),
+        "protected_context_signal": _clip01(float(protected_signal or 0.0)),
     }
 
 
@@ -1126,6 +1150,39 @@ def _source_category_signal(*, source_type: str, source_name: str, source_system
     }
 
 
+def _protected_ioc_context(*, ioc_type: str, ioc_value: str, source_name: str, source_type: str, source_system: str) -> dict[str, float]:
+    normalized_type = str(ioc_type or "").strip().lower().replace("-", "_")
+    value = str(ioc_value or "").strip().lower()
+    source_text = " ".join(
+        item
+        for item in (
+            str(source_name or "").strip().lower(),
+            str(source_type or "").strip().lower().replace("-", "_"),
+            str(source_system or "").strip().lower(),
+        )
+        if item
+    )
+    signal = 0.0
+
+    if _is_documentation_or_private_ip(value):
+        signal = max(signal, 0.95)
+
+    hostname = value
+    if normalized_type in {"url", "uri"} or "://" in value:
+        parsed = urlparse(value.replace("hxxp://", "http://").replace("hxxps://", "https://"))
+        hostname = parsed.hostname or value
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith((".test", ".example", ".invalid")):
+        signal = max(signal, 0.85)
+
+    if normalized_type in {"hash", "hash_md5", "hash_sha1", "hash_sha256"} and _looks_like_placeholder_hash(value):
+        signal = max(signal, 0.80)
+
+    if any(token in source_text for token in ("lab", "sandbox", "simulation", "corpus", "test")):
+        signal = max(signal, 0.70)
+
+    return {"signal": _clip01(signal)}
+
+
 def _ioc_value_feature_profile(ioc_type: str, ioc_value: str) -> dict[str, float]:
     normalized_type = ioc_type.strip().lower().replace("-", "_")
     value = ioc_value.strip().lower()
@@ -1235,14 +1292,28 @@ def _is_documentation_or_private_ip(value: str) -> bool:
         ip = ipaddress.ip_address(value.strip())
     except ValueError:
         return False
+    documentation_networks = (
+        ipaddress.ip_network("192.0.2.0/24"),
+        ipaddress.ip_network("198.51.100.0/24"),
+        ipaddress.ip_network("203.0.113.0/24"),
+    )
     return bool(
-        ip.is_private
+        any(ip in network for network in documentation_networks)
         or ip.is_loopback
         or ip.is_link_local
         or ip.is_multicast
         or ip.is_reserved
-        or value.startswith(("192.0.2.", "198.51.100.", "203.0.113."))
     )
+
+
+def _looks_like_placeholder_hash(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    if not re.fullmatch(r"[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}", normalized):
+        return False
+    if len(set(normalized)) <= 2:
+        return True
+    repeated_chunks = [normalized[index : index + 4] for index in range(0, len(normalized), 4)]
+    return len(set(repeated_chunks)) <= 3
 
 
 def _has_risky_tld(value: str) -> bool:

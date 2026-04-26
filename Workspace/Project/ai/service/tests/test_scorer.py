@@ -526,6 +526,37 @@ def test_ioc_value_features_cover_url_process_ip_and_hash_controls() -> None:
     assert _compute_ioc_suspicion("hash_sha256", "a" * 64) > _compute_ioc_suspicion("hash_sha256", "not-a-real-hash")
 
 
+def test_protected_ioc_context_flags_documentation_lab_test_and_placeholder_values() -> None:
+    fixed_now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
+    scorer = BaselineScorer(
+        context=ScorerContext(model_version="v1", dataset_version="d1"),
+        now_provider=lambda: fixed_now,
+    )
+
+    documentation_ip = scorer.score_case(
+        _ioc_table_request(case_id="doc-ip", now=fixed_now, ioc_type="ip", ioc_value="203.0.113.10")
+    )
+    test_domain = scorer.score_case(
+        _ioc_table_request(case_id="test-domain", now=fixed_now, ioc_type="domain", ioc_value="beacon.zombie-lab.test")
+    )
+    lab_source = scorer.score_case(
+        _ioc_table_request(case_id="lab-source", now=fixed_now, source_name="Lab Zombie VM Simulation")
+    )
+    placeholder_hash = scorer.score_case(
+        _ioc_table_request(case_id="placeholder", now=fixed_now, ioc_type="hash_sha256", ioc_value="a" * 64)
+    )
+    private_ip = scorer.score_case(
+        _ioc_table_request(case_id="private-ip", now=fixed_now, ioc_type="ip", ioc_value="10.10.10.10")
+    )
+
+    assert documentation_ip.feature_groups["protected_context_signal"] >= 0.90
+    assert test_domain.feature_groups["protected_context_signal"] >= 0.80
+    assert lab_source.feature_groups["protected_context_signal"] >= 0.70
+    assert placeholder_hash.feature_groups["protected_context_signal"] >= 0.70
+    assert private_ip.feature_groups["protected_context_signal"] == 0.0
+    assert documentation_ip.feature_groups["benign_context_signal"] > private_ip.feature_groups["benign_context_signal"]
+
+
 def test_table_confidence_source_trust_and_recency_are_monotonic_for_ioc_rows() -> None:
     fixed_now = datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)
     scorer = BaselineScorer(
@@ -604,6 +635,10 @@ def _ioc_table_request(
     *,
     case_id: str,
     now: datetime,
+    ioc_type: str = "domain",
+    ioc_value: str = "login-wallet-update.example.zip",
+    source_name: str = "ioc_table",
+    source_type: str = "manual_entry",
     severity: float = 0.85,
     table_confidence: float = 0.82,
     source_trust: float = 0.75,
@@ -617,7 +652,8 @@ def _ioc_table_request(
         "severityScore": severity,
         "scannerAgreement": table_confidence,
         "sourceTrust": source_trust,
-        "sourceType": "manual_entry",
+        "sourceName": source_name,
+        "sourceType": source_type,
         "tableConfidence": table_confidence,
         "linkedScanResultCount": linked_scan_count,
         "sightingsCount": sightings_count,
@@ -629,8 +665,8 @@ def _ioc_table_request(
         case_id=case_id,
         as_of_time=now - timedelta(hours=last_seen_hours_ago),
         source_system="ioc_manager_ioc_table",
-        ioc_type="domain",
-        ioc_value="login-wallet-update.example.zip",
+        ioc_type=ioc_type,
+        ioc_value=ioc_value,
         host_context={"criticality": 0.5, "assetExposure": target_exposure},
         rule_context=rule_context,
         detection_package={
@@ -641,7 +677,7 @@ def _ioc_table_request(
                 "source_system": "ioc_manager_ioc_table",
             },
             "rule_metadata": {"rule_id": f"ioc-table-{case_id}"},
-            "raw_hit_payload": {"indicator": "login-wallet-update.example.zip"},
+            "raw_hit_payload": {"indicator": ioc_value},
         },
     )
 

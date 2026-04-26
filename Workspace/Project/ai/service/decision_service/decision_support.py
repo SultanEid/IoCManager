@@ -23,7 +23,7 @@ from .evidence_fusion import (
     fuse_evidence,
 )
 from .promotion_suppression_engine import build_promotion_suppression_decision
-from .scorer import BaselineScorer
+from .scorer import BaselineScorer, _protected_ioc_context
 from .snort_decision import SnortDecisionResult, adjudicate_snort
 from .sigma_decision import SigmaDecisionResult, adjudicate_sigma
 from .yara_decision import YaraDecisionResult, adjudicate_yara
@@ -886,6 +886,18 @@ def _ioc_attribute_supported_fallback(
         "scanner_agreement",
         default=confidence,
     )
+    protected = _protected_ioc_decision_policy(
+        score=score,
+        request=request,
+        severity=severity,
+        table_confidence=table_confidence,
+        source_trust=source_trust,
+        confidence=confidence,
+        false_positive_risk=false_positive_risk,
+    )
+    if protected is not None:
+        return protected
+
     indicator_strength = _clip01(float(score.feature_groups.get("indicator_strength_signal", 0.55)))
     attribute_signal = _clip01(
         0.34 * severity
@@ -920,6 +932,97 @@ def _ioc_attribute_supported_fallback(
         "sightings are still required before deployment or automated response."
     )
     return fallback_verdict, fallback_action, fallback_confidence, fallback_false_positive_risk, reason
+
+
+def _protected_ioc_decision_policy(
+    *,
+    score: CaseScoreVectorResponse,
+    request: ScoreCaseRequest,
+    severity: float,
+    table_confidence: float,
+    source_trust: float,
+    confidence: float,
+    false_positive_risk: float,
+) -> tuple[DecisionVerdict, str, float, float, str] | None:
+    if _has_correlated_ioc_evidence(request):
+        return None
+    historical_outcome = _first_text(
+        request.rule_context.get("analystOutcome"),
+        request.rule_context.get("analyst_outcome"),
+        request.rule_context.get("responseOutcome"),
+        request.rule_context.get("response_outcome"),
+        request.rule_context.get("historicalDecision"),
+        request.rule_context.get("historical_decision"),
+    )
+    if historical_outcome and historical_outcome.strip().lower() in {"true_positive", "malicious", "likely_malicious", "containment_success"}:
+        return None
+
+    protected_signal = _clip01(float(score.feature_groups.get("protected_context_signal", 0.0)))
+    if protected_signal <= 0.0:
+        package = request.detection_package if isinstance(request.detection_package, dict) else {}
+        protected_signal = _protected_ioc_context(
+            ioc_type=request.ioc_type,
+            ioc_value=request.ioc_value,
+            source_name=_context_text(request.rule_context, "sourceName", "source_name", default=request.source_system),
+            source_type=_context_text(request.rule_context, "sourceType", "source_type", default="unknown"),
+            source_system=request.source_system,
+        )["signal"]
+        if protected_signal <= 0.0:
+            raw_hit_payload = _coerce_dict(package.get("raw_hit_payload"))
+            indicator = _first_text(raw_hit_payload.get("indicator"), request.ioc_value) or request.ioc_value
+            protected_signal = _protected_ioc_context(
+                ioc_type=request.ioc_type,
+                ioc_value=indicator,
+                source_name=_context_text(request.rule_context, "sourceName", "source_name", default=request.source_system),
+                source_type=_context_text(request.rule_context, "sourceType", "source_type", default="unknown"),
+                source_system=request.source_system,
+            )["signal"]
+    if protected_signal <= 0.0:
+        return None
+
+    severity_label = _severity_label_from_score(severity)
+    if severity_label in {"low", "medium"}:
+        verdict: DecisionVerdict = "likely_benign"
+        action = "monitor"
+        protected_confidence = _clip01(max(confidence, 0.60 + (0.12 * protected_signal) + (0.04 * source_trust)))
+        protected_confidence = min(0.78, protected_confidence)
+        protected_risk = _clip01(max(false_positive_risk, 0.45 + (0.16 * protected_signal)))
+    else:
+        verdict = "suspicious"
+        action = "monitor"
+        protected_confidence = min(0.66, _clip01(max(confidence, 0.55 + (0.08 * table_confidence))))
+        protected_risk = _clip01(max(false_positive_risk, 0.50 + (0.10 * protected_signal)))
+
+    reason = (
+        "Protected lab/test/documentation IOC context adjusted the attribute-only verdict "
+        f"for {severity_label} severity; scan or analyst evidence is required before stronger malicious classification."
+    )
+    return verdict, action, protected_confidence, protected_risk, reason
+
+
+def _has_correlated_ioc_evidence(request: ScoreCaseRequest) -> bool:
+    linked_scan_count = _context_float(
+        request.rule_context,
+        "linkedScanResultCount",
+        "linked_scan_result_count",
+        "linkedScanCount",
+        "linked_scan_count",
+        default=0.0,
+    )
+    sightings_count = _context_float(request.rule_context, "sightingsCount", "sightings_count", default=0.0)
+    scan_available = request.rule_context.get("scanEvidenceAvailable", request.rule_context.get("scan_evidence_available"))
+    return bool(linked_scan_count > 0.0 or sightings_count > 0.0 or scan_available is True)
+
+
+def _severity_label_from_score(severity: float) -> str:
+    severity = _clip01(severity)
+    if severity >= 0.85:
+        return "critical"
+    if severity >= 0.70:
+        return "high"
+    if severity >= 0.35:
+        return "medium"
+    return "low"
 
 
 def _is_ioc_attribute_decision_context(request: ScoreCaseRequest) -> bool:
@@ -976,7 +1079,7 @@ def _apply_safety_rails(
     force_abstain = False
     attribute_fallback_verdict = (
         safety_inputs.attribute_only_ioc_decision
-        and final_verdict in {"suspicious", "likely_malicious"}
+        and final_verdict in {"likely_benign", "suspicious", "likely_malicious"}
     )
     if safety_inputs.missing_critical_fields:
         force_abstain = True
@@ -1993,6 +2096,14 @@ def _context_float(context: dict[str, object], *keys: str, default: float) -> fl
         except (TypeError, ValueError):
             continue
     return _clip01(default)
+
+
+def _context_text(context: dict[str, object], *keys: str, default: str) -> str:
+    for key in keys:
+        value = context.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    return default.strip().lower()
 
 
 def _coerce_dict(value: object) -> dict[str, object]:
