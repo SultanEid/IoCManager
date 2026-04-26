@@ -9,6 +9,9 @@ Current scope:
 - snapshot exports for the offline evaluation stack
 - scored decision-row exports via `ai/jobs/export_scored_decision_rows.py`
 
+Model pipeline reference:
+- `Workspace/Project/docs/ai-model-pipeline.md`
+
 Phase 1 supported external feeds:
 - `malwarebazaar`
 - `yaraify`
@@ -32,3 +35,17 @@ Training row schema reference:
 
 Reliable-source staging job:
 - `ai/jobs/stage_reliable_source_exports.py`
+
+## Current Processed Snapshot Contract
+
+Processed snapshots used by the sidecar and training jobs should contain:
+
+- `manifest.json`
+- `observables.csv`
+- `detections.csv`
+- `outcomes.csv`
+- `source_trust.csv`
+
+`ai/service/decision_service/snapshots.py` loads these files and converts them into training examples for evaluation and calibration.
+
+The current active dataset version is `unified-supervised-v1`.

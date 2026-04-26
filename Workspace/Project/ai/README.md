@@ -7,12 +7,14 @@ Primary policy set:
 - [Verdict Taxonomy](../docs/verdict-taxonomy.md)
 - [Action Plan Policy](../docs/action-plan-policy.md)
 - [Dataset Sources](../docs/dataset-sources.md)
+- [AI Model Pipeline](../docs/ai-model-pipeline.md)
 - [Labeling Guidelines Prompt](prompts/labeling-guidelines.md)
 
 Purpose:
 - Keep decision decisions grounded and auditable.
 - Preserve explicit abstain pathways when evidence is insufficient.
 - Ensure verdict/action language aligns with the sidecar contracts.
+- Keep the current model, data, training, inference, and artifact flow explicit before changing scoring behavior.
 
 Notes:
 - This repository is an IoC Manager, not a CTI platform.
@@ -20,16 +22,15 @@ Notes:
 - On Windows runtimes, hook execution may be skipped; policy files remain authoritative.
 
 
-## Scaffold Layout (v0)
-<!-- scaffold:ai-v0-layout -->
+## Active AI Project Layout
 
-This Phase 0 scaffold adds safe placeholders only.
+- `service/` contains the FastAPI sidecar package, runtime scorer, model/dataset registries, artifacts, and pytest suite.
+- `jobs/` contains offline dataset, evaluation, training, publishing, and probing scripts.
+- `datasets/` contains source manifests, raw staged inputs, processed snapshots, splits, and evaluation outputs.
+- `fixtures/` contains local sample inputs for YARA, Sigma, Snort, behavior reports, and labels.
+- `schemas/` contains JSON schema contracts for packages, labels, datasets, and evaluation reports.
+- `prompts/` contains labeling guidance used for human-governed dataset work.
 
-- `ai/schemas/` for schema stubs
-- `ai/fixtures/` for local sample inputs (`yara`, `sigma`, `snort`, `behavior`, `labels`)
-- `ai/datasets/` for `manifests`, `raw`, `processed`, and `splits`
-- `ai/scripts/`, `ai/tests/`, `ai/notebooks/` as starter work areas
-
-No model architecture or training expansion is introduced in this phase.
+The current model pipeline is documented in [AI Model Pipeline](../docs/ai-model-pipeline.md).
 
 

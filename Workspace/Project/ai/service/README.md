@@ -27,6 +27,26 @@ Subsystem documentation lives under `docs`:
 - [Verdict Taxonomy](../../docs/verdict-taxonomy.md)
 - [Action Plan Policy](../../docs/action-plan-policy.md)
 - [Dataset Sources](../../docs/dataset-sources.md)
+- [AI Model Pipeline](../../docs/ai-model-pipeline.md)
+
+## Current Model Pipeline
+The sidecar currently uses a deterministic `BaselineScorer`, not a neural network model. Feature extraction lives in `decision_service/scorer.py`; calibration and thresholds are loaded from `artifacts/model_registry.json`; dataset metadata is loaded from `artifacts/dataset_registry.json`; processed snapshots live under `../datasets/processed`.
+
+The active model registry entry points to model version `v1-unified-supervised-v1-cv5-20260426060214` and dataset version `unified-supervised-v1`.
+
+High-level inference flow:
+1. FastAPI receives a request in `decision_service/api.py`.
+2. Pydantic contracts in `decision_service/contracts.py` validate payloads.
+3. Historical-learning context is merged when available.
+4. `BaselineScorer.score_case()` computes feature scores and calibrated decision signals.
+5. `decision_service/decision_support.py` builds a grounded, manual-only operator decision.
+
+High-level training flow:
+1. Raw and fixture inputs are staged under `../datasets/raw` and `../fixtures`.
+2. Dataset jobs normalize records into processed snapshots under `../datasets/processed/<dataset-version>`.
+3. `decision_service/snapshots.py` loads snapshots and builds training examples.
+4. `../jobs/train_baseline_cv.py` fits calibration and thresholds.
+5. Model artifacts are written under `artifacts/models/<model-version>` and registered in `artifacts/model_registry.json`.
 
 ## Active Endpoints
 - `POST /extract_report`
@@ -94,5 +114,8 @@ Offline jobs live under `ai/jobs`:
 - `evaluate_model.py`
 - `run_evaluation_harness.py`
 - `train_baseline.py`
+- `train_baseline_cv.py`
 - `publish_model.py`
+
+See [AI Model Pipeline](../../docs/ai-model-pipeline.md) before changing model, dataset, training, or evaluation behavior.
 
