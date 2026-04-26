@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ioc-manager.local/schemas/label-review-artifact.schema.json",
+  "title": "Label Review Artifact Reference",
+  "description": "Schema for label-review artifacts linked from processed dataset manifests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "path",
+    "schema",
+    "hash"
+  ],
+  "properties": {
+    "artifactType": {
+      "type": "string",
+      "enum": [
+        "strict_label_review",
+        "analyst_closure_review",
+        "action_plan_review"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

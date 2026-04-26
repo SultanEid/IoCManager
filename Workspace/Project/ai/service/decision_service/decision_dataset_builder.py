@@ -244,6 +244,7 @@ def build_decision_dataset(config: DatasetBuildConfig) -> dict[str, Any]:
         normalized_rows=normalized_rows,
         manifests=manifests,
         skipped_items=skipped_items,
+        task_reports=task_reports,
     )
     quality_report_path = dataset_root / "quality_report.json"
     quality_report_path.write_text(json.dumps(quality_report, indent=2), encoding="utf-8")
@@ -253,6 +254,7 @@ def build_decision_dataset(config: DatasetBuildConfig) -> dict[str, Any]:
         "datasetVersion": config.dataset_version,
         "createdAtUtc": _utc_now_iso(),
         "files": snapshot_files,
+        "labelReviewArtifacts": [],
     }
     snapshot_manifest_path = dataset_root / "manifest.json"
     snapshot_manifest_path.write_text(json.dumps(snapshot_manifest, indent=2), encoding="utf-8")
@@ -1835,6 +1837,7 @@ def _build_dataset_quality_report(
     normalized_rows: list[dict[str, Any]],
     manifests: list[dict[str, Any]],
     skipped_items: list[dict[str, Any]],
+    task_reports: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     source_counts: dict[str, int] = {}
     family_counts: dict[str, int] = {}
@@ -1913,6 +1916,17 @@ def _build_dataset_quality_report(
         rejection_reasons.append("partial_row_rate_above_threshold")
     if parser_error_sources:
         rejection_reasons.append("repeated_high_severity_parser_diagnostics")
+    source_distribution = row_counts_by_manifest
+    label_distribution = dict(sorted(verdict_counts.items()))
+    provenance_coverage = {
+        "completeRows": provenance_complete,
+        "totalRows": row_count,
+        "completeRowsRatio": _ratio(provenance_complete, row_count),
+    }
+    split_leakage_assertions = {
+        task: report.get("leakageAssertions", {})
+        for task, report in sorted((task_reports or {}).items())
+    }
 
     return {
         "generatedAtUtc": _utc_now_iso(),
@@ -1921,16 +1935,21 @@ def _build_dataset_quality_report(
             "bySource": row_counts_by_manifest,
             "byRuleFamily": dict(sorted(family_counts.items())),
         },
+        "sourceDistribution": source_distribution,
+        "labelDistribution": label_distribution,
         "partialRowRate": _ratio(partial_rows, row_count),
         "missingCriticalFieldCounts": dict(sorted(missing_field_counts.items())),
         "verdictDistribution": dict(sorted(verdict_counts.items())),
         "familyDistribution": dict(sorted(family_counts.items())),
         "provenanceCompletenessRate": _ratio(provenance_complete, row_count),
+        "provenanceCoverage": provenance_coverage,
+        "splitLeakageAssertions": split_leakage_assertions,
         "duplicatePressureBySource": duplicate_pressure,
         "parserDiagnostics": {
             "bySource": parser_diagnostics_by_source,
             "skippedItems": skipped_items,
         },
+        "rejectionReasons": rejection_reasons,
         "activeUseEligibility": {
             "passed": len(rejection_reasons) == 0,
             "reasons": rejection_reasons,
