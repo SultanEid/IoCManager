@@ -48,26 +48,24 @@ High-level training flow:
 4. `../jobs/train_baseline_cv.py` fits calibration and thresholds.
 5. Model artifacts are written under `artifacts/models/<model-version>` and registered in `artifacts/model_registry.json`.
 
-## Active Endpoints
-- `POST /extract_report`
-- `POST /ingest_report` as an alias for `POST /extract_report`
+## Endpoint Support Status
 
-## Decision And Evaluation Endpoints
-These endpoints support decision, explanation, feedback, and offline evaluation flows:
-
-- `POST /score_case`
-- `POST /score_batch`
-- `POST /recommend_action`
-- `POST /request_more_evidence`
-- `POST /feedback`
-- `POST /historical_learning/query`
-- `POST /evaluate_model`
-
-Compatibility or legacy-support endpoints remain available where still required by the merged app:
-
-- `POST /graph_neighbors`
-- `POST /graph/link_candidates`
-- `POST /explain_case`
+| Route | Status | Production notes |
+|-------|--------|------------------|
+| `GET /health` | active | Exposes model/dataset metadata and sanitized runtime warning codes. |
+| `POST /extract_report` | active | Preferred report extraction route. |
+| `POST /ingest_report` | compatibility alias | Alias for `POST /extract_report`. |
+| `POST /scan_analyst` | active | Bounded scan-plan recommendation route. |
+| `POST /historical_learning/query` | active | Historical-learning lookup route. |
+| `POST /score_case` | deprecated compatibility | Kept for merged-app compatibility while preferred backend contracts settle. |
+| `POST /score_batch` | deprecated compatibility | Request body and item count are bounded by configuration. |
+| `POST /recommend_action` | deprecated compatibility | Kept for existing clients; decisions remain manual-only. |
+| `POST /request_more_evidence` | deprecated compatibility | Kept for existing clients. |
+| `POST /feedback` | deprecated compatibility | Appends local JSONL feedback; see persistence notes below. |
+| `POST /evaluate_model` | development-only gated | Enabled by default only for development/local/test settings; production-like settings require explicit opt-in. |
+| `POST /graph_neighbors` | deprecated compatibility | Legacy graph candidate scoring. |
+| `POST /graph/link_candidates` | deprecated compatibility | Alias for legacy graph candidate scoring. |
+| `POST /explain_case` | deprecated compatibility | Legacy explanation route. |
 
 ## Safety Model
 - runtime decisions may abstain
@@ -94,12 +92,24 @@ Action-policy matrix configuration:
 
 - `CTI_SIDECAR_ACTION_POLICY_MATRIX_PATH` with default `ai/service/artifacts/action_policy_matrix.v1.json`
 
+Runtime guard configuration:
+
+- `IOC_MANAGER_AI_MAX_SCORE_BATCH_ITEMS` or `CTI_SIDECAR_MAX_SCORE_BATCH_ITEMS` bounds `/score_batch` item count.
+- `IOC_MANAGER_AI_MAX_EXPENSIVE_REQUEST_BODY_BYTES` or `CTI_SIDECAR_MAX_EXPENSIVE_REQUEST_BODY_BYTES` bounds expensive JSON request bodies.
+- `IOC_MANAGER_AI_ENABLE_HTTP_MODEL_EVALUATION` or `CTI_SIDECAR_ENABLE_HTTP_MODEL_EVALUATION` controls `/evaluate_model`. Development, local, and test environments default to enabled; production-like environments default to disabled.
+
 Optional phrasing assist remains bounded by deterministic outputs:
 
 - `CTI_ENABLE_LLM_ASSIST`
 - `CTI_LLM_ASSIST_PROVIDER`
 - `CTI_LLM_ASSIST_MODEL`
 - `CTI_LLM_ASSIST_TIMEOUT_MS`
+
+## Local Persistence Notes
+
+- Model and dataset registries are full JSON documents and are saved through same-directory temporary files plus atomic replace.
+- Feedback events are append-only JSONL records. The local store serializes writes within one process and keeps every line as standalone JSON.
+- The JSONL feedback store does not provide cross-process locking; use a durable external store before running multiple sidecar processes against the same feedback file.
 
 ## Run
 ```bash
@@ -110,12 +120,19 @@ uvicorn decision_service.main:app --host 0.0.0.0 --port 8100
 ## Offline Jobs
 Offline jobs live under `ai/jobs`:
 
-- `build_decision_dataset.py`
-- `evaluate_model.py`
-- `run_evaluation_harness.py`
-- `train_baseline.py`
-- `train_baseline_cv.py`
-- `publish_model.py`
+| Job | Status | Smoke coverage | Notes |
+|-----|--------|----------------|-------|
+| `build_decision_dataset.py` | supported | `tests/test_build_decision_dataset_job.py` | Fixture-sized dataset build into temp directories. |
+| `run_evaluation_harness.py` | supported | `tests/test_evaluation_harness_job.py` | JSONL and action-plan report smoke coverage. |
+| `export_scored_decision_rows.py` | supported | `tests/test_export_scored_decision_rows_job.py` | Exports scored rows for evaluation harness input. |
+| `inventory_datasets.py` | supported | `tests/test_inventory_datasets_job.py` | Dataset inventory reporting. |
+| `probe_live_ioc_decisions.py` | supported utility | `tests/test_probe_live_ioc_decisions_job.py` | Requires a live backend when run outside tests. |
+| `stage_reliable_source_exports.py` | supported staging utility | `tests/test_stage_reliable_source_exports_job.py` | Uses temp outputs in tests; real runs stage source exports. |
+| `evaluate_model.py` | experimental | none | Use from a controlled developer shell until job-level smoke coverage is added. |
+| `train_baseline.py` | experimental | none | Reproducible training workflow is planned for AI-4. |
+| `train_baseline_cv.py` | experimental | none | Reproducible training workflow is planned for AI-4. |
+| `publish_model.py` | experimental | none | Promotion gates are planned for AI-5. |
+| Other feed/review/build scripts under `ai/jobs` | experimental | varies | Treat as draft or network/data-dependent unless this table marks them supported. |
 
 See [AI Model Pipeline](../../docs/ai-model-pipeline.md) before changing model, dataset, training, or evaluation behavior.
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,6 +11,28 @@ from pydantic import BaseModel, ConfigDict, Field
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 class DatasetRegistryModel(BaseModel):
@@ -45,9 +69,8 @@ class DatasetRegistryStore:
         return DatasetRegistryDocument.model_validate(payload)
 
     def save(self, document: DatasetRegistryDocument) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         updated = document.model_copy(update={"updated_at_utc": _utcnow()})
-        self._path.write_text(updated.model_dump_json(indent=2), encoding="utf-8")
+        _atomic_write_text(self._path, updated.model_dump_json(indent=2))
 
     def upsert(self, entry: DatasetRegistryEntry) -> DatasetRegistryDocument:
         document = self.load()

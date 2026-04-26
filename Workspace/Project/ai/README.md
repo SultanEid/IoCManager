@@ -25,7 +25,7 @@ Notes:
 ## Active AI Project Layout
 
 - `service/` contains the FastAPI sidecar package, runtime scorer, model/dataset registries, artifacts, and pytest suite.
-- `jobs/` contains offline dataset, evaluation, training, publishing, and probing scripts.
+- `jobs/` contains offline dataset, evaluation, training, publishing, and probing scripts. Treat scripts as experimental unless the sidecar README marks them supported and smoke-tested.
 - `datasets/` contains source manifests, raw staged inputs, processed snapshots, splits, and evaluation outputs.
 - `fixtures/` contains local sample inputs for YARA, Sigma, Snort, behavior reports, and labels.
 - `schemas/` contains JSON schema contracts for packages, labels, datasets, and evaluation reports.

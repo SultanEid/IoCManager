@@ -75,9 +75,10 @@ Pop-Location
 
 ### Batch Score
 
-`POST /score_batch` validates and scores each item independently. This endpoint
-is currently a weak point because it needs explicit item-count, payload-size,
-timeout, and memory-safety limits before production use.
+`POST /score_batch` validates and scores each item independently. The endpoint
+is deprecated compatibility surface and now has config-backed item-count and
+request-body limits. Timeout and broader deployment memory controls remain part
+of deployment readiness work.
 
 ### Report Extraction
 
@@ -105,17 +106,20 @@ and context features are built by
 | `POST /scan_analyst` | active | bounded scan-plan recommendation |
 | `POST /historical_learning/query` | active | historical-learning lookup |
 | `POST /score_case` | deprecated | score one case |
-| `POST /score_batch` | deprecated | score multiple cases |
+| `POST /score_batch` | deprecated, bounded | score multiple cases with item-count and request-size limits |
 | `POST /recommend_action` | deprecated | grounded action recommendation |
 | `POST /request_more_evidence` | deprecated | evidence request recommendation |
 | `POST /feedback` | deprecated | append feedback event |
-| `POST /evaluate_model` | deprecated | evaluate a model from the sidecar process |
+| `POST /evaluate_model` | development-only gated | evaluate a model from the sidecar process when explicitly enabled |
 | `POST /graph_neighbors` | deprecated | compatibility graph candidate scoring |
 | `POST /graph/link_candidates` | deprecated | compatibility graph candidate scoring |
 | `POST /explain_case` | deprecated | compatibility explanation endpoint |
 
-Deprecated endpoints may still be required by merged-app compatibility paths,
-but they need explicit production restrictions in later phases.
+Deprecated endpoints may still be required by merged-app compatibility paths.
+`/score_batch` is bounded by runtime configuration. `/evaluate_model` defaults
+to enabled only in development/local/test environments and should stay disabled
+in production-like settings unless a controlled operator workflow explicitly
+opts in.
 
 ## Data Pipeline
 
@@ -217,6 +221,26 @@ is trusted.
 | `Workspace/Project/ai/service/decision_service/eval_framework.py` | generic offline evaluation framework |
 | `Workspace/Project/ai/service/decision_service/action_plan_evaluator.py` | action-plan quality and safety metrics |
 
+## Job Support Status
+
+| Job | Status | Smoke coverage | Notes |
+|-----|--------|----------------|-------|
+| `Workspace/Project/ai/jobs/build_decision_dataset.py` | supported | `tests/test_build_decision_dataset_job.py` | Fixture-sized dataset build into temp directories. |
+| `Workspace/Project/ai/jobs/run_evaluation_harness.py` | supported | `tests/test_evaluation_harness_job.py` | JSONL and action-plan report smoke coverage. |
+| `Workspace/Project/ai/jobs/export_scored_decision_rows.py` | supported | `tests/test_export_scored_decision_rows_job.py` | Evaluation row export. |
+| `Workspace/Project/ai/jobs/inventory_datasets.py` | supported | `tests/test_inventory_datasets_job.py` | Dataset inventory reporting. |
+| `Workspace/Project/ai/jobs/probe_live_ioc_decisions.py` | supported utility | `tests/test_probe_live_ioc_decisions_job.py` | Requires a live backend when run outside tests. |
+| `Workspace/Project/ai/jobs/stage_reliable_source_exports.py` | supported staging utility | `tests/test_stage_reliable_source_exports_job.py` | Real runs stage source exports; tests use temp outputs. |
+| `Workspace/Project/ai/jobs/evaluate_model.py` | experimental | none | Prefer controlled developer use until job smoke coverage exists. |
+| `Workspace/Project/ai/jobs/train_baseline.py` | experimental | none | AI-4 owns reproducible training workflow. |
+| `Workspace/Project/ai/jobs/train_baseline_cv.py` | experimental | none | AI-4 owns reproducible training workflow. |
+| `Workspace/Project/ai/jobs/publish_model.py` | experimental | none | AI-5 owns promotion gates before production use. |
+
+Any other feed, review, or build script under `Workspace/Project/ai/jobs` should
+be treated as experimental unless this table marks it supported. Network fetch
+jobs and newly drafted job scripts are excluded from required validation gates
+until they have fixture-sized smoke coverage.
+
 The active model reports very high precision, recall, and PR-AUC on the current
 held-out data. Treat this as a signal to audit leakage, source overlap, label
 policy, and time-window separation before production reliance.
@@ -225,13 +249,13 @@ policy, and time-window separation before production reliance.
 
 | Risk | Current evidence | Later roadmap phase |
 |------|------------------|---------------------|
-| Unbounded batch/evaluation routes | `/score_batch` and `/evaluate_model` run in-process without explicit production limits | AI-2, AI-8 |
+| Deployment-grade route controls | `/score_batch` has config limits and `/evaluate_model` is gated, but timeout/auth/process controls remain | AI-8 |
 | No sidecar service authentication in app routes | `api.py` exposes routes without an app-level service auth dependency | AI-2, AI-8 |
 | Unlocked dependencies | `pyproject.toml` uses lower bounds instead of a lock/constraints workflow | AI-4 |
 | Non-portable registry paths | model and dataset registries contain local absolute paths | AI-4 |
 | Large parser/data modules | `source_adapters.py` and `decision_dataset_builder.py` are high-change-risk modules | AI-3, AI-6 |
 | Evaluation promotion not enforced | evaluation exists, but model promotion gates need stronger checks | AI-5 |
-| Filesystem concurrency | registry and feedback storage are filesystem-backed | AI-2, AI-8 |
+| Filesystem concurrency | registry saves use atomic replace; JSONL feedback is only locked within one process | AI-8 |
 | Deployment packaging missing | no dedicated sidecar deployment package was identified | AI-8 |
 
 ## Fast Validation
@@ -250,4 +274,3 @@ Run the repository boundary check from the repository root:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File Workspace/Project/scripts/check-repository-boundaries.ps1
 ```
-

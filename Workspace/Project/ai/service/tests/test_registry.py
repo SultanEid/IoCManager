@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from decision_service.registry import ModelRegistryEntry, ModelRegistryStore
+import pytest
+
+import decision_service.registry as registry_module
+from decision_service.registry import ModelRegistryDocument, ModelRegistryEntry, ModelRegistryStore
 
 
 def test_registry_roundtrip(tmp_path: Path) -> None:
@@ -58,4 +61,30 @@ def test_registry_promote_archives_previous_active(tmp_path: Path) -> None:
     statuses = {entry.model_version: entry.status for entry in doc.entries}
     assert statuses["v1-new"] == "active"
     assert statuses["v1-old"] == "archived"
+
+
+def test_registry_save_failure_preserves_previous_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "registry.json"
+    store = ModelRegistryStore(path)
+    now = datetime.now(timezone.utc)
+    entry = ModelRegistryEntry(
+        model_id="cti-v1",
+        model_version="v1-a",
+        dataset_version="d-1",
+        status="active",
+        created_at_utc=now,
+    )
+    store.upsert(entry)
+    baseline = path.read_text(encoding="utf-8")
+
+    def failing_atomic_write(path: Path, content: str) -> None:
+        raise OSError("simulated atomic replace failure")
+
+    monkeypatch.setattr(registry_module, "_atomic_write_text", failing_atomic_write)
+
+    with pytest.raises(OSError):
+        store.save(ModelRegistryDocument(updated_at_utc=now, entries=[]))
+
+    assert path.read_text(encoding="utf-8") == baseline
+    assert store.get_by_version("v1-a") is not None
 

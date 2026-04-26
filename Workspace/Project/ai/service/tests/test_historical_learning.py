@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 
 from decision_service.contracts import SubmitFeedbackRequest
 from decision_service.feedback_store import HistoricalLearningStore
@@ -350,4 +352,48 @@ def test_historical_learning_similarity_order_is_deterministic_on_ties() -> None
         detection_package={"rule_family": "sigma", "rule_metadata": {"rule_id": "SIG-TIE"}},
     )
     assert [item.detection_id for item in first.similar_detections] == [item.detection_id for item in second.similar_detections]
+
+
+def test_feedback_store_appends_valid_json_lines_within_process() -> None:
+    store = _new_store("feedback_store_valid_json_lines")
+
+    for index in range(5):
+        store.append(
+            _feedback_payload(
+                case_id=f"case-json-{index}",
+                ioc_value="json-lines.example",
+                eventType="final_closure",
+                isFinal=True,
+                closureLabel="confirmed_malicious",
+                occurredAtUtc="2026-04-18T10:00:00Z",
+            )
+        )
+
+    lines = store.path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 5
+    assert all(json.loads(line)["iocValue"] == "json-lines.example" for line in lines)
+
+
+def test_feedback_store_concurrent_appends_produce_complete_lines() -> None:
+    store = _new_store("feedback_store_concurrent_appends")
+
+    def append_feedback(index: int) -> None:
+        store.append(
+            _feedback_payload(
+                case_id=f"case-concurrent-{index}",
+                ioc_value="concurrent-lines.example",
+                eventType="final_closure",
+                isFinal=True,
+                closureLabel="confirmed_malicious",
+                occurredAtUtc="2026-04-18T10:00:00Z",
+            )
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(append_feedback, range(20)))
+
+    lines = store.path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 20
+    case_ids = {json.loads(line)["caseId"] for line in lines}
+    assert case_ids == {f"case-concurrent-{index}" for index in range(20)}
 

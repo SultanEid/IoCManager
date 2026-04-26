@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from .calibration import LogisticCalibrator
@@ -47,6 +49,9 @@ from .scan_analyst import recommend_scan_plan
 from .scorer import BaselineScorer, ScorerContext, ScoringThresholds
 from .snapshots import SnapshotDataset, SnapshotLoader
 
+logger = logging.getLogger(__name__)
+EXPENSIVE_BODY_LIMIT_PATHS = {"/score_batch"}
+
 
 @dataclass
 class ServiceRuntime:
@@ -59,6 +64,7 @@ class ServiceRuntime:
     scorer: BaselineScorer
     active_model_entry: ModelRegistryEntry | None
     active_dataset_entry: DatasetRegistryEntry | None
+    startup_warnings: list[str]
 
 
 def create_app(settings: ServiceSettings | None = None) -> FastAPI:
@@ -74,6 +80,25 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
         ),
     )
 
+    @app.middleware("http")
+    async def enforce_expensive_request_body_limit(request: Request, call_next):
+        if request.method in {"POST", "PUT", "PATCH"} and request.url.path in EXPENSIVE_BODY_LIMIT_PATHS:
+            content_length = request.headers.get("content-length")
+            if content_length:
+                try:
+                    body_size = int(content_length)
+                except ValueError:
+                    body_size = None
+                if body_size is not None and body_size > runtime.settings.max_expensive_request_body_bytes:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": "Request body exceeds configured size limit.",
+                            "limitBytes": runtime.settings.max_expensive_request_body_bytes,
+                        },
+                    )
+        return await call_next(request)
+
     @app.get("/health")
     def health() -> dict[str, object]:
         return {
@@ -85,6 +110,7 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
             "scoringProfileVersion": runtime.scorer.scoring_profile_version,
             "featureSchemaVersion": runtime.scorer.feature_schema_version,
             "datasetManifestHash": runtime.active_dataset_entry.manifest_hash if runtime.active_dataset_entry else None,
+            "runtimeWarnings": runtime.startup_warnings,
         }
 
     @app.post("/score_case", response_model=CaseScoreVectorResponse, deprecated=True)
@@ -129,6 +155,14 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
 
     @app.post("/score_batch", response_model=ScoreBatchResponse, deprecated=True)
     def score_batch(request: ScoreBatchRequest) -> ScoreBatchResponse:
+        if len(request.items) > runtime.settings.max_score_batch_items:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "message": "Batch item count exceeds configured limit.",
+                    "limit": runtime.settings.max_score_batch_items,
+                },
+            )
         item_results = []
         succeeded = 0
         failed = 0
@@ -212,6 +246,8 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
 
     @app.post("/evaluate_model", response_model=EvaluateModelResponse, deprecated=True)
     def evaluate_model_endpoint(request: EvaluateModelRequest) -> EvaluateModelResponse:
+        if not runtime.settings.enable_http_model_evaluation:
+            raise HTTPException(status_code=403, detail="Model evaluation endpoint is disabled for this environment.")
         entry = _resolve_model_registry_entry(runtime, request.model_version)
         dataset_version = request.dataset_version or (entry.dataset_version if entry else runtime.scorer.dataset_version)
         if not dataset_version:
@@ -249,6 +285,7 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
 
 def _build_runtime(settings: ServiceSettings) -> ServiceRuntime:
     settings.artifacts_root.mkdir(parents=True, exist_ok=True)
+    startup_warnings: list[str] = []
     snapshot_loader = SnapshotLoader(settings.snapshot_root)
     model_registry = ModelRegistryStore(settings.registry_path)
     dataset_registry = DatasetRegistryStore(settings.dataset_registry_path)
@@ -275,6 +312,9 @@ def _build_runtime(settings: ServiceSettings) -> ServiceRuntime:
             source_trust_map = snapshot.source_trust_map
             active_dataset_entry = _persist_dataset_entry(dataset_registry, snapshot)
         except Exception:
+            warning_code = "dataset_snapshot_load_failed"
+            startup_warnings.append(warning_code)
+            logger.warning("%s; continuing with empty source trust map", warning_code)
             source_trust_map = {}
 
     scorer = _build_scorer(
@@ -293,6 +333,7 @@ def _build_runtime(settings: ServiceSettings) -> ServiceRuntime:
         scorer=scorer,
         active_model_entry=active_model_entry,
         active_dataset_entry=active_dataset_entry,
+        startup_warnings=startup_warnings,
     )
 
 

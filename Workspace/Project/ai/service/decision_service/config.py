@@ -38,6 +38,9 @@ class ServiceSettings:
     historical_learning_default_top_k: int = 10
     historical_learning_default_lookback_days: int = 90
     historical_learning_decay_half_life_days: float = 45.0
+    max_score_batch_items: int = 100
+    max_expensive_request_body_bytes: int = 1_048_576
+    enable_http_model_evaluation: bool = True
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_planner_model: str = "gpt-5.4-mini"
@@ -50,6 +53,32 @@ def _env_value(*names: str, default: str | None = None) -> str | None:
         if value is not None and value.strip():
             return value.strip()
     return default
+
+
+def _env_int(*names: str, default: int) -> int:
+    value = _env_value(*names, default=str(default))
+    try:
+        return int(value or default)
+    except ValueError as exc:
+        joined = ", ".join(names)
+        raise ValueError(f"Invalid integer environment value for one of: {joined}") from exc
+
+
+def _env_bool(*names: str, default: bool) -> bool:
+    value = _env_value(*names)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    joined = ", ".join(names)
+    raise ValueError(f"Invalid boolean environment value for one of: {joined}")
+
+
+def _default_http_model_evaluation_enabled(environment: str) -> bool:
+    return environment.strip().lower() in {"development", "dev", "local", "test"}
 
 
 def load_settings() -> ServiceSettings:
@@ -98,11 +127,12 @@ def load_settings() -> ServiceSettings:
         )
     )
     default_dataset_version = _env_value("IOC_MANAGER_AI_DATASET_VERSION", "CTI_SIDECAR_DATASET_VERSION") or None
-    historical_learning_default_top_k = int(
-        _env_value("IOC_MANAGER_AI_HISTORICAL_DEFAULT_TOP_K", "CTI_SIDECAR_HISTORICAL_DEFAULT_TOP_K", default="10")
+    environment = _env_value("IOC_MANAGER_AI_ENV", "CTI_SIDECAR_ENV", default="development")
+    historical_learning_default_top_k = _env_int(
+        "IOC_MANAGER_AI_HISTORICAL_DEFAULT_TOP_K", "CTI_SIDECAR_HISTORICAL_DEFAULT_TOP_K", default=10
     )
-    historical_learning_default_lookback_days = int(
-        _env_value("IOC_MANAGER_AI_HISTORICAL_LOOKBACK_DAYS", "CTI_SIDECAR_HISTORICAL_LOOKBACK_DAYS", default="90")
+    historical_learning_default_lookback_days = _env_int(
+        "IOC_MANAGER_AI_HISTORICAL_LOOKBACK_DAYS", "CTI_SIDECAR_HISTORICAL_LOOKBACK_DAYS", default=90
     )
     historical_learning_decay_half_life_days = float(
         _env_value(
@@ -121,10 +151,25 @@ def load_settings() -> ServiceSettings:
     openai_timeout_seconds = float(
         _env_value("IOC_MANAGER_OPENAI_TIMEOUT_SECONDS", "OPENAI_TIMEOUT_SECONDS", default="25")
     )
+    max_score_batch_items = _env_int(
+        "IOC_MANAGER_AI_MAX_SCORE_BATCH_ITEMS",
+        "CTI_SIDECAR_MAX_SCORE_BATCH_ITEMS",
+        default=100,
+    )
+    max_expensive_request_body_bytes = _env_int(
+        "IOC_MANAGER_AI_MAX_EXPENSIVE_REQUEST_BODY_BYTES",
+        "CTI_SIDECAR_MAX_EXPENSIVE_REQUEST_BODY_BYTES",
+        default=1_048_576,
+    )
+    enable_http_model_evaluation = _env_bool(
+        "IOC_MANAGER_AI_ENABLE_HTTP_MODEL_EVALUATION",
+        "CTI_SIDECAR_ENABLE_HTTP_MODEL_EVALUATION",
+        default=_default_http_model_evaluation_enabled(environment or "development"),
+    )
 
     return ServiceSettings(
         service_name=_env_value("IOC_MANAGER_AI_SERVICE_NAME", "CTI_SIDECAR_SERVICE_NAME", default="ioc-manager-ai-sidecar"),
-        environment=_env_value("IOC_MANAGER_AI_ENV", "CTI_SIDECAR_ENV", default="development"),
+        environment=environment or "development",
         artifacts_root=artifacts_root,
         action_policy_matrix_path=action_policy_matrix_path,
         snapshot_root=snapshot_root,
@@ -135,6 +180,9 @@ def load_settings() -> ServiceSettings:
         historical_learning_default_top_k=max(1, min(historical_learning_default_top_k, 100)),
         historical_learning_default_lookback_days=max(1, min(historical_learning_default_lookback_days, 3650)),
         historical_learning_decay_half_life_days=max(1.0, historical_learning_decay_half_life_days),
+        max_score_batch_items=max(1, min(max_score_batch_items, 1000)),
+        max_expensive_request_body_bytes=max(1024, min(max_expensive_request_body_bytes, 10_485_760)),
+        enable_http_model_evaluation=enable_http_model_evaluation,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url.rstrip("/"),
         openai_planner_model=openai_planner_model,
