@@ -1100,6 +1100,7 @@ export default function ScansPage() {
                           <span>{job.completedTargets}/{job.totalTargets} complete</span>
                           <span>{job.failedTargets} failed</span>
                           <span>{job.noFindingsTargets} no-findings</span>
+                          <span>Rule file: {job.rulePath?.trim() ? job.rulePath : "Not recorded"}</span>
                         </div>
                       </div>
                     </button>

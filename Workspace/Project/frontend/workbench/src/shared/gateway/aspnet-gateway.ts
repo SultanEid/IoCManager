@@ -31,6 +31,8 @@ import {
   managedServerScannerAssignmentResponseSchema,
   powerBiVisualizationCatalogResponseSchema,
   generatedReportResponseSchema,
+  reportMitigationListResponseSchema,
+  reportMitigationResponseSchema,
   reportListResponseSchema,
   scanJobResponseSchema,
   scanJobTargetExecutionResponseSchema,
@@ -95,6 +97,8 @@ import {
   type IocListResponse,
   type PowerBiVisualizationCatalogResponse,
   type ReportListResponse,
+  type ReportMitigationListResponse,
+  type ReportMitigationResponse,
   type ScanJobResponse,
   type ScanJobTargetExecutionResponse,
   type ScanAnalystAgentStatusResponse,
@@ -169,6 +173,7 @@ import type {
   RuleRepositoryListQuery,
   RotateManagedServerConnectionSecretInput,
   GenerateReportInput,
+  GenerateReportMitigationInput,
   ReportListQuery,
   ReviewRuleProposalInput,
   SettingsAdminVM,
@@ -176,6 +181,7 @@ import type {
   TriggerRollbackInput,
   RetryDistributionJobInput,
   SendScanAnalystChatTurnInput,
+  UpdateScanAnalystPostureInput,
   AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
@@ -387,6 +393,28 @@ export class AspNetGateway {
         actorUserId: input.actorUserId,
       },
     })
+  }
+
+  async generateReportMitigation(input: GenerateReportMitigationInput): Promise<ReportMitigationResponse> {
+    return requestJson("/api/v2/ai/report-mitigation/generate", reportMitigationResponseSchema, {
+      method: "POST",
+      body: {
+        sourceName: input.sourceName,
+        sourceType: input.sourceType,
+        documentId: input.documentId ?? null,
+        documentUrl: input.documentUrl ?? null,
+        documentText: input.documentText ?? null,
+        documentBytesBase64: input.documentBytesBase64 ?? null,
+        bulletinJson: input.bulletinJson ?? null,
+        existingReportId: input.existingReportId ?? null,
+        includeWorkspaceContext: input.includeWorkspaceContext,
+        actorUserId: input.actorUserId,
+      },
+    })
+  }
+
+  async listReportMitigationPlans(signal?: AbortSignal): Promise<ReportMitigationListResponse> {
+    return requestJson("/api/v2/ai/report-mitigation/plans", reportMitigationListResponseSchema, { signal })
   }
 
   async deleteReport(reportId: string): Promise<void> {
@@ -978,6 +1006,24 @@ export class AspNetGateway {
 
   async getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse> {
     return requestJson("/api/v2/ai/scan-analyst/status", scanAnalystAgentStatusResponseSchema, { signal })
+  }
+
+  async updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse> {
+    return requestJson("/api/v2/ai/scan-analyst/posture", scanAnalystAgentStatusResponseSchema, {
+      method: "PUT",
+      body: {
+        autonomyEnabled: input.autonomyEnabled,
+        maxTargetsPerRun: input.maxTargetsPerRun,
+        preferredScannerFamily: input.preferredScannerFamily,
+        autoRun: input.autoRun,
+        quietHours: input.quietHours,
+        watchForNewHosts: input.watchForNewHosts,
+        watchForFailedRecentJobs: input.watchForFailedRecentJobs,
+        watchForRecentAlerts: input.watchForRecentAlerts,
+        requireMatchingRuleFamily: input.requireMatchingRuleFamily,
+        actorUserId: input.actorUserId,
+      },
+    })
   }
 
   async sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse> {

@@ -74,6 +74,7 @@ public static class ServiceCollectionExtensions
             .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _), "AiSidecar:BaseUrl must be a valid absolute URI.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ScanAnalystPath), "AiSidecar:ScanAnalystPath must be configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ReportExtractionPath), "AiSidecar:ReportExtractionPath must be configured.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ReportMitigationPath), "AiSidecar:ReportMitigationPath must be configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ScoreCasePath), "AiSidecar:ScoreCasePath must be configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ExplainCasePath), "AiSidecar:ExplainCasePath must be configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.RecommendActionPath), "AiSidecar:RecommendActionPath must be configured.")
@@ -185,6 +186,12 @@ public static class ServiceCollectionExtensions
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
             ApplyAiSidecarHeaders(client, sidecarOptions);
+        });
+        services.AddHttpClient<IAiReportMitigationClient, AiReportMitigationClient>((sp, client) =>
+        {
+            var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
+            client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
+            client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
         });
 
         return services;

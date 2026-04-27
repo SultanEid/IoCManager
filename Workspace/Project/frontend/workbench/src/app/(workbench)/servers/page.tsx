@@ -28,6 +28,17 @@ function formatOsLabel(value: string | null | undefined) {
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
 }
 
+const ONLINE_TARGET_STALE_MS = 60_000
+
+function isStaleOnlineTarget(target: { status: string; lastSweepAtUtc: string | null }) {
+  if (target.status !== "Online" || !target.lastSweepAtUtc) {
+    return false
+  }
+
+  const lastSweepAt = Date.parse(target.lastSweepAtUtc)
+  return Number.isFinite(lastSweepAt) && Date.now() - lastSweepAt > ONLINE_TARGET_STALE_MS
+}
+
 export default function ServersPage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -70,10 +81,15 @@ export default function ServersPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
 
-  const networksQuery = useWorkbenchQuery(["legacy-pipeline", "networks", refreshKey], (signal) => listLegacyNetworks(signal))
+  const networksQuery = useWorkbenchQuery(["legacy-pipeline", "networks", refreshKey], (signal) => listLegacyNetworks(signal), {
+    refetchInterval: 15_000,
+  })
   const targetsQuery = useWorkbenchQuery(
     ["legacy-pipeline", "targets", selectedNetworkId, refreshKey],
     (signal) => listLegacyTargets(selectedNetworkId || undefined, signal),
+    {
+      refetchInterval: 15_000,
+    },
   )
   const networks = networksQuery.data ?? []
   const targets = targetsQuery.data ?? []
@@ -93,6 +109,51 @@ export default function ServersPage() {
       setSelectedNetworkId(matchingTarget.networkId)
     }
   }, [focusedTargetId, selectedNetworkId, targets])
+
+  useEffect(() => {
+    if (!selectedNetworkId || discoveringId) {
+      return
+    }
+
+    const staleTarget = targets.find(isStaleOnlineTarget)
+    if (!staleTarget) {
+      return
+    }
+
+    let cancelled = false
+    const timeoutId = window.setTimeout(() => {
+      setDiscoveringId(selectedNetworkId)
+      setActionError(null)
+      discoverLegacyNetwork(selectedNetworkId, {
+        actorUserId,
+        rangeStartIp: staleTarget.ipAddress,
+        rangeEndIp: staleTarget.ipAddress,
+      })
+        .then(() => {
+          if (cancelled) {
+            return
+          }
+
+          setRefreshKey((value) => value + 1)
+          setActionMessage(`Auto-verified stale target ${staleTarget.displayName ?? staleTarget.hostname ?? staleTarget.ipAddress}.`)
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setActionError(classifyUiError(error).message)
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setDiscoveringId(null)
+          }
+        })
+    }, 1000)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [actorUserId, discoveringId, selectedNetworkId, targets])
 
   const submitNetwork = async () => {
     setSubmitting(true)

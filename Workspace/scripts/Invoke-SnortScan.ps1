@@ -132,7 +132,7 @@ function Invoke-SensorCommand {
         $Command
     }
 
-    $output = & ssh -o BatchMode=yes "$SSHUser@$SensorIP" $remoteCommand 2>&1
+    $output = & ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 "$SSHUser@$SensorIP" $remoteCommand 2>&1
     $exitCode = $LASTEXITCODE
 
     if (-not $IgnoreExitCode -and $exitCode -ne 0) {
@@ -152,7 +152,7 @@ function Invoke-SensorUpload {
         [string]$RemotePath
     )
 
-    $output = & scp -q -o BatchMode=yes $LocalPath "$SSHUser@${SensorIP}:$RemotePath" 2>&1
+    $output = & scp -q -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 $LocalPath "$SSHUser@${SensorIP}:$RemotePath" 2>&1
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -ne 0) {
@@ -385,7 +385,7 @@ switch ($Mode) {
         $remoteCmd = "tail -n 0 -F $(Quote-BashArg $RemoteLogPath)"
 
         try {
-            & ssh -o BatchMode=yes "$SSHUser@$SensorIP" $remoteCmd | ForEach-Object {
+            & ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 "$SSHUser@$SensorIP" $remoteCmd | ForEach-Object {
                 $alertObj = Convert-SnortLineToObject -Line $_
                 if ($null -eq $alertObj) {
                     continue

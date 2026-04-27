@@ -67,6 +67,8 @@ type DemoJob = {
   id: string
   scanPlanId: string | null
   scannerFamily: string
+  ruleInputMode: string
+  rulePath: string | null
   executionMode: string | null
   triggerType: string
   status: string
@@ -334,6 +336,8 @@ function createInitialState(): DemoState {
       id: "job-yara-001",
       scanPlanId: "plan-daily-windows",
       scannerFamily: "yara",
+      ruleInputMode: "hostPath",
+      rulePath: "C:\\IOC\\rules\\corp.yar",
       executionMode: "host",
       triggerType: "Plan",
       status: "Completed",
@@ -351,6 +355,8 @@ function createInitialState(): DemoState {
       id: "job-sigma-001",
       scanPlanId: "plan-daily-windows",
       scannerFamily: "sigma",
+      ruleInputMode: "hostPath",
+      rulePath: "C:\\IOC\\rules\\windows-sigma",
       executionMode: "host",
       triggerType: "Plan",
       status: "Completed",
@@ -368,6 +374,8 @@ function createInitialState(): DemoState {
       id: "job-suricata-001",
       scanPlanId: "plan-dmz-network",
       scannerFamily: "suricata",
+      ruleInputMode: "hostPath",
+      rulePath: "/opt/ioc/rules/suricata/local.rules",
       executionMode: "hunt",
       triggerType: "Manual",
       status: "Running",
@@ -605,6 +613,7 @@ function createJobArtifacts(input: {
   batchId: string
   summaryPrefix: string
   targetIds: string[]
+  rulePathsByFamily?: Record<string, string | null>
 }) {
   const state = getState()
   const targets = listScopedTargets({ targetIds: input.targetIds })
@@ -619,6 +628,8 @@ function createJobArtifacts(input: {
       id: jobId,
       scanPlanId: input.scanPlanId ?? null,
       scannerFamily,
+      ruleInputMode: "hostPath",
+      rulePath: input.rulePathsByFamily?.[scannerFamily] ?? null,
       executionMode: input.executionMode ?? (scannerFamily === "yara" || scannerFamily === "sigma" ? "host" : "hunt"),
       triggerType: input.triggerType,
       status: running ? "Running" : "Completed",
@@ -1096,6 +1107,7 @@ export const legacyPipelineDemo = {
       batchId,
       summaryPrefix: "Queued demo plan run for",
       targetIds: scopedTargets,
+      rulePathsByFamily: plan.rulePathsByFamily,
     })
     plan.lastRunAtUtc = new Date().toISOString()
     plan.updatedAtUtc = plan.lastRunAtUtc
@@ -1111,6 +1123,7 @@ export const legacyPipelineDemo = {
     scannerFamilies: string[]
     networkIds: string[]
     targetIds: string[]
+    rulePathsByFamily?: Record<string, string | null>
   }) {
     const batchId = nextId("batch")
     const targets = listScopedTargets({ networkIds: input.networkIds, targetIds: input.targetIds }).map((target) => target.id)
@@ -1120,6 +1133,7 @@ export const legacyPipelineDemo = {
       batchId,
       summaryPrefix: "Queued ad hoc scan for",
       targetIds: targets,
+      rulePathsByFamily: input.rulePathsByFamily,
     })
     return {
       batchId,

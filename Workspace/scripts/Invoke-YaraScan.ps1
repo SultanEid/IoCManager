@@ -247,7 +247,7 @@ function Invoke-OpenSshCommand {
 
 function Build-SshBaseArgs {
     param($User, $Target, $Port, $PrivateKeyPath, $Password, $AcceptNewHostKey, $UseAgent)
-    $args = @("-p", "$Port")
+    $args = @("-p", "$Port", "-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=1", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=1")
     $usePasswordAuth = -not [string]::IsNullOrWhiteSpace($Password) -and [string]::IsNullOrWhiteSpace($PrivateKeyPath)
     if (-not $UseAgent -and $PrivateKeyPath) {
         $args += @("-i", $PrivateKeyPath, "-o", "IdentitiesOnly=yes")
@@ -272,7 +272,7 @@ function Run-Ssh {
 
 function Run-ScpAction {
     param($Local, $Remote, $User, $Target, $Port, $Key, $Password, $Accept, $Agent, [switch]$Download)
-    $args = @("-q", "-P", "$Port")
+    $args = @("-q", "-P", "$Port", "-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=1", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=1")
     $usePasswordAuth = -not [string]::IsNullOrWhiteSpace($Password) -and [string]::IsNullOrWhiteSpace($Key)
     if (-not $Agent -and $Key) { $args += @("-i", $Key, "-o", "IdentitiesOnly=yes") }
     if ($usePasswordAuth) {

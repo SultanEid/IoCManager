@@ -25,6 +25,8 @@ import type {
   PowerBiVisualizationCatalogResponse,
   GeneratedReportResponse,
   ReportListResponse,
+  ReportMitigationListResponse,
+  ReportMitigationResponse,
   RuleDistributionAttemptResponse,
   RuleDistributionJobResponse,
   RuleDistributionTargetResponse,
@@ -628,6 +630,19 @@ export type SendScanAnalystChatTurnInput = {
   simulatedConditions?: ScanAnalystSimulatedCondition[]
 }
 
+export type UpdateScanAnalystPostureInput = {
+  autonomyEnabled: boolean
+  maxTargetsPerRun: number
+  preferredScannerFamily: ScannerCapability | "Auto"
+  autoRun: boolean
+  quietHours: string
+  watchForNewHosts: boolean
+  watchForFailedRecentJobs: boolean
+  watchForRecentAlerts: boolean
+  requireMatchingRuleFamily: boolean
+  actorUserId: string
+}
+
 export type AlertListQuery = {
   q?: string
   status?: string
@@ -673,6 +688,19 @@ export type GenerateReportInput = {
   iocType?: string
   source?: string
   persist?: boolean
+  actorUserId: string
+}
+
+export type GenerateReportMitigationInput = {
+  sourceName: string
+  sourceType: "pdf" | "blog" | "bulletin"
+  documentId?: string
+  documentUrl?: string
+  documentText?: string
+  documentBytesBase64?: string
+  bulletinJson?: string
+  existingReportId?: string
+  includeWorkspaceContext: boolean
   actorUserId: string
 }
 
@@ -757,6 +785,8 @@ export interface Gateway {
   updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
   listReports(query?: ReportListQuery, signal?: AbortSignal): Promise<ReportListResponse>
   generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>
+  generateReportMitigation(input: GenerateReportMitigationInput): Promise<ReportMitigationResponse>
+  listReportMitigationPlans(signal?: AbortSignal): Promise<ReportMitigationListResponse>
   deleteReport(reportId: string): Promise<void>
   getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse>
   listAuditLogs(query?: AuditLogListQuery, signal?: AbortSignal): Promise<AuditLogListResponse>
@@ -834,6 +864,7 @@ export interface Gateway {
   listScanJobTargets(scanJobId: string, signal?: AbortSignal): Promise<ScanJobTargetExecutionResponse[]>
   cancelScanJob(scanJobId: string, actorUserId: string, reason?: string): Promise<ScanJobResponse>
   getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse>
+  updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse>
   sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse>
   getScanAnalystRunSummary(scanJobId: string, signal?: AbortSignal): Promise<ScanAnalystRunSummaryResponse>
   listManagedServers(filters?: ManagedServerInventoryFilters, signal?: AbortSignal): Promise<ManagedServerInventoryResponse>

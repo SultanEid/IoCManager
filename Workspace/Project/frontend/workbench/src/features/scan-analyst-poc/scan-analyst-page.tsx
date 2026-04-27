@@ -3,7 +3,8 @@
 import Link from "next/link"
 import { useMutation } from "@tanstack/react-query"
 import { motion } from "framer-motion"
-import { Bot, PlayCircle, Radar, Sparkles } from "lucide-react"
+import { Bot, ChevronDown, PlayCircle, Radar, Sparkles } from "lucide-react"
+import type { FormEvent, ReactNode } from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
@@ -19,7 +20,17 @@ import type {
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
-import type { ScanAnalystSimulatedCondition, SendScanAnalystChatTurnInput } from "@/shared/gateway/types"
+import {
+  listLegacyJobs,
+  listLegacyPlans,
+  type LegacyPipelineScanJob,
+  type LegacyPipelineScanPlan,
+} from "@/shared/gateway/legacy-scan-pipeline"
+import type {
+  ScanAnalystSimulatedCondition,
+  SendScanAnalystChatTurnInput,
+  UpdateScanAnalystPostureInput,
+} from "@/shared/gateway/types"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { panelMotion, staggerMotion } from "@/shared/ui/motion"
@@ -33,6 +44,12 @@ const ACTIONS: Array<{ value: SendScanAnalystChatTurnInput["action"]; label: str
 ]
 
 const CAPABILITIES: Array<ScannerCapability | "Auto"> = ["Auto", "Yara", "Sigma", "Snort", "Suricata"]
+
+const QUICK_PROMPTS = [
+  "Recommend the safest useful scan plan for the current live targets.",
+  "Create and run a bounded YARA scan for exactly one online Windows target.",
+  "Review recent alerts and failed scans, then propose the next autonomous task.",
+]
 
 const MOCK_CONDITION_LABELS: Record<ScanAnalystSimulatedCondition, string> = {
   new_hosts_found: "New hosts found",
@@ -154,9 +171,71 @@ function resolvePlannerModeLabel(value: string | null | undefined) {
     return "OpenAI refined"
   }
   if (value === "openai_fallback") {
-    return "Local fallback"
+    return "Explicit local fallback"
   }
-  return "Local planner"
+  if (value === "bounded-local") {
+    return "Bounded automation"
+  }
+  if (value === "local") {
+    return "Explicit local planner"
+  }
+  return "OpenAI required"
+}
+
+const LEGACY_FINISHED_JOB_STATUSES = new Set(["completed", "succeeded", "success", "finished"])
+
+function toScannerCapability(value: string): ScannerCapability {
+  const normalized = value.toLowerCase()
+  if (normalized === "sigma") {
+    return "Sigma"
+  }
+  if (normalized === "snort") {
+    return "Snort"
+  }
+  if (normalized === "suricata") {
+    return "Suricata"
+  }
+
+  return "Yara"
+}
+
+function formatRulePath(value: string | null | undefined) {
+  return value?.trim() ? value : "Not recorded"
+}
+
+function readCompletedPlanRulePath(plan: object) {
+  return "rulePath" in plan && typeof plan.rulePath === "string" ? plan.rulePath : null
+}
+
+function latestJobTimestamp(job: LegacyPipelineScanJob) {
+  const timestamp = Date.parse(job.finishedAtUtc ?? job.startedAtUtc ?? job.queuedAtUtc)
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function deriveLiveCompletedPlans(
+  jobs: LegacyPipelineScanJob[] | undefined,
+  plans: LegacyPipelineScanPlan[] | undefined,
+) {
+  const planById = new Map((plans ?? []).map((plan) => [plan.id, plan]))
+
+  return (jobs ?? [])
+    .filter((job) => LEGACY_FINISHED_JOB_STATUSES.has(job.status.toLowerCase()))
+    .sort((a, b) => latestJobTimestamp(b) - latestJobTimestamp(a))
+    .slice(0, 6)
+    .map((job) => {
+      const plan = job.scanPlanId ? planById.get(job.scanPlanId) : null
+      return {
+        id: job.id,
+        name: plan?.name ?? `Legacy ${toScannerCapability(job.scannerFamily)} scan ${job.id}`,
+        scannerCapability: toScannerCapability(job.scannerFamily),
+        targetCount: job.totalTargets,
+        detectionCount: Math.max(0, job.totalTargets - job.noFindingsTargets - job.failedTargets),
+        outcome: job.status,
+        completedAtUtc: job.finishedAtUtc ?? job.startedAtUtc ?? job.queuedAtUtc,
+        rulePath: job.rulePath ?? plan?.rulePathsByFamily[job.scannerFamily] ?? null,
+        summary: job.summary,
+      }
+    })
 }
 
 function deriveMockStatus(
@@ -217,18 +296,44 @@ function clonePlan(plan: ScanAnalystPlanProposalResponse | null) {
   } satisfies ScanAnalystPlanProposalResponse
 }
 
+function CollapsibleSection({
+  eyebrow,
+  title,
+  badge,
+  defaultOpen = false,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  badge?: ReactNode
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  return (
+    <details className="wb-panel group space-y-4" open={defaultOpen}>
+      <summary className="-m-1 flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-1 transition-colors hover:bg-surface-2/45 [&::-webkit-details-marker]:hidden">
+        <span>
+          <span className="wb-kicker">{eyebrow}</span>
+          <span className="mt-1 block text-sm font-semibold tracking-tight">{title}</span>
+        </span>
+        <span className="flex items-center gap-2">
+          {badge}
+          <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+        </span>
+      </summary>
+      <div className="pt-1">{children}</div>
+    </details>
+  )
+}
+
 function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) {
   return (
     <motion.article className="grid gap-4 xl:grid-cols-[1fr_1fr]" variants={panelMotion}>
-      <section className="wb-panel space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <p className="wb-kicker">Latest action</p>
-            <h2 className="mt-1 text-sm font-semibold tracking-tight">What Zira has been doing</h2>
-          </div>
-          <StatusBadge value={status.operatingMode === "LiveData" ? "Live" : "Demo"} />
-        </div>
-
+      <CollapsibleSection
+        eyebrow="Latest action"
+        title="What Zira has been doing"
+        badge={<StatusBadge value={status.operatingMode === "LiveData" ? "Live" : "Demo"} />}
+      >
         <div className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
           <p className="text-sm font-medium text-foreground">
             {status.latestActionSummary ?? status.currentActivity ?? "Zira is monitoring the workspace and waiting for the next task."}
@@ -259,17 +364,13 @@ function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) 
             />
           )}
         </div>
-      </section>
+      </CollapsibleSection>
 
-      <section className="wb-panel space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <p className="wb-kicker">Completed scan plans</p>
-            <h2 className="mt-1 text-sm font-semibold tracking-tight">Recently finished work</h2>
-          </div>
-          <StatusBadge value={`${status.completedPlans?.length ?? 0} plans`} />
-        </div>
-
+      <CollapsibleSection
+        eyebrow="Completed scan plans"
+        title="Recently finished work"
+        badge={<StatusBadge value={`${status.completedPlans?.length ?? 0} plans`} />}
+      >
         {(status.completedPlans ?? []).length > 0 ? (
           <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
             <Table>
@@ -277,6 +378,7 @@ function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) 
                 <TableRow>
                   <TableHead>Plan</TableHead>
                   <TableHead>Scanner</TableHead>
+                  <TableHead>Rule file</TableHead>
                   <TableHead>Outcome</TableHead>
                   <TableHead>Completed</TableHead>
                 </TableRow>
@@ -291,6 +393,9 @@ function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) 
                       </div>
                     </TableCell>
                     <TableCell>{plan.scannerCapability}</TableCell>
+                    <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
+                      {formatRulePath(readCompletedPlanRulePath(plan))}
+                    </TableCell>
                     <TableCell>
                       <StatusBadge value={plan.outcome} />
                     </TableCell>
@@ -306,15 +411,162 @@ function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) 
             description="Finished plans from the live environment or demo scenario will appear here."
           />
         )}
-      </section>
+      </CollapsibleSection>
     </motion.article>
+  )
+}
+
+type PostureDraft = Omit<UpdateScanAnalystPostureInput, "actorUserId">
+type PostureBooleanKey =
+  | "autonomyEnabled"
+  | "autoRun"
+  | "watchForNewHosts"
+  | "watchForRecentAlerts"
+  | "watchForFailedRecentJobs"
+  | "requireMatchingRuleFamily"
+
+const POSTURE_FLAGS: Array<{ key: PostureBooleanKey; label: string }> = [
+  { key: "autonomyEnabled", label: "Autonomous passes enabled" },
+  { key: "autoRun", label: "Auto-run approved plans" },
+  { key: "watchForNewHosts", label: "React to new hosts and networks" },
+  { key: "watchForRecentAlerts", label: "React to recent alerts" },
+  { key: "watchForFailedRecentJobs", label: "React to failed scan jobs" },
+  { key: "requireMatchingRuleFamily", label: "Require matching rule family" },
+]
+
+function buildPostureDraft(status: ScanAnalystAgentStatusResponse): PostureDraft {
+  return {
+    autonomyEnabled: status.parameters.enabled,
+    maxTargetsPerRun: status.parameters.maxTargetsPerRun,
+    preferredScannerFamily: CAPABILITIES.includes(status.parameters.preferredScannerFamily as ScannerCapability | "Auto")
+      ? (status.parameters.preferredScannerFamily as ScannerCapability | "Auto")
+      : "Auto",
+    autoRun: status.parameters.autoRun,
+    quietHours: status.parameters.quietHours,
+    watchForNewHosts: status.parameters.watchForNewHosts,
+    watchForFailedRecentJobs: status.parameters.watchForFailedRecentJobs,
+    watchForRecentAlerts: status.parameters.watchForRecentAlerts,
+    requireMatchingRuleFamily: status.parameters.requireMatchingRuleFamily,
+  }
+}
+
+function PostureEditor({
+  status,
+  actorUserId,
+  isSaving,
+  error,
+  onSave,
+}: {
+  status: ScanAnalystAgentStatusResponse
+  actorUserId: string
+  isSaving: boolean
+  error: Error | null
+  onSave: (input: UpdateScanAnalystPostureInput) => Promise<unknown>
+}) {
+  const [draft, setDraft] = useState<PostureDraft>(() => buildPostureDraft(status))
+  const [savedAtUtc, setSavedAtUtc] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDraft(buildPostureDraft(status))
+  }, [status])
+
+  const currentDraft = buildPostureDraft(status)
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(currentDraft)
+  const canSave = Boolean(actorUserId) && isDirty && !isSaving
+
+  function updateDraft<T extends keyof PostureDraft>(key: T, value: PostureDraft[T]) {
+    setDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!actorUserId) {
+      return
+    }
+
+    await onSave({
+      ...draft,
+      maxTargetsPerRun: Math.min(25, Math.max(1, Number(draft.maxTargetsPerRun) || 1)),
+      quietHours: draft.quietHours.trim() || "none",
+      actorUserId,
+    })
+    setSavedAtUtc(new Date().toISOString())
+  }
+
+  return (
+    <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-2 rounded-lg border border-border/70 bg-surface-2/55 p-3">
+          <span className="wb-kicker">Preferred family</span>
+          <select
+            className="h-10 w-full rounded-lg border border-border bg-surface-1 px-3 text-sm text-foreground outline-none focus:border-cyan-400"
+            value={draft.preferredScannerFamily}
+            onChange={(event) => updateDraft("preferredScannerFamily", event.target.value as ScannerCapability | "Auto")}
+          >
+            {CAPABILITIES.map((capability) => (
+              <option key={capability} value={capability}>
+                {capability}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="space-y-2 rounded-lg border border-border/70 bg-surface-2/55 p-3">
+          <span className="wb-kicker">Max targets per run</span>
+          <Input
+            min={1}
+            max={25}
+            type="number"
+            value={String(draft.maxTargetsPerRun)}
+            onChange={(event) => updateDraft("maxTargetsPerRun", Number(event.target.value))}
+          />
+        </label>
+
+        <label className="space-y-2 rounded-lg border border-border/70 bg-surface-2/55 p-3 sm:col-span-2">
+          <span className="wb-kicker">Quiet hours</span>
+          <Input
+            value={draft.quietHours}
+            onChange={(event) => updateDraft("quietHours", event.target.value)}
+            placeholder="01:00-05:00 UTC or none"
+          />
+        </label>
+      </div>
+
+      <div className="grid gap-2 text-sm sm:grid-cols-2">
+        {POSTURE_FLAGS.map((flag) => (
+          <label key={flag.key} className="flex items-center gap-3 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2">
+            <input
+              checked={draft[flag.key]}
+              className="size-4 accent-cyan-400"
+              type="checkbox"
+              onChange={(event) => updateDraft(flag.key, event.target.checked)}
+            />
+            <span>{flag.label}</span>
+          </label>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={!canSave} type="submit">
+          {isSaving ? "Saving..." : "Save posture"}
+        </Button>
+        <Button disabled={!isDirty || isSaving} type="button" variant="outline" onClick={() => setDraft(currentDraft)}>
+          Reset
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {savedAtUtc ? `Saved ${formatTimestamp(savedAtUtc)}` : "Changes affect Zira immediately until the backend restarts."}
+        </span>
+      </div>
+
+      {error ? <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error.message}</p> : null}
+    </form>
   )
 }
 
 export function ScanAnalystPage() {
   const { session } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? ""
-  const conversationRef = useRef<HTMLElement | null>(null)
+  const conversationRef = useRef<HTMLDivElement | null>(null)
 
   const [message, setMessage] = useState("")
   const [subnetId, setSubnetId] = useState("")
@@ -333,6 +585,12 @@ export function ScanAnalystPage() {
 
   const subnetsQuery = useWorkbenchQuery(["scan-analyst", "subnets"], (signal) => gateway.listSubnets(signal))
   const statusQuery = useWorkbenchQuery(["scan-analyst", "status"], (signal) => gateway.getScanAnalystStatus(signal))
+  const legacyJobsQuery = useWorkbenchQuery(["scan-analyst", "legacy-jobs"], (signal) => listLegacyJobs(signal), {
+    refetchInterval: 5000,
+  })
+  const legacyPlansQuery = useWorkbenchQuery(["scan-analyst", "legacy-plans"], (signal) => listLegacyPlans(signal), {
+    refetchInterval: 10000,
+  })
 
   const queuedJobId = chatState?.latestAnalysis.queuedJob?.id ?? ""
   const liveRunSummaryQuery = useWorkbenchQuery(
@@ -477,6 +735,13 @@ export function ScanAnalystPage() {
     },
   })
 
+  const postureMutation = useMutation({
+    mutationFn: (input: UpdateScanAnalystPostureInput) => gateway.updateScanAnalystPosture(input),
+    onSuccess: async () => {
+      await statusQuery.refetch()
+    },
+  })
+
   useEffect(() => {
     if (!currentAnalysis || currentAnalysis.action !== "CreateAndRun" || !activeRunSummary) {
       return
@@ -501,7 +766,21 @@ export function ScanAnalystPage() {
     return <ClassifiedFailureState failure={classifyUiError(statusQuery.error)} fallbackTitle="Agent status unavailable" />
   }
 
-  const status = deriveMockStatus(statusQuery.data!, simulatedConditions)
+  const liveCompletedPlans = deriveLiveCompletedPlans(legacyJobsQuery.data, legacyPlansQuery.data)
+  const baseStatus = deriveMockStatus(statusQuery.data!, simulatedConditions)
+  const status = baseStatus.operatingMode === "LiveData" && liveCompletedPlans.length > 0
+    ? {
+      ...baseStatus,
+      completedPlans: liveCompletedPlans,
+      recentActions: liveCompletedPlans.slice(0, 3).map((plan) => ({
+        id: `legacy-job-${plan.id}`,
+        title: `${plan.scannerCapability} scan finished`,
+        summary: plan.summary,
+        occurredAtUtc: plan.completedAtUtc,
+        status: plan.outcome,
+      })),
+    }
+    : baseStatus
 
   function toggleCondition(condition: ScanAnalystSimulatedCondition) {
     const next = simulatedConditions.includes(condition)
@@ -567,9 +846,8 @@ export function ScanAnalystPage() {
           <div>
             <p className="wb-kicker">Operations</p>
             <h1 className="mt-1 text-lg font-semibold tracking-tight">Zira</h1>
-            <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-              Zira is the AI agent workspace for chat-driven planning, editable scan proposals, autonomous backend activity, and
-              run summaries that switch between live SQL-backed data and demo fallback.
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+              Ask for a scan, let Zira draft the plan, then create or run it against live inventory.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-2xl border border-border/70 bg-surface-2/70 px-3 py-2 text-xs">
@@ -591,10 +869,24 @@ export function ScanAnalystPage() {
             <Textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              placeholder="Example: Review new hosts in the lab subnet, prefer Sigma, and remove Linux systems from the first pass."
-              rows={4}
+              placeholder="Example: Create and run a bounded YARA scan for Win1-FH only."
+              rows={3}
             />
           </label>
+          <div className="flex flex-wrap gap-2 lg:col-span-4">
+            {QUICK_PROMPTS.map((prompt) => (
+              <Button
+                key={prompt}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setMessage(prompt)}
+                className="justify-start whitespace-normal text-left"
+              >
+                {prompt}
+              </Button>
+            ))}
+          </div>
           <label className="space-y-1">
             <span className="wb-kicker">Subnet Focus</span>
             <select
@@ -637,6 +929,7 @@ export function ScanAnalystPage() {
               type="button"
               onClick={() => chatMutation.mutate(action.value)}
               disabled={chatMutation.isPending}
+              title={action.description}
             >
               {chatMutation.isPending && activeAction === action.value ? `${action.label}...` : action.label}
             </Button>
@@ -725,16 +1018,17 @@ export function ScanAnalystPage() {
       <StatusOverview status={status} />
 
       <motion.article className="grid gap-4 xl:grid-cols-[1.1fr_1fr]" variants={panelMotion}>
-        <section ref={conversationRef} className="wb-panel space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="wb-kicker">Conversation</p>
-              <h2 className="mt-1 text-sm font-semibold tracking-tight">Zira session</h2>
-            </div>
-            <div className="rounded-full border border-border/70 bg-surface-2/60 px-3 py-1 text-xs text-muted-foreground">
-              {chatState?.sessionId ? `Session ${chatState.sessionId.slice(0, 8)}` : "No active session"}
-            </div>
-          </div>
+        <div ref={conversationRef}>
+          <CollapsibleSection
+            eyebrow="Conversation"
+            title="Zira session"
+            defaultOpen={Boolean(chatState)}
+            badge={
+              <span className="rounded-full border border-border/70 bg-surface-2/60 px-3 py-1 text-xs text-muted-foreground">
+                {chatState?.sessionId ? `Session ${chatState.sessionId.slice(0, 8)}` : "No active session"}
+              </span>
+            }
+          >
 
           {chatState ? (
             <div className="space-y-3">
@@ -764,35 +1058,21 @@ export function ScanAnalystPage() {
               description="Ask Zira to investigate a discovery pattern, revise a plan, or run a scan so the session memory can start building."
             />
           )}
-        </section>
+          </CollapsibleSection>
+        </div>
 
-        <section className="wb-panel space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="wb-kicker">Zira posture</p>
-              <h2 className="mt-1 text-sm font-semibold tracking-tight">Autonomy and guardrails</h2>
-            </div>
-            <StatusBadge value={status.operatingMode === "LiveData" ? "Live" : "Demo"} />
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
-              <p className="wb-kicker">Preferred family</p>
-              <p className="mt-1 text-base font-semibold">{status.parameters.preferredScannerFamily}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
-              <p className="wb-kicker">Max targets</p>
-              <p className="mt-1 text-base font-semibold">{status.parameters.maxTargetsPerRun}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
-              <p className="wb-kicker">Auto run</p>
-              <p className="mt-1 text-base font-semibold">{status.parameters.autoRun ? "Enabled" : "Approval only"}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-surface-2/55 p-3">
-              <p className="wb-kicker">Quiet hours</p>
-              <p className="mt-1 text-base font-semibold">{status.parameters.quietHours}</p>
-            </div>
-          </div>
+        <CollapsibleSection
+          eyebrow="Zira posture"
+          title="Autonomy and guardrails"
+          badge={<StatusBadge value={status.parameters.enabled ? "Editable" : "Paused"} />}
+        >
+          <PostureEditor
+            actorUserId={actorUserId}
+            error={postureMutation.error}
+            isSaving={postureMutation.isPending}
+            onSave={(input) => postureMutation.mutateAsync(input)}
+            status={status}
+          />
 
           <div className="rounded-xl border border-border/70 bg-surface-2/55 p-3 text-sm text-muted-foreground">
             <p>{chatState?.agentStatusLine ?? "Zira is online and waiting for a session request."}</p>
@@ -803,7 +1083,7 @@ export function ScanAnalystPage() {
               </p>
             ) : null}
           </div>
-        </section>
+        </CollapsibleSection>
       </motion.article>
 
       {!currentAnalysis ? (

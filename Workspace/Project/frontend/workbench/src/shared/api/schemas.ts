@@ -123,7 +123,10 @@ export const decisionResponseSchema = z.object({
   updatedAtUtc: z.string(),
 })
 
-export const ruleFamilySchema = z.enum(["yara", "sigma", "snort", "suricata"])
+export const ruleFamilySchema = z.preprocess(
+  (value) => (typeof value === "string" ? value.toLowerCase() : value),
+  z.enum(["yara", "sigma", "snort", "suricata"]),
+)
 
 export const ruleResponseSchema = z.object({
   id: z.string().uuid(),
@@ -558,7 +561,7 @@ export const ruleDistributionTargetResponseSchema = z.object({
 })
 
 export const scannerCapabilitySchema = z.enum(["Yara", "Sigma", "Snort", "Suricata"])
-export const scanRuleSelectionModeSchema = z.enum(["RuleSet", "RuleScope"])
+export const scanRuleSelectionModeSchema = z.enum(["RuleSet", "RuleScope", "LegacyPreset"])
 export const scanCadenceTypeSchema = z.enum(["Manual", "Interval", "Daily", "Weekly"])
 export const scanPlanTargetSummaryResponseSchema = z.object({
   targetServerId: z.string().uuid(),
@@ -641,7 +644,9 @@ export const scanJobTargetExecutionResponseSchema = z.object({
   updatedAtUtc: z.string(),
 })
 
-export const scanAnalystPlannerModeSchema = z.enum(["local", "openai_refined", "openai_fallback"]).catch("local")
+export const scanAnalystPlannerModeSchema = z
+  .enum(["local", "openai_refined", "openai_fallback", "openai_required", "bounded-local"])
+  .catch("openai_required")
 export const scanAnalystActionSchema = z.enum(["RecommendOnly", "CreatePlan", "CreateAndRun"])
 
 export const scanAnalystTargetProposalResponseSchema = z.object({
@@ -770,6 +775,7 @@ export const scanAnalystAgentParametersResponseSchema = z.object({
   quietHours: z.string(),
   watchForNewHosts: z.boolean(),
   watchForFailedRecentJobs: z.boolean(),
+  watchForRecentAlerts: z.boolean(),
   requireMatchingRuleFamily: z.boolean(),
 })
 
@@ -969,6 +975,104 @@ export const reportListResponseSchema = z.object({
   totalCount: z.number().int(),
   page: z.number().int(),
   pageSize: z.number().int(),
+})
+
+export const reportMitigationCitationResponseSchema = z.object({
+  sourceId: z.string(),
+  sourceType: z.string(),
+  snippet: z.string(),
+  sourceUri: z.string().nullable(),
+  startOffset: z.number().int().nullable(),
+  endOffset: z.number().int().nullable(),
+  confidence: z.number(),
+})
+
+export const reportMitigationExtractedIocResponseSchema = z.object({
+  iocType: z.string(),
+  iocValue: z.string(),
+  label: z.string(),
+  confidence: z.number(),
+  attackTechniques: z.array(z.string()),
+  cveRefs: z.array(z.string()),
+  citations: z.array(reportMitigationCitationResponseSchema),
+})
+
+export const reportMitigationClaimResponseSchema = z.object({
+  claimId: z.string(),
+  claimType: z.string(),
+  statement: z.string(),
+  snippet: z.string(),
+  sourceStartOffset: z.number().int().nullable(),
+  sourceEndOffset: z.number().int().nullable(),
+  pageIndex: z.number().int().nullable(),
+  extractionMethod: z.string(),
+  confidence: z.number(),
+  isPromptInjectionSuspected: z.boolean(),
+  abstainReasonCodes: z.array(z.string()),
+  citations: z.array(reportMitigationCitationResponseSchema),
+})
+
+export const reportMitigationActionResponseSchema = z.object({
+  title: z.string(),
+  rationale: z.string(),
+  priority: z.string(),
+  ownerHint: z.string(),
+  validation: z.string(),
+  automationReadiness: z.string(),
+})
+
+export const reportMitigationScanRecommendationResponseSchema = z.object({
+  scannerFamily: z.string(),
+  targetHint: z.string(),
+  ruleHint: z.string(),
+  rationale: z.string(),
+  priority: z.string(),
+})
+
+export const reportMitigationPlanResponseSchema = z.object({
+  executiveSummary: z.string(),
+  threatSummary: z.string(),
+  severity: z.string(),
+  confidence: z.string(),
+  affectedAssetHypotheses: z.array(z.string()),
+  immediateActions: z.array(reportMitigationActionResponseSchema),
+  detectionActions: z.array(reportMitigationActionResponseSchema),
+  hardeningActions: z.array(reportMitigationActionResponseSchema),
+  validationSteps: z.array(z.string()),
+  scanRecommendations: z.array(reportMitigationScanRecommendationResponseSchema),
+  assumptions: z.array(z.string()),
+  gaps: z.array(z.string()),
+  requiresHumanReview: z.boolean(),
+})
+
+export const reportMitigationResponseSchema = z.object({
+  reportId: z.string(),
+  sourceType: z.string(),
+  plannerModel: z.string(),
+  extractedIocs: z.array(reportMitigationExtractedIocResponseSchema),
+  claims: z.array(reportMitigationClaimResponseSchema),
+  campaignHints: z.array(z.string()),
+  malwareFamilyHints: z.array(z.string()),
+  mitigationPlan: reportMitigationPlanResponseSchema,
+  generatedAt: z.string(),
+  sourceReportId: z.string().uuid().nullable(),
+  persistedMitigationReport: reportResponseSchema.nullable(),
+})
+
+export const reportMitigationListItemResponseSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  sourceReportId: z.string().uuid().nullable(),
+  severity: z.string(),
+  confidence: z.string(),
+  executiveSummary: z.string(),
+  generatedAtUtc: z.string(),
+  alertIds: z.array(z.string().uuid()),
+})
+
+export const reportMitigationListResponseSchema = z.object({
+  items: z.array(reportMitigationListItemResponseSchema),
+  totalCount: z.number().int(),
 })
 
 export const powerBiWorkspaceResponseSchema = z.object({
@@ -1533,6 +1637,14 @@ export type GeneratedReportTableResponse = z.infer<typeof generatedReportTableRe
 export type GeneratedReportSectionResponse = z.infer<typeof generatedReportSectionResponseSchema>
 export type GeneratedReportResponse = z.infer<typeof generatedReportResponseSchema>
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>
+export type ReportMitigationExtractedIocResponse = z.infer<typeof reportMitigationExtractedIocResponseSchema>
+export type ReportMitigationClaimResponse = z.infer<typeof reportMitigationClaimResponseSchema>
+export type ReportMitigationActionResponse = z.infer<typeof reportMitigationActionResponseSchema>
+export type ReportMitigationScanRecommendationResponse = z.infer<typeof reportMitigationScanRecommendationResponseSchema>
+export type ReportMitigationPlanResponse = z.infer<typeof reportMitigationPlanResponseSchema>
+export type ReportMitigationResponse = z.infer<typeof reportMitigationResponseSchema>
+export type ReportMitigationListItemResponse = z.infer<typeof reportMitigationListItemResponseSchema>
+export type ReportMitigationListResponse = z.infer<typeof reportMitigationListResponseSchema>
 export type PowerBiWorkspaceResponse = z.infer<typeof powerBiWorkspaceResponseSchema>
 export type PowerBiVisualizationResponse = z.infer<typeof powerBiVisualizationResponseSchema>
 export type PowerBiVisualizationCatalogResponse = z.infer<typeof powerBiVisualizationCatalogResponseSchema>

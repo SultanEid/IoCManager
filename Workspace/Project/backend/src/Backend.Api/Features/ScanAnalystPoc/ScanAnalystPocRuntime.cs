@@ -14,7 +14,7 @@ public sealed class ScanAnalystPocOptions
     public int AutonomyCooldownMinutes { get; init; } = 15;
     public string SystemActorUserId { get; init; } = "system-scan-analyst-agent";
     public string[] AllowedSubnets { get; init; } = [];
-    public string[] AllowedEnvironments { get; init; } = ["lab", "staging"];
+    public string[] AllowedEnvironments { get; init; } = ["lab", "staging", "LegacyPipeline"];
     public int MaxTargetsPerRun { get; init; } = 5;
     public string PreferredScannerFamily { get; init; } = "Auto";
     public bool AutoRun { get; init; } = true;
@@ -34,6 +34,8 @@ public sealed class ScanAnalystPocRuntimeState
     private int _activeSessionCount;
     private IReadOnlyList<string> _activeMockConditions = Array.Empty<string>();
     private ScanAnalystAutonomousActivityDto? _lastAutonomousActivity;
+    private ScanAnalystAgentParametersDto? _postureOverride;
+    private readonly Dictionary<string, string> _legacyTargetStatuses = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _syncRoot = new();
 
     public string OperatingMode => _operatingMode;
@@ -42,6 +44,57 @@ public sealed class ScanAnalystPocRuntimeState
     public int ActiveSessionCount => _activeSessionCount;
     public IReadOnlyList<string> ActiveMockConditions => _activeMockConditions;
     public ScanAnalystAutonomousActivityDto? LastAutonomousActivity => _lastAutonomousActivity;
+
+    public ScanAnalystAgentParametersDto GetEffectiveParameters(ScanAnalystPocOptions options)
+    {
+        lock (_syncRoot)
+        {
+            return _postureOverride ?? BuildDefaultParameters(options);
+        }
+    }
+
+    public ScanAnalystAgentParametersDto UpdatePosture(
+        ScanAnalystPocOptions options,
+        UpdateScanAnalystPostureRequestDto request,
+        string preferredScannerFamily,
+        string quietHours)
+    {
+        var parameters = new ScanAnalystAgentParametersDto(
+            request.AutonomyEnabled,
+            options.AllowedSubnets.ToArray(),
+            options.AllowedEnvironments.ToArray(),
+            request.MaxTargetsPerRun,
+            preferredScannerFamily,
+            request.AutoRun,
+            quietHours,
+            request.WatchForNewHosts,
+            request.WatchForFailedRecentJobs,
+            request.WatchForRecentAlerts,
+            request.RequireMatchingRuleFamily);
+
+        lock (_syncRoot)
+        {
+            _postureOverride = parameters;
+        }
+
+        return parameters;
+    }
+
+    private static ScanAnalystAgentParametersDto BuildDefaultParameters(ScanAnalystPocOptions options)
+    {
+        return new ScanAnalystAgentParametersDto(
+            options.AutonomyEnabled,
+            options.AllowedSubnets.ToArray(),
+            options.AllowedEnvironments.ToArray(),
+            options.MaxTargetsPerRun,
+            options.PreferredScannerFamily,
+            options.AutoRun,
+            options.QuietHours,
+            options.WatchForNewHosts,
+            options.WatchForFailedRecentJobs,
+            options.WatchForRecentAlerts,
+            options.RequireMatchingRuleFamily);
+    }
 
     public void MarkDatabaseAvailable()
     {
@@ -85,6 +138,27 @@ public sealed class ScanAnalystPocRuntimeState
         {
             _lastAutonomousActivity = activity;
         }
+    }
+
+    public bool ObserveLegacyTargetStatus(string targetId, string status)
+    {
+        if (string.IsNullOrWhiteSpace(targetId))
+        {
+            return false;
+        }
+
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? "Unknown" : status.Trim();
+        lock (_syncRoot)
+        {
+            var hadPreviousStatus = _legacyTargetStatuses.TryGetValue(targetId, out var previousStatus);
+            _legacyTargetStatuses[targetId] = normalizedStatus;
+            return hadPreviousStatus && !IsOnline(previousStatus) && IsOnline(normalizedStatus);
+        }
+    }
+
+    private static bool IsOnline(string? status)
+    {
+        return status?.Equals("Online", StringComparison.OrdinalIgnoreCase) == true;
     }
 }
 

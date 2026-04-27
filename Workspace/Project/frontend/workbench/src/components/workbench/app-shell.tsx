@@ -21,6 +21,7 @@ import {
   WorkbenchInspectorDrawer,
   useWorkbenchInspector,
 } from "@/components/workbench/workbench-inspector"
+import { ZiraStatusWidget } from "@/components/workbench/zira-status-widget"
 import {
   getWorkbenchNavByModule,
   isWorkbenchNavActive,
@@ -407,6 +408,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
               >
                 <Search className="h-4 w-4" />
               </Button>
+
+              <ZiraStatusWidget />
 
               <Sheet open={notificationOpen} onOpenChange={setNotificationOpen}>
                 <SheetTrigger

@@ -114,6 +114,8 @@ const scanJobSchema = z.object({
   id: z.string(),
   scanPlanId: z.string().nullable(),
   scannerFamily: z.string(),
+  ruleInputMode: z.string(),
+  rulePath: z.string().nullable(),
   executionMode: z.string().nullable(),
   triggerType: z.string(),
   status: z.string(),

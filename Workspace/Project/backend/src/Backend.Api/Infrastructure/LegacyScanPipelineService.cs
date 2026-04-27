@@ -526,6 +526,10 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         var existingNetworkTargets = existingTargetsByAddress.Values
             .Where(target => target.NetworkId == parsedNetworkId)
             .ToDictionary(target => target.IPAddress, StringComparer.OrdinalIgnoreCase);
+        var requestedTargetAddresses = range.Targets
+            .Select(ip => ip.ToString())
+            .Where(ip => !excludedAddresses.Contains(ip))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var reachableObservations = observations
             .Where(observation =>
@@ -580,7 +584,7 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         var offlineCount = 0;
         foreach (var existing in existingNetworkTargets.Values)
         {
-            if (!seenAddresses.Contains(existing.IPAddress))
+            if (requestedTargetAddresses.Contains(existing.IPAddress) && !seenAddresses.Contains(existing.IPAddress))
             {
                 existing.Status = "Offline";
                 existing.LastSweep = nowUtc.UtcDateTime;

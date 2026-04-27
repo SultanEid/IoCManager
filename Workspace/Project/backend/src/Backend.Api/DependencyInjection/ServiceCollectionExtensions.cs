@@ -1,6 +1,7 @@
 using Backend.Api.Infrastructure;
 using Backend.Api.Infrastructure.Execution;
 using Backend.Api.Middlewares;
+using Backend.Api.Features.ReportMitigationPoc;
 using Backend.Api.Features.ScanAnalystPoc;
 using Backend.Application.Abstractions.Services;
 using Backend.Application.DependencyInjection;
@@ -43,6 +44,7 @@ public static class ServiceCollectionExtensions
         Directory.CreateDirectory(dataProtectionKeyRingDirectory);
         services
             .AddDataProtection()
+            .SetApplicationName("IoCManager")
             .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyRingDirectory));
         services.AddFluentValidationAutoValidation();
         services.AddEndpointsApiExplorer();
@@ -82,6 +84,8 @@ public static class ServiceCollectionExtensions
             .Validate(options => options.MaxParallelism is >= 1 and <= 128, "Infrastructure:Discovery:MaxParallelism must be between 1 and 128.")
             .Validate(options => options.MaxHostsPerRun is > 0 and <= 256, "Infrastructure:Discovery:MaxHostsPerRun must be between 1 and 256.")
             .Validate(options => options.DnsLookupTimeoutMilliseconds is >= 250 and <= 5000, "Infrastructure:Discovery:DnsLookupTimeoutMilliseconds must be between 250 and 5000.")
+            .Validate(options => options.ScheduledLegacyNetworkSweepIntervalMinutes is >= 1 and <= 60, "Infrastructure:Discovery:ScheduledLegacyNetworkSweepIntervalMinutes must be between 1 and 60.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ScheduledLegacyNetworkSweepActorUserId), "Infrastructure:Discovery:ScheduledLegacyNetworkSweepActorUserId must be configured.")
             .ValidateOnStart();
         services
             .AddOptions<RuleDistributionExecutionOptions>()
@@ -129,6 +133,14 @@ public static class ServiceCollectionExtensions
             .Validate(options => options.MaxTargetsPerRun is >= 1 and <= 25, "ScanAnalystPoc:MaxTargetsPerRun must be between 1 and 25.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.SystemActorUserId), "ScanAnalystPoc:SystemActorUserId must be configured.")
             .ValidateOnStart();
+        services
+            .AddOptions<AegisMitigationOptions>()
+            .Bind(configuration.GetSection(AegisMitigationOptions.SectionName))
+            .Validate(options => options.AutonomyIntervalSeconds >= 30, "AegisMitigation:AutonomyIntervalSeconds must be at least 30.")
+            .Validate(options => options.SevereAlertLookbackHours is >= 1 and <= 168, "AegisMitigation:SevereAlertLookbackHours must be between 1 and 168.")
+            .Validate(options => options.MaxAlertsPerPass is >= 1 and <= 10, "AegisMitigation:MaxAlertsPerPass must be between 1 and 10.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.SystemActorUserId), "AegisMitigation:SystemActorUserId must be configured.")
+            .ValidateOnStart();
 
         services.AddScoped<IAuthSensitiveAuditService, AuthSensitiveAuditService>();
         services.AddScoped<IAlertRegistrySchemaInitializer, AlertRegistrySchemaInitializer>();
@@ -166,6 +178,7 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<RuleDistributionWorker>();
             services.AddHostedService<ScanPlanExecutionWorker>();
             services.AddHostedService<ScanAnalystPocAutonomyWorker>();
+            services.AddHostedService<AegisMitigationAutonomyWorker>();
             services.AddHostedService<LegacyScanPipelineWorker>();
         }
 

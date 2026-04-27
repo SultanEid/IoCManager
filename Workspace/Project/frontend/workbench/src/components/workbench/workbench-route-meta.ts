@@ -131,15 +131,15 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     commandAliases: ["Scan Plan", "Scan Plans", "Plan Scheduler", "Scheduled Scans"],
   },
   {
-    id: "scan-analyst",
-    href: "/scan-analyst",
-    aliases: [],
+    id: "agents",
+    href: "/agents",
+    aliases: ["/scan-analyst", "/agents/aegis"],
     module: "Operations",
-    label: "Zira",
-    title: "Zira",
-    subtitle: "Scan planning workspace with editable proposals and activity tracking.",
+    label: "Agents",
+    title: "Agents",
+    subtitle: "AI agent hub for scan planning and mitigation recommendations.",
     icon: Bot,
-    commandAliases: ["Zira", "AI Agent", "Scan Analyst", "Agent Workspace"],
+    commandAliases: ["Agents", "Zira", "Aegis", "AI Agent", "Scan Analyst", "Mitigation Agent"],
   },
   {
     id: "rules",
@@ -421,6 +421,10 @@ function parsePainAnalysisPath(pathname: string): boolean {
   return /^\/coverage-pain-analysis(?:\/.*)?$/.test(pathname)
 }
 
+function parseAgentsPath(pathname: string): boolean {
+  return /^\/(?:agents|scan-analyst)(?:\/.*)?$/.test(pathname)
+}
+
 function toAlertLabel(caseId: string) {
   return `Alert ${caseId.slice(0, 8)}`
 }
@@ -654,6 +658,31 @@ export function resolveWorkbenchRoute(pathname: string): ResolvedWorkbenchRoute 
     }
   }
 
+  if (parseAgentsPath(normalized)) {
+    const route = ROUTE_BY_HREF.get("/agents") ?? null
+    const leaf = normalized.split("/").filter(Boolean).at(-1)
+    const agentLabel = leaf === "aegis" ? "Aegis" : normalized === "/scan-analyst" ? "Zira" : null
+    return {
+      pathname: normalized,
+      canonicalPath: normalized === "/scan-analyst" ? "/scan-analyst" : normalized.startsWith("/agents/aegis") ? "/agents/aegis" : "/agents",
+      module: "Operations",
+      title: agentLabel ?? route?.title ?? "Agents",
+      subtitle: agentLabel === "Aegis"
+        ? "Mitigation planning agent for reports, IOCs, and severe scan findings."
+        : agentLabel === "Zira"
+          ? "Scan planning workspace with editable proposals and activity tracking."
+          : route?.subtitle ?? "AI agent hub.",
+      breadcrumbs: [
+        { label: "Operations" },
+        { label: "Agents", href: "/agents" },
+        ...(agentLabel ? [{ label: agentLabel }] : []),
+      ],
+      route,
+      caseRoute: null,
+      caseId: null,
+    }
+  }
+
   if (parseReportingPath(normalized)) {
     const route = ROUTE_BY_HREF.get("/reports") ?? null
     return {
@@ -733,6 +762,10 @@ export function isWorkbenchNavActive(pathname: string, href: string) {
   }
 
   if (href === "/coverage-pain-analysis" && resolved.canonicalPath.startsWith("/coverage-pain-analysis")) {
+    return true
+  }
+
+  if (href === "/agents" && (resolved.canonicalPath.startsWith("/agents") || resolved.canonicalPath === "/scan-analyst")) {
     return true
   }
 

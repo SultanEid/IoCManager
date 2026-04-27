@@ -72,7 +72,20 @@ public sealed record ScanAnalystAgentParametersDto(
     string QuietHours,
     bool WatchForNewHosts,
     bool WatchForFailedRecentJobs,
+    bool WatchForRecentAlerts,
     bool RequireMatchingRuleFamily);
+
+public sealed record UpdateScanAnalystPostureRequestDto(
+    bool AutonomyEnabled,
+    int MaxTargetsPerRun,
+    string PreferredScannerFamily,
+    bool AutoRun,
+    string QuietHours,
+    bool WatchForNewHosts,
+    bool WatchForFailedRecentJobs,
+    bool WatchForRecentAlerts,
+    bool RequireMatchingRuleFamily,
+    string ActorUserId);
 
 public sealed record ScanAnalystAutonomousActivityDto(
     string Summary,

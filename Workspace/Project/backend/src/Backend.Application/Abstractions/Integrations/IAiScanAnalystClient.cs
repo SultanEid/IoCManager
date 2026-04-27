@@ -19,7 +19,8 @@ public sealed record AiScanAnalystContextRequest(
     IReadOnlyList<AiScanAnalystJobContext> RecentJobs,
     IReadOnlyList<AiScanAnalystAlertContext> RecentAlerts,
     IReadOnlyList<AiScanAnalystServerFactContext> ExternalServerFacts,
-    IReadOnlyList<AiScanAnalystTriggerContext> ActiveTriggers);
+    IReadOnlyList<AiScanAnalystTriggerContext> ActiveTriggers,
+    bool AllowLocalPlanner);
 
 public sealed record AiScanAnalystFocusSubnetContext(
     Guid SubnetId,
