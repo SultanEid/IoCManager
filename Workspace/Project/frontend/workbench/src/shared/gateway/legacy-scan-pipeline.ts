@@ -3,6 +3,7 @@
 import { z } from "zod"
 import { ApiError } from "@/shared/api/error"
 import { requestBlob, requestForm, requestJson } from "@/shared/api/client"
+import { isMockMode } from "@/shared/gateway"
 
 const metricSchema = z.object({
   label: z.string(),
@@ -327,6 +328,192 @@ export type LegacyPipelineGeneratedReport = z.infer<typeof generatedReportSchema
 export type LegacyPipelineReportDetail = z.infer<typeof reportDetailSchema>
 export type LegacyPipelineReportDeletion = z.infer<typeof reportDeletionSchema>
 
+const mockLegacyTargets: LegacyPipelineTarget[] = [
+  {
+    id: "7bc88d92-4eb4-456a-a7a4-a70ae62f6b91",
+    networkId: "demo-network-1",
+    networkName: "Demo SOC network",
+    displayName: "srv-finance-01",
+    hostname: "srv-finance-01",
+    ipAddress: "10.20.4.18",
+    status: "Online",
+    targetOsType: "Windows",
+    lastSweepAtUtc: "2026-04-26T08:35:00.000Z",
+  },
+  {
+    id: "ac4fd902-b3c2-4f76-99d0-343ad229f9f1",
+    networkId: "demo-network-1",
+    networkName: "Demo SOC network",
+    displayName: "mail-edge-02",
+    hostname: "mail-edge-02",
+    ipAddress: "10.20.9.44",
+    status: "Online",
+    targetOsType: "Linux",
+    lastSweepAtUtc: "2026-04-26T08:33:00.000Z",
+  },
+]
+
+const mockLegacyIocDetails: LegacyPipelineIocFindingDetail[] = [
+  {
+    iocId: "9c79a40c-0454-4e26-9f72-e6b3f2656f59",
+    scannerFamily: "YARA",
+    targetId: mockLegacyTargets[0].id,
+    targetDisplay: "srv-finance-01",
+    targetIp: "10.20.4.18",
+    targetOsType: "Windows",
+    jobId: "demo-job-yara-1",
+    scanPlanId: "demo-plan-endpoints",
+    ruleName: "suspicious_powershell_loader",
+    indicatorValue: "C:\\Users\\Public\\loader.ps1",
+    indicatorKind: "file_path",
+    painLevel: "HostArtifact",
+    severity: "High",
+    timestampUtc: "2026-04-26T08:37:42.000Z",
+    rawPayload: "{\"match\":\"suspicious_powershell_loader\",\"confidence\":\"low\",\"missing_enrichment\":true}",
+    status: "Open",
+    target: {
+      id: mockLegacyTargets[0].id,
+      display: "srv-finance-01",
+      hostname: "srv-finance-01",
+      ipAddress: "10.20.4.18",
+      status: "Online",
+      targetOsType: "Windows",
+    },
+    relatedScan: {
+      jobId: "demo-job-yara-1",
+      scanPlanId: "demo-plan-endpoints",
+      scannerFamily: "YARA",
+      executionMode: "Manual",
+      triggerType: "Analyst",
+      status: "Completed",
+      queuedAtUtc: "2026-04-26T08:35:01.000Z",
+      startedAtUtc: "2026-04-26T08:35:12.000Z",
+      finishedAtUtc: "2026-04-26T08:37:55.000Z",
+    },
+    yaraDetail: {
+      filePath: "C:\\Users\\Public\\loader.ps1",
+      fileHash: "b6c5d3c73c1de742a7f4260b8a27f3a3f4ea7d0e9af3f2d7a4e1cf355cb6fd55",
+    },
+    sigmaDetail: null,
+    networkDetail: null,
+  },
+  {
+    iocId: "e97b8b0f-03cf-40a4-9614-55918023d0de",
+    scannerFamily: "SIGMA",
+    targetId: mockLegacyTargets[0].id,
+    targetDisplay: "srv-finance-01",
+    targetIp: "10.20.4.18",
+    targetOsType: "Windows",
+    jobId: "demo-job-sigma-1",
+    scanPlanId: "demo-plan-endpoints",
+    ruleName: "encoded_command_execution",
+    indicatorValue: "powershell.exe -enc SQBFAFgA",
+    indicatorKind: "process_command_line",
+    painLevel: "Ttp",
+    severity: "Medium",
+    timestampUtc: "2026-04-26T08:41:16.000Z",
+    rawPayload: "{\"event_id\":4688,\"command_line\":\"powershell.exe -enc SQBFAFgA\",\"source\":\"windows-security\"}",
+    status: "Review",
+    target: {
+      id: mockLegacyTargets[0].id,
+      display: "srv-finance-01",
+      hostname: "srv-finance-01",
+      ipAddress: "10.20.4.18",
+      status: "Online",
+      targetOsType: "Windows",
+    },
+    relatedScan: {
+      jobId: "demo-job-sigma-1",
+      scanPlanId: "demo-plan-endpoints",
+      scannerFamily: "SIGMA",
+      executionMode: "Scheduled",
+      triggerType: "Plan",
+      status: "Completed",
+      queuedAtUtc: "2026-04-26T08:38:00.000Z",
+      startedAtUtc: "2026-04-26T08:38:08.000Z",
+      finishedAtUtc: "2026-04-26T08:42:00.000Z",
+    },
+    yaraDetail: null,
+    sigmaDetail: {
+      logSource: "Windows Security",
+      severity: "medium",
+      commandLine: "powershell.exe -enc SQBFAFgA",
+    },
+    networkDetail: null,
+  },
+  {
+    iocId: "620192eb-12c2-47cb-ae96-3e26bdf2b8e6",
+    scannerFamily: "SURICATA",
+    targetId: mockLegacyTargets[1].id,
+    targetDisplay: "mail-edge-02",
+    targetIp: "10.20.9.44",
+    targetOsType: "Linux",
+    jobId: "demo-job-network-1",
+    scanPlanId: "demo-plan-network",
+    ruleName: "possible_c2_beacon",
+    indicatorValue: "hxxp://unknown.example/checkin",
+    indicatorKind: "url",
+    painLevel: "CommandAndControl",
+    severity: "Critical",
+    timestampUtc: "2026-04-26T08:44:03.000Z",
+    rawPayload: "{\"alert\":\"possible_c2_beacon\",\"flow_id\":24219,\"dest\":\"unknown.example\"}",
+    status: "Open",
+    target: {
+      id: mockLegacyTargets[1].id,
+      display: "mail-edge-02",
+      hostname: "mail-edge-02",
+      ipAddress: "10.20.9.44",
+      status: "Online",
+      targetOsType: "Linux",
+    },
+    relatedScan: {
+      jobId: "demo-job-network-1",
+      scanPlanId: "demo-plan-network",
+      scannerFamily: "SURICATA",
+      executionMode: "Manual",
+      triggerType: "Analyst",
+      status: "Completed",
+      queuedAtUtc: "2026-04-26T08:42:00.000Z",
+      startedAtUtc: "2026-04-26T08:42:09.000Z",
+      finishedAtUtc: "2026-04-26T08:44:20.000Z",
+    },
+    yaraDetail: null,
+    sigmaDetail: null,
+    networkDetail: {
+      sourceIp: "10.20.9.44",
+      destIp: "203.0.113.19",
+      protocol: "HTTP",
+      severity: "critical",
+      flowId: 24219,
+    },
+  },
+]
+
+function toMockFindingListItem(detail: LegacyPipelineIocFindingDetail): LegacyPipelineIocFinding {
+  return {
+    iocId: detail.iocId,
+    scannerFamily: detail.scannerFamily,
+    targetId: detail.targetId,
+    targetDisplay: detail.targetDisplay,
+    targetIp: detail.targetIp,
+    targetOsType: detail.targetOsType,
+    jobId: detail.jobId,
+    scanPlanId: detail.scanPlanId,
+    ruleName: detail.ruleName,
+    indicatorValue: detail.indicatorValue,
+    indicatorKind: detail.indicatorKind,
+    painLevel: detail.painLevel,
+    severity: detail.severity,
+    timestampUtc: detail.timestampUtc,
+    rawPayload: detail.rawPayload,
+    status: detail.status,
+  }
+}
+
+function includesText(value: string | null | undefined, query: string) {
+  return (value ?? "").toLowerCase().includes(query)
+}
+
 export async function listLegacyNetworks(signal?: AbortSignal) {
   return requestJson("/api/v2/legacy-pipeline/networks", z.array(networkSchema), { signal })
 }
@@ -384,6 +571,14 @@ export async function deleteLegacyNetwork(networkId: string, force?: boolean) {
 }
 
 export async function listLegacyTargets(networkId?: string, signal?: AbortSignal) {
+  if (isMockMode) {
+    if (signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError")
+    }
+
+    return networkId ? mockLegacyTargets.filter((target) => target.networkId === networkId) : mockLegacyTargets
+  }
+
   const suffix = networkId ? `?networkId=${encodeURIComponent(networkId)}` : ""
   return requestJson(`/api/v2/legacy-pipeline/targets${suffix}`, z.array(targetSchema), { signal })
 }
@@ -514,6 +709,46 @@ export async function listLegacyIocFindings(filters: {
   page?: number
   pageSize?: number
 }, signal?: AbortSignal) {
+  if (isMockMode) {
+    if (signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError")
+    }
+
+    const query = (filters.q ?? "").trim().toLowerCase()
+    const fromTime = filters.fromUtc ? new Date(filters.fromUtc).getTime() : null
+    const toTime = filters.toUtc ? new Date(filters.toUtc).getTime() : null
+    const filtered = mockLegacyIocDetails
+      .map(toMockFindingListItem)
+      .filter((finding) => {
+        const findingTime = new Date(finding.timestampUtc).getTime()
+        return (
+          (!filters.scannerFamily || finding.scannerFamily === filters.scannerFamily)
+          && (!filters.targetId || finding.targetId === filters.targetId)
+          && (!filters.severity || finding.severity === filters.severity)
+          && (!filters.painLevel || finding.painLevel === filters.painLevel)
+          && (fromTime === null || findingTime >= fromTime)
+          && (toTime === null || findingTime <= toTime)
+          && (!query
+            || includesText(finding.ruleName, query)
+            || includesText(finding.indicatorValue, query)
+            || includesText(finding.indicatorKind, query)
+            || includesText(finding.rawPayload, query)
+            || includesText(finding.targetDisplay, query))
+        )
+      })
+    const page = Math.max(1, filters.page ?? 1)
+    const pageSize = Math.max(1, filters.pageSize ?? 100)
+    const start = (page - 1) * pageSize
+
+    return {
+      items: filtered.slice(start, start + pageSize),
+      totalCount: filtered.length,
+      page,
+      pageSize,
+      availableSeverities: Array.from(new Set(mockLegacyIocDetails.map((finding) => finding.severity))).sort(),
+    }
+  }
+
   const params = new URLSearchParams()
   if (filters.scannerFamily) params.set("scannerFamily", filters.scannerFamily)
   if (filters.targetId) params.set("targetId", filters.targetId)
@@ -529,6 +764,17 @@ export async function listLegacyIocFindings(filters: {
 }
 
 export async function getLegacyIocFindingDetail(iocId: string, signal?: AbortSignal) {
+  if (isMockMode) {
+    if (signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError")
+    }
+
+    const detail = mockLegacyIocDetails.find((finding) => finding.iocId === iocId)
+    if (detail) {
+      return detail
+    }
+  }
+
   return requestJson(`/api/v2/legacy-pipeline/iocs/${encodeURIComponent(iocId)}`, iocFindingDetailSchema, { signal })
 }
 
