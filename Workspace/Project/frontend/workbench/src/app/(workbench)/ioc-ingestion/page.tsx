@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ApiError } from "@/shared/api/error"
+import { explainDecisionConfidence } from "@/shared/ai/confidence-explanation"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
@@ -263,6 +264,11 @@ export default function IocsExplorerPage() {
     latestIocDecision?.reasons.filter((reason) => !isDecisionTelemetryReason(reason)) ?? []
   const latestIocLeadReason = latestIocNarrativeReasons[0] ?? null
   const latestIocSupportingReasons = latestIocNarrativeReasons.slice(1, 3)
+  const latestIocConfidenceReasons = explainDecisionConfidence({
+    result: latestIocDecisionResult,
+    sourceLabel: latestRelatedDetection?.source ?? "IOC-native generation",
+    hasDetectionContext: Boolean(latestIocDecisionData?.detectionId),
+  })
 
   const targets = targetsQuery.data ?? []
   const findingsPage = findingsQuery.data
@@ -943,6 +949,20 @@ export default function IocsExplorerPage() {
                                   <dd className="mt-1 text-lg font-semibold">{formatPercent(latestIocDecision.falsePositiveRisk)}</dd>
                                 </div>
                               </dl>
+                            </div>
+
+                            <div className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
+                              <p className="wb-kicker">Why this confidence</p>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                {latestIocConfidenceReasons.map((reason) => (
+                                  <InlineState
+                                    key={reason.title}
+                                    title={reason.title}
+                                    description={reason.detail}
+                                    tone={reason.tone}
+                                  />
+                                ))}
+                              </div>
                             </div>
 
                             <div className="rounded-lg border border-border/60 bg-surface-2/45 px-3 py-2.5 text-sm text-muted-foreground">
