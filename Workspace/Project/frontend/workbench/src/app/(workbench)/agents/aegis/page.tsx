@@ -517,7 +517,7 @@ export default function AegisPage() {
                     {plan.sourceReportId ? (
                       <Link
                         className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                        href={`/reports?q=${encodeURIComponent(plan.sourceReportId)}`}
+                        href={`/reports?review=${encodeURIComponent(plan.sourceReportId)}`}
                       >
                         Source report
                       </Link>

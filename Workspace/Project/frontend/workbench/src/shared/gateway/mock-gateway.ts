@@ -878,6 +878,9 @@ export class MockGateway implements Gateway {
           isDefault: true,
           embedHeightPx: 760,
           tags: ["Executive", "Threat", "Operations"],
+          embedToken: null,
+          embedTokenExpiresAtUtc: null,
+          tokenType: "Iframe",
         },
       ],
     }

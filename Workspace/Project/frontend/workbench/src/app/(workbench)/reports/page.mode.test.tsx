@@ -44,6 +44,7 @@ const gatewayState = vi.hoisted(() => ({
 }))
 const mockedGateway = vi.hoisted(() => ({
   listReports: vi.fn(),
+  getReport: vi.fn(),
   listTargetServers: vi.fn(),
   generateReport: vi.fn(),
   deleteReport: vi.fn(),
@@ -111,6 +112,7 @@ describe("ReportsPage mode behavior", () => {
       page: 1,
       pageSize: 20,
     })
+    mockedGateway.getReport.mockRejectedValue(new Error("Unexpected report detail lookup."))
     mockedGateway.listTargetServers.mockResolvedValue([])
     mockedUseWorkbenchQuery.mockImplementation((queryKey: unknown) => {
       if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "servers") {
@@ -222,5 +224,39 @@ describe("ReportsPage mode behavior", () => {
     })
     expect(screen.getByText("No preview yet")).toBeInTheDocument()
     expect(screen.queryByText("Critical posture.")).not.toBeInTheDocument()
+  })
+
+  it("opens a review query report by id when it is outside the first page", async () => {
+    const report = {
+      id: "ef2f082c-7d8f-4a0e-8189-0a4476034331",
+      title: "Source bulletin review",
+      reportType: "Operational",
+      summaryJson: JSON.stringify({
+        scope: "Source report",
+        filters: {},
+        sections: [
+          {
+            title: "Source Assessment",
+            summary: "Opened from source link.",
+            metrics: [],
+            highlights: [],
+            narrative: null,
+            tables: [],
+          },
+        ],
+      }),
+      generatedAtUtc: "2026-04-24T08:32:07Z",
+      createdAtUtc: "2026-04-24T08:32:07Z",
+      updatedAtUtc: "2026-04-24T08:32:07Z",
+      alertIds: [],
+    }
+    navigation.setUrl(`/reports?review=${report.id}`)
+    mockedGateway.getReport.mockResolvedValue(report)
+
+    render(<ReportsPage />)
+
+    expect(await screen.findByRole("dialog", { name: "Report review" })).toBeInTheDocument()
+    expect(screen.getAllByText("Source Assessment").length).toBeGreaterThan(0)
+    expect(mockedGateway.getReport).toHaveBeenCalledWith(report.id, expect.any(AbortSignal))
   })
 })

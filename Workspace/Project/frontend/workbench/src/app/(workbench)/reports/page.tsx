@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -501,7 +501,7 @@ export default function ReportsPage() {
     }
   }
 
-  const clearReviewPdf = () => {
+  const clearReviewPdf = useCallback(() => {
     setReviewPdfUrl((current) => {
       if (current) {
         URL.revokeObjectURL(current)
@@ -511,9 +511,9 @@ export default function ReportsPage() {
     })
     setReviewPdfLoading(false)
     setReviewPdfError(null)
-  }
+  }, [])
 
-  const openSavedReport = async (report: ReportResponse, targets: TargetServerResponse[]) => {
+  const openSavedReport = useCallback(async (report: ReportResponse, targets: TargetServerResponse[]) => {
     setErrorText(null)
     setMessage(null)
     setClosedReviewId(null)
@@ -536,7 +536,7 @@ export default function ReportsPage() {
     } finally {
       setReviewPdfLoading(false)
     }
-  }
+  }, [clearReviewPdf])
 
   const closeReview = () => {
     if (review?.kind === "saved") {
@@ -606,15 +606,26 @@ export default function ReportsPage() {
       return
     }
 
-    const report = reportsQuery.data?.items.find((item) => item.id === requestedReviewId)
-    if (!report) {
-      return
-    }
+    const controller = new AbortController()
+    void (async () => {
+      const report = reportsQuery.data?.items.find((item) => item.id === requestedReviewId)
+        ?? await gateway.getReport(requestedReviewId, controller.signal)
+      if (controller.signal.aborted) {
+        return
+      }
 
-    setClosedReviewId(null)
-    void openSavedReport(report, targetsQuery.data ?? [])
+      setClosedReviewId(null)
+      await openSavedReport(report, targetsQuery.data ?? [])
+    })().catch((error) => {
+      if (!controller.signal.aborted) {
+        setErrorText(classifyUiError(error).message)
+      }
+    })
+
+    return () => controller.abort()
   }, [
     closedReviewId,
+    openSavedReport,
     requestedReviewId,
     reportsQuery.data,
     reportsQuery.isError,

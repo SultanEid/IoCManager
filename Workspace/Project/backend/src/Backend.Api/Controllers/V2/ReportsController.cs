@@ -179,9 +179,9 @@ public sealed class ReportsController : ControllerBase
     [HttpGet("power-bi")]
     [EnableRateLimiting(RateLimitPolicies.Read)]
     [ProducesResponseType<PowerBiVisualizationCatalogResponse>(StatusCodes.Status200OK)]
-    public ActionResult<PowerBiVisualizationCatalogResponse> GetPowerBiCatalog()
+    public async Task<ActionResult<PowerBiVisualizationCatalogResponse>> GetPowerBiCatalog(CancellationToken cancellationToken)
     {
-        return Ok(_powerBiCatalogService.BuildCatalog(User));
+        return Ok(await _powerBiCatalogService.BuildCatalogAsync(User, cancellationToken));
     }
 
     [HttpGet("{reportId:guid}/pdf")]

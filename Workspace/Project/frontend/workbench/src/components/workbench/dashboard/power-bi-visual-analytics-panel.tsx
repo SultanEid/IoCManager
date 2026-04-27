@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/workbench/status-badge"
@@ -11,12 +11,17 @@ import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { panelMotion } from "@/shared/ui/motion"
 import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
 
+const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000
+const MIN_TOKEN_REFRESH_DELAY_MS = 30 * 1000
+
 export function PowerBiVisualAnalyticsPanel() {
   const catalogQuery = useWorkbenchQuery(["dashboard", "power-bi"], (signal) => gateway.getPowerBiVisualizationCatalog(signal))
   const [selectedViewKey, setSelectedViewKey] = useState<string>("")
+  const [embedError, setEmbedError] = useState<string | null>(null)
+  const embedContainerRef = useRef<HTMLDivElement | null>(null)
 
   const catalog = catalogQuery.data
-  const allVisualizations = catalog?.visualizations ?? []
+  const allVisualizations = useMemo(() => catalog?.visualizations ?? [], [catalog?.visualizations])
 
   const activeVisualization =
     allVisualizations.find((item) => item.key === selectedViewKey)
@@ -25,6 +30,82 @@ export function PowerBiVisualAnalyticsPanel() {
     ?? null
 
   const embedHeight = Math.max(activeVisualization?.embedHeightPx ?? 760, 840)
+  const tokenRefreshAt = useMemo(() => {
+    const expirations = allVisualizations
+      .map((item) => item.embedTokenExpiresAtUtc ? new Date(item.embedTokenExpiresAtUtc).getTime() : Number.NaN)
+      .filter((value) => Number.isFinite(value))
+
+    return expirations.length > 0 ? Math.min(...expirations) : null
+  }, [allVisualizations])
+
+  useEffect(() => {
+    if (!tokenRefreshAt) {
+      return
+    }
+
+    const delay = Math.max(tokenRefreshAt - Date.now() - TOKEN_REFRESH_SKEW_MS, MIN_TOKEN_REFRESH_DELAY_MS)
+    const timeoutId = window.setTimeout(() => {
+      void catalogQuery.refetch()
+    }, delay)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [catalogQuery, tokenRefreshAt])
+
+  useEffect(() => {
+    const container = embedContainerRef.current
+    if (!container || !activeVisualization?.embedToken || !activeVisualization.embedUrl) {
+      return
+    }
+
+    let disposed = false
+    let powerBiService: import("powerbi-client").service.Service | null = null
+    setEmbedError(null)
+    void import("powerbi-client")
+      .then((powerbi) => {
+        if (disposed) {
+          return
+        }
+
+        powerBiService = new powerbi.service.Service(
+          powerbi.factories.hpmFactory,
+          powerbi.factories.wpmpFactory,
+          powerbi.factories.routerFactory,
+        )
+        powerBiService.reset(container)
+        const report = powerBiService.embed(container, {
+          type: "report",
+          id: activeVisualization.reportId,
+          embedUrl: activeVisualization.embedUrl,
+          accessToken: activeVisualization.embedToken ?? undefined,
+          tokenType: powerbi.models.TokenType.Embed,
+          permissions: powerbi.models.Permissions.Read,
+          settings: {
+            panes: {
+              filters: {
+                expanded: false,
+                visible: false,
+              },
+              pageNavigation: {
+                visible: false,
+              },
+            },
+            background: powerbi.models.BackgroundType.Transparent,
+          },
+        })
+        report.on("error", (event) => {
+          const detail = event.detail as { message?: string } | undefined
+          setEmbedError(detail?.message ?? "Power BI reported an embed error.")
+        })
+      })
+      .catch((error: unknown) => {
+        setEmbedError(error instanceof Error ? error.message : "Power BI embed client failed to load.")
+      })
+
+    return () => {
+      disposed = true
+      powerBiService?.reset(container)
+    }
+  }, [activeVisualization?.embedToken, activeVisualization?.embedUrl, activeVisualization?.key, activeVisualization?.reportId])
 
   if (catalogQuery.isLoading) {
     return <LoadingState label="Loading visual analytics" />
@@ -76,7 +157,14 @@ export function PowerBiVisualAnalyticsPanel() {
           </div>
 
           <div className="overflow-hidden rounded-[1.25rem] border border-border/70 bg-surface-2/40">
-            {activeVisualization.isConfigured && activeVisualization.embedUrl ? (
+            {activeVisualization.embedToken && activeVisualization.embedUrl ? (
+              <div
+                ref={embedContainerRef}
+                className="block w-full bg-surface-3"
+                style={{ height: `${embedHeight}px` }}
+                aria-label={activeVisualization.title}
+              />
+            ) : activeVisualization.isConfigured && activeVisualization.embedUrl ? (
               <iframe
                 title={activeVisualization.title}
                 src={activeVisualization.embedUrl}
@@ -98,6 +186,9 @@ export function PowerBiVisualAnalyticsPanel() {
               </div>
             )}
           </div>
+          {embedError ? (
+            <p className="text-sm text-destructive">{embedError}</p>
+          ) : null}
         </div>
       ) : (
         <EmptyState

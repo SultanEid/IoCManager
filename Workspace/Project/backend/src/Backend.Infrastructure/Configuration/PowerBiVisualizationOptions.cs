@@ -7,6 +7,13 @@ public sealed class PowerBiVisualizationOptions
     public bool Enabled { get; set; }
     public bool AllowDevelopmentPlaceholders { get; set; } = true;
     public string? DefaultVisualizationKey { get; set; }
+    public string TenantId { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    public string AuthorityHost { get; set; } = "https://login.microsoftonline.com";
+    public string PowerBiApiBaseUrl { get; set; } = "https://api.powerbi.com/v1.0/myorg";
+    public string PowerBiApiScope { get; set; } = "https://analysis.windows.net/powerbi/api/.default";
+    public int TokenRefreshSkewMinutes { get; set; } = 5;
     public List<PowerBiWorkspaceOptions> Workspaces { get; set; } = [];
 }
 

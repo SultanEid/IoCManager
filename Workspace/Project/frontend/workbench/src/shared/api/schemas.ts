@@ -1097,6 +1097,9 @@ export const powerBiVisualizationResponseSchema = z.object({
   isDefault: z.boolean(),
   embedHeightPx: z.number().int(),
   tags: z.array(z.string()),
+  embedToken: z.string().nullable().optional(),
+  embedTokenExpiresAtUtc: z.string().nullable().optional(),
+  tokenType: z.string().optional(),
 })
 
 export const powerBiVisualizationCatalogResponseSchema = z.object({
