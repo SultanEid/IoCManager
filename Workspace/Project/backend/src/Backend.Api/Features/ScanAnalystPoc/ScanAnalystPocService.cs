@@ -1,5 +1,7 @@
 using System.Data.Common;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Backend.Api.Infrastructure;
 using Backend.Application.Abstractions.Integrations;
@@ -17,12 +19,22 @@ public sealed class ScanAnalystPocService
 {
     private const int DefaultMaxTargetCount = 5;
     private const int MaxAllowedTargetCount = 25;
+    private static readonly string[] LocalPlannerOverridePhrases =
+    [
+        "use local planner",
+        "bounded local planner",
+        "use bounded planner",
+        "use offline planner",
+    ];
+    private const string TargetBecameLiveTriggerType = "legacy_target_became_live";
+    private const string LegacyUncoveredTargetTriggerType = "legacy_uncovered_target";
     private static readonly Regex NumberRegex = new(@"\b(?<value>\d{1,2})\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly CtiDbContext _dbContext;
     private readonly IScanAnalystPocAgentAdapter _agentAdapter;
     private readonly IScanPlanService _scanPlanService;
     private readonly IScanJobQueue _scanJobQueue;
+    private readonly ILegacyScanPipelineService _legacyScanPipelineService;
     private readonly ScanAnalystPocSessionStore _sessionStore;
     private readonly ScanAnalystPocRuntimeState _runtimeState;
     private readonly ScanAnalystPocOptions _options;
@@ -33,6 +45,7 @@ public sealed class ScanAnalystPocService
         IScanAnalystPocAgentAdapter agentAdapter,
         IScanPlanService scanPlanService,
         IScanJobQueue scanJobQueue,
+        ILegacyScanPipelineService legacyScanPipelineService,
         ScanAnalystPocSessionStore sessionStore,
         ScanAnalystPocRuntimeState runtimeState,
         IOptions<ScanAnalystPocOptions> options,
@@ -42,6 +55,7 @@ public sealed class ScanAnalystPocService
         _agentAdapter = agentAdapter;
         _scanPlanService = scanPlanService;
         _scanJobQueue = scanJobQueue;
+        _legacyScanPipelineService = legacyScanPipelineService;
         _sessionStore = sessionStore;
         _runtimeState = runtimeState;
         _options = options.Value;
@@ -50,9 +64,10 @@ public sealed class ScanAnalystPocService
 
     public ScanAnalystAgentStatusDto GetStatus()
     {
+        var parameters = GetEffectiveParameters();
         return new ScanAnalystAgentStatusDto(
             AgentEnabled: _options.Enabled,
-            AutonomyEnabled: _options.AutonomyEnabled,
+            AutonomyEnabled: parameters.Enabled,
             DatabaseAvailable: _runtimeState.DatabaseAvailable,
             OperatingMode: _runtimeState.OperatingMode,
             IndicatorLabel: _runtimeState.DatabaseAvailable ? "Agent live" : "Agent demo",
@@ -60,18 +75,27 @@ public sealed class ScanAnalystPocService
             ActiveSessionCount: _runtimeState.ActiveSessionCount,
             AvailableMockConditions: ScanAnalystPocMockConditions.All,
             ActiveMockConditions: _runtimeState.ActiveMockConditions,
-            Parameters: new ScanAnalystAgentParametersDto(
-                _options.AutonomyEnabled,
-                _options.AllowedSubnets,
-                _options.AllowedEnvironments,
-                _options.MaxTargetsPerRun,
-                _options.PreferredScannerFamily,
-                _options.AutoRun,
-                _options.QuietHours,
-                _options.WatchForNewHosts,
-                _options.WatchForFailedRecentJobs,
-                _options.RequireMatchingRuleFamily),
+            Parameters: parameters,
             LastAutonomousActivity: _runtimeState.LastAutonomousActivity);
+    }
+
+    public ScanAnalystAgentStatusDto UpdatePosture(UpdateScanAnalystPostureRequestDto request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ActorUserId))
+        {
+            throw new ArgumentException("ActorUserId is required.");
+        }
+
+        if (request.MaxTargetsPerRun is <= 0 or > MaxAllowedTargetCount)
+        {
+            throw new ArgumentException($"MaxTargetsPerRun must be between 1 and {MaxAllowedTargetCount}.");
+        }
+
+        var preferredScannerFamily = NormalizePostureScannerFamily(request.PreferredScannerFamily);
+        var quietHours = string.IsNullOrWhiteSpace(request.QuietHours) ? "none" : request.QuietHours.Trim();
+
+        _runtimeState.UpdatePosture(_options, request, preferredScannerFamily, quietHours);
+        return GetStatus();
     }
 
     public async Task<ScanAnalystResponseDto> AnalyzeAsync(
@@ -139,6 +163,121 @@ public sealed class ScanAnalystPocService
             execution.RunSummary);
     }
 
+    private async Task<ScanAnalystChatResponseDto> RunBoundedLiveTargetYaraActionAsync(
+        ScanAnalystPocContextSnapshot context,
+        AiScanAnalystTriggerContext trigger,
+        LegacyScanAnalystTargetContext target,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var rulePreset = context.LegacyRulePresets.FirstOrDefault(x => x.ScannerFamily.Equals("yara", StringComparison.OrdinalIgnoreCase))
+            ?? new LegacyScanAnalystRulePresetContext(BuildLegacyRuleRevisionGuid("yara"), BuildLegacyRuleArtifactGuid("yara"), "yara", null);
+        var proposal = BuildLiveTargetYaraProposal(target, rulePreset, nowUtc);
+        var materialized = await MaterializeLegacyAsync(
+            proposal,
+            _options.SystemActorUserId,
+            "CreateAndRun",
+            context,
+            [target],
+            cancellationToken);
+        var analysis = new ScanAnalystResponseDto(
+            Action: "CreateAndRun",
+            OperatingMode: context.OperatingMode,
+            Summary: $"Zira detected {target.Hostname} became live and created a one-target YARA scan plan for it.",
+            PlannerMode: "bounded-local",
+            Observations:
+            [
+                $"{target.Hostname} ({target.IpAddress}) is Online in {target.NetworkName}.",
+                "The live-target automation is constrained to a single target and the YARA scanner family.",
+                trigger.Summary,
+            ],
+            Reasoning:
+            [
+                "A target becoming live is treated as a high-signal coverage event.",
+                "YARA is the default first-pass scanner for newly live endpoint targets because it can validate file and artifact indicators with bounded scope.",
+                "Zira created and ran the plan automatically because this trigger is explicitly allowed by the autonomous posture.",
+            ],
+            ValidationWarnings: Array.Empty<string>(),
+            RecommendedScannerCapability: "Yara",
+            ContextSummary: BuildContextSummary(context),
+            ProposedPlan: proposal,
+            CreatedPlan: materialized.CreatedPlan,
+            QueuedJob: materialized.QueuedJob,
+            RunSummary: materialized.RunSummary);
+        var snapshot = _sessionStore.GetOrCreate(null);
+        var userMessage = new ScanAnalystAgentMessageDto(
+            "system",
+            $"Autonomous trigger: {trigger.TriggerLabel}. Create and run a bounded YARA scan for {target.Hostname}.",
+            nowUtc);
+        var agentMessage = new ScanAnalystAgentMessageDto(
+            "agent",
+            BuildAgentMessage(analysis, materialized.RunSummary),
+            DateTimeOffset.UtcNow);
+        var updated = _sessionStore.Update(
+            snapshot.SessionId,
+            userMessage,
+            agentMessage,
+            analysis,
+            materialized.RunSummary,
+            context.ActiveMockConditions);
+
+        _runtimeState.RecordAutonomousActivity(
+            new ScanAnalystAutonomousActivityDto(
+                Summary: analysis.Summary,
+                Trigger: trigger.TriggerLabel,
+                Action: analysis.Action,
+                OperatingMode: analysis.OperatingMode,
+                OccurredAtUtc: DateTimeOffset.UtcNow));
+
+        return new ScanAnalystChatResponseDto(
+            updated.SessionId,
+            $"Zira ran a bounded YARA scan for newly live target {target.Hostname}.",
+            analysis.OperatingMode,
+            _runtimeState.DatabaseAvailable,
+            updated.ActiveMockConditions,
+            updated.Messages,
+            analysis,
+            materialized.RunSummary);
+    }
+
+    private static bool TryFindLiveTargetYaraTrigger(
+        IReadOnlyList<AiScanAnalystTriggerContext> activeTriggers,
+        ScanAnalystPocContextSnapshot context,
+        out AiScanAnalystTriggerContext trigger,
+        out LegacyScanAnalystTargetContext target)
+    {
+        foreach (var candidate in activeTriggers.Where(x => x.TriggerType.Equals(TargetBecameLiveTriggerType, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (Guid.TryParse(candidate.TargetServerId, out var targetServerId))
+            {
+                var matchedTarget = context.LegacyTargets.FirstOrDefault(x => x.SyntheticTargetServerId == targetServerId);
+                if (matchedTarget is not null)
+                {
+                    trigger = candidate;
+                    target = matchedTarget;
+                    return true;
+                }
+            }
+        }
+
+        trigger = null!;
+        target = null!;
+        return false;
+    }
+
+    private static ScanAnalystContextSummaryDto BuildContextSummary(ScanAnalystPocContextSnapshot context)
+    {
+        return new ScanAnalystContextSummaryDto(
+            context.FocusSubnet?.SubnetId,
+            context.FocusSubnet?.Name,
+            context.DiscoveryRuns.Count,
+            context.DiscoveredHosts.Count,
+            context.ManagedServers.Count,
+            context.CandidateRules.Count,
+            context.ExistingPlans.Count,
+            context.RecentJobs.Count);
+    }
+
     public async Task<ScanAnalystRunSummaryDto?> GetRunSummaryAsync(Guid scanJobId, CancellationToken cancellationToken)
     {
         if (scanJobId == Guid.Empty)
@@ -151,12 +290,19 @@ public sealed class ScanAnalystPocService
             return mockSummary;
         }
 
+        var legacySummary = await BuildLegacyRunSummaryAsync(scanJobId, cancellationToken);
+        if (legacySummary is not null)
+        {
+            return legacySummary;
+        }
+
         return await BuildLiveRunSummaryAsync(scanJobId, cancellationToken);
     }
 
     public async Task<ScanAnalystChatResponseDto?> RunAutonomousPassAsync(CancellationToken cancellationToken)
     {
-        if (!_options.Enabled || !_options.AutonomyEnabled)
+        var parameters = GetEffectiveParameters();
+        if (!_options.Enabled || !parameters.Enabled)
         {
             return null;
         }
@@ -171,18 +317,18 @@ public sealed class ScanAnalystPocService
         var simulatedConditions = new List<string>();
         if (!_runtimeState.DatabaseAvailable)
         {
-            if (_options.WatchForNewHosts)
+            if (parameters.WatchForNewHosts)
             {
                 simulatedConditions.Add(ScanAnalystPocMockConditions.NewHostsFound);
             }
 
-            if (_options.WatchForFailedRecentJobs)
+            if (parameters.WatchForFailedRecentJobs)
             {
                 simulatedConditions.Add(ScanAnalystPocMockConditions.FailedRecentJob);
             }
 
             simulatedConditions.Add(ScanAnalystPocMockConditions.StaleCoverage);
-            if (_options.WatchForRecentAlerts)
+            if (parameters.WatchForRecentAlerts)
             {
                 simulatedConditions.Add(ScanAnalystPocMockConditions.RecentAlertDetected);
             }
@@ -200,7 +346,7 @@ public sealed class ScanAnalystPocService
         }
 
         var triggerParts = activeTriggers.Count == 0
-            ? BuildFallbackTriggerParts()
+            ? BuildFallbackTriggerParts(parameters)
             : activeTriggers
                 .Select(x => x.TriggerLabel)
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -213,19 +359,26 @@ public sealed class ScanAnalystPocService
             return null;
         }
 
+        if (TryFindLiveTargetYaraTrigger(activeTriggers, context, out var liveTargetTrigger, out var liveTarget))
+        {
+            return await RunBoundedLiveTargetYaraActionAsync(context, liveTargetTrigger, liveTarget, cancellationToken);
+        }
+
         var objective =
             $"Autonomously review {string.Join(" and ", triggerParts)} in the allowed environments and prepare a targeted follow-up scan plan. " +
-            $"Prefer {_options.PreferredScannerFamily} when it aligns with the available rules and keep the scope within {_options.MaxTargetsPerRun} targets.";
+            $"Use live alerts, newly discovered hosts, uncovered legacy networks, and legacy scan history as decision inputs. " +
+            $"If a trigger maps to a legacy pipeline network or target, select the matching live legacy targets directly instead of waiting for manual user selection. " +
+            $"Prefer {parameters.PreferredScannerFamily} when it aligns with the available rules and keep the scope within {parameters.MaxTargetsPerRun} targets.";
 
         var response = await ChatAsync(
             new ScanAnalystChatRequestDto(
                 SessionId: null,
                 ActorUserId: _options.SystemActorUserId,
                 Message: objective,
-                Action: _options.AutoRun ? "CreateAndRun" : "CreatePlan",
+                Action: parameters.AutoRun ? "CreateAndRun" : "CreatePlan",
                 SubnetId: null,
-                PreferredScannerCapability: NormalizePreferredCapability(_options.PreferredScannerFamily),
-                MaxTargetCount: _options.MaxTargetsPerRun,
+                PreferredScannerCapability: NormalizePreferredCapability(parameters.PreferredScannerFamily),
+                MaxTargetCount: parameters.MaxTargetsPerRun,
                 EditedPlan: null,
                 SimulatedConditions: simulatedConditions),
             cancellationToken);
@@ -280,14 +433,14 @@ public sealed class ScanAnalystPocService
         }
         else
         {
-            materialized = await MaterializeLiveAsync(proposal, actorUserId, action, cancellationToken);
+            materialized = await MaterializeLiveAsync(proposal, actorUserId, action, context, cancellationToken);
         }
 
         var analysis = new ScanAnalystResponseDto(
             Action: action,
             OperatingMode: context.OperatingMode,
             Summary: recommendation.Summary,
-            PlannerMode: string.IsNullOrWhiteSpace(recommendation.PlannerMode) ? "local" : recommendation.PlannerMode,
+            PlannerMode: string.IsNullOrWhiteSpace(recommendation.PlannerMode) ? "openai_required" : recommendation.PlannerMode,
             Observations: recommendation.Observations,
             Reasoning: recommendation.Reasoning,
             ValidationWarnings: validationWarnings,
@@ -345,6 +498,7 @@ public sealed class ScanAnalystPocService
 
     private async Task<ScanAnalystPocContextSnapshot> BuildLiveContextAsync(Guid? subnetId, CancellationToken cancellationToken)
     {
+        var parameters = GetEffectiveParameters();
         var subnet = subnetId.HasValue
             ? await _dbContext.Subnets
                 .AsNoTracking()
@@ -505,6 +659,89 @@ public sealed class ScanAnalystPocService
             })
             .ToList();
 
+        var legacyRulePresets = await _legacyScanPipelineService.ListRulePresetsAsync(cancellationToken);
+        var legacyNetworks = await _legacyScanPipelineService.ListNetworksAsync(cancellationToken);
+        var legacyTargets = await _legacyScanPipelineService.ListTargetsAsync(null, cancellationToken);
+        var legacyNetworkById = legacyNetworks.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+        var legacyCapabilities = legacyRulePresets
+            .Select(x => ToDisplayScannerCapability(x.ScannerFamily))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x)
+            .ToArray();
+        var legacyTargetContexts = legacyTargets
+            .Take(80)
+            .Select(x =>
+            {
+                legacyNetworkById.TryGetValue(x.NetworkId, out var network);
+                var hostname = string.IsNullOrWhiteSpace(x.Hostname)
+                    ? string.IsNullOrWhiteSpace(x.DisplayName) ? x.IpAddress : x.DisplayName
+                    : x.Hostname;
+                var displayName = string.IsNullOrWhiteSpace(x.DisplayName) ? hostname : x.DisplayName;
+                return new LegacyScanAnalystTargetContext(
+                    BuildLegacyTargetGuid(x.Id),
+                    BuildLegacyNetworkGuid(x.NetworkId),
+                    x.Id,
+                    x.NetworkId,
+                    x.NetworkName,
+                    network?.CidrBlock ?? x.NetworkName,
+                    network?.HasSshPassword == true,
+                    displayName,
+                    hostname,
+                    x.IpAddress,
+                    x.Status,
+                    NormalizeLegacyOperatingSystem(x.TargetOsType),
+                    x.LastSweepAtUtc);
+            })
+            .ToList();
+
+        managedServers.AddRange(legacyTargetContexts.Select(x => new AiScanAnalystManagedServerContext(
+            x.SyntheticTargetServerId,
+            x.SyntheticSubnetId,
+            x.Hostname,
+            x.IpAddress,
+            x.OperatingSystem,
+            "LegacyPipeline",
+            x.Status,
+            x.Status.Equals("Online", StringComparison.OrdinalIgnoreCase) ? "Online" : "Offline",
+            legacyCapabilities,
+            x.LastSweepAtUtc)));
+
+        externalServerFacts.AddRange(legacyTargetContexts.Select(x =>
+        {
+            var notes = new List<string>
+            {
+                $"Legacy pipeline target id {x.TargetId} from subnet {x.NetworkName} ({x.NetworkCidr}).",
+                "This target comes from the live legacy scan pipeline used by the Servers and Scans pages.",
+                x.Status.Equals("Online", StringComparison.OrdinalIgnoreCase)
+                    ? "Target is currently marked Online by the latest sweep."
+                    : "Target is not currently marked Online; prefer online targets unless the user explicitly asks otherwise.",
+            };
+
+            if (x.NetworkHasProtectedSshPassword)
+            {
+                notes.Add("The target network stores a protected SSH password; autonomous execution should first verify the runtime can decrypt the credential.");
+            }
+
+            if (legacyCapabilities.Length > 0)
+            {
+                notes.Add($"Legacy pipeline scan families available: {string.Join(", ", legacyCapabilities)}.");
+            }
+
+            return new AiScanAnalystServerFactContext(
+                x.SyntheticTargetServerId,
+                x.Hostname,
+                x.IpAddress,
+                null,
+                x.IpAddress,
+                null,
+                x.LastSweepAtUtc,
+                x.LastSweepAtUtc,
+                x.Status.Equals("Online", StringComparison.OrdinalIgnoreCase) ? "Online" : "Offline",
+                true,
+                legacyCapabilities,
+                notes);
+        }));
+
         var scanPlanIds = await _dbContext.ScanPlans
             .AsNoTracking()
             .OrderByDescending(x => x.UpdatedAtUtc)
@@ -599,7 +836,7 @@ public sealed class ScanAnalystPocService
         var recentAlertCutoffUtc = DateTimeOffset.UtcNow.AddMinutes(-Math.Max(5, _options.RecentAlertWindowMinutes));
         var recentAlertRows = await _dbContext.AlertsV2
             .AsNoTracking()
-            .Where(x => !_options.WatchForRecentAlerts || x.LastDetectedAtUtc >= recentAlertCutoffUtc)
+            .Where(x => !parameters.WatchForRecentAlerts || x.LastDetectedAtUtc >= recentAlertCutoffUtc)
             .OrderByDescending(x => x.LastDetectedAtUtc)
             .Take(subnetId.HasValue ? 40 : 20)
             .ToListAsync(cancellationToken);
@@ -682,12 +919,75 @@ public sealed class ScanAnalystPocService
             })
             .ToList();
 
+        var legacyPlans = await _legacyScanPipelineService.ListPlansAsync(cancellationToken);
+        var legacyJobs = await _legacyScanPipelineService.ListJobsAsync(cancellationToken);
+        var legacyRuleContexts = legacyRulePresets
+            .Select(x => new LegacyScanAnalystRulePresetContext(
+                BuildLegacyRuleRevisionGuid(x.ScannerFamily),
+                BuildLegacyRuleArtifactGuid(x.ScannerFamily),
+                x.ScannerFamily,
+                x.Paths.FirstOrDefault()))
+            .ToList();
+
+        var candidateRuleContexts = rules
+            .Where(x => artifactById.ContainsKey(x.RuleArtifactId))
+            .Select(x =>
+            {
+                var artifact = artifactById[x.RuleArtifactId];
+                return new AiScanAnalystRuleContext(
+                    x.Id,
+                    artifact.Id,
+                    artifact.Name,
+                    artifact.RuleFamily,
+                    x.RevisionNumber,
+                    x.VersionLabel,
+                    x.LifecycleStatus,
+                    artifact.ScopeType.ToString(),
+                    artifact.ScopeValue,
+                    artifact.Description);
+            })
+            .ToList();
+        candidateRuleContexts.AddRange(legacyRuleContexts.Select(x => new AiScanAnalystRuleContext(
+            x.SyntheticRuleRevisionId,
+            x.SyntheticRuleArtifactId,
+            $"Legacy {ToDisplayScannerCapability(x.ScannerFamily)} preset",
+            x.ScannerFamily,
+            1,
+            "legacy-preset",
+            "validated",
+            "LegacyPipeline",
+            x.RulePath,
+            string.IsNullOrWhiteSpace(x.RulePath)
+                ? $"Legacy {x.ScannerFamily} preset from the live scan pipeline."
+                : $"Legacy {x.ScannerFamily} preset at {x.RulePath}.")));
+
+        recentJobContexts.AddRange(legacyJobs
+            .OrderByDescending(x => x.QueuedAtUtc)
+            .Take(8)
+            .Select(x => new AiScanAnalystJobContext(
+                BuildLegacyJobGuid(x.Id),
+                string.IsNullOrWhiteSpace(x.ScanPlanId) ? null : BuildLegacyPlanGuid(x.ScanPlanId),
+                x.TriggerType,
+                x.Status,
+                x.TotalTargets,
+                x.CompletedTargets,
+                x.FailedTargets,
+                0,
+                $"Legacy pipeline {x.ScannerFamily} job: {x.Summary}",
+                x.QueuedAtUtc,
+                x.FinishedAtUtc)));
+
         var triggerContexts = BuildLiveTriggers(
             discoveredHosts,
             managedServers,
             alertContexts,
             recentJobContexts,
-            recentAlertCutoffUtc);
+            recentAlertCutoffUtc,
+            legacyNetworks,
+            legacyTargetContexts,
+            legacyPlans,
+            legacyJobs,
+            parameters);
 
         return new ScanAnalystPocContextSnapshot(
             OperatingMode: ScanAnalystPocModes.LiveData,
@@ -696,24 +996,7 @@ public sealed class ScanAnalystPocService
             DiscoveryRuns: discoveryRuns,
             DiscoveredHosts: discoveredHosts,
             ManagedServers: managedServers,
-            CandidateRules: rules
-                .Where(x => artifactById.ContainsKey(x.RuleArtifactId))
-                .Select(x =>
-                {
-                    var artifact = artifactById[x.RuleArtifactId];
-                    return new AiScanAnalystRuleContext(
-                        x.Id,
-                        artifact.Id,
-                        artifact.Name,
-                        artifact.RuleFamily,
-                        x.RevisionNumber,
-                        x.VersionLabel,
-                        x.LifecycleStatus,
-                        artifact.ScopeType.ToString(),
-                        artifact.ScopeValue,
-                        artifact.Description);
-                })
-                .ToList(),
+            CandidateRules: candidateRuleContexts,
             ExistingPlans: scanPlans
                 .Select(x => new AiScanAnalystPlanContext(
                     x.Id,
@@ -725,11 +1008,26 @@ public sealed class ScanAnalystPocService
                     planRuleLinks.Count(y => y.ScanPlanId == x.Id),
                     null,
                     x.UpdatedAtUtc))
+                .Concat(legacyPlans
+                    .OrderByDescending(x => x.UpdatedAtUtc)
+                    .Take(8)
+                    .Select(x => new AiScanAnalystPlanContext(
+                        BuildLegacyPlanGuid(x.Id),
+                        $"Legacy: {x.Name}",
+                        string.Join(", ", x.ScannerFamilies.Select(ToDisplayScannerCapability)),
+                        x.Status,
+                        "LegacyPreset",
+                        x.TargetIds.Count,
+                        x.RulePathsByFamily.Count,
+                        null,
+                        x.UpdatedAtUtc)))
                 .ToList(),
             RecentJobs: recentJobContexts,
             RecentAlerts: alertContexts,
             ExternalServerFacts: externalServerFacts,
-            ActiveTriggers: triggerContexts);
+            ActiveTriggers: triggerContexts,
+            LegacyTargets: legacyTargetContexts,
+            LegacyRulePresets: legacyRuleContexts);
     }
 
     private ScanAnalystPocContextSnapshot BuildMockContext(Guid? subnetId, IReadOnlyList<string> activeConditions)
@@ -970,7 +1268,9 @@ public sealed class ScanAnalystPocService
             RecentJobs: recentJobs,
             RecentAlerts: recentAlerts,
             ExternalServerFacts: externalServerFacts,
-            ActiveTriggers: triggerContexts);
+            ActiveTriggers: triggerContexts,
+            LegacyTargets: Array.Empty<LegacyScanAnalystTargetContext>(),
+            LegacyRulePresets: Array.Empty<LegacyScanAnalystRulePresetContext>());
     }
 
     private static AiScanAnalystContextRequest CreateAgentRequest(
@@ -994,18 +1294,32 @@ public sealed class ScanAnalystPocService
             context.RecentJobs,
             context.RecentAlerts,
             context.ExternalServerFacts,
-            context.ActiveTriggers);
+            context.ActiveTriggers,
+            AllowsLocalPlannerOverride(objective));
+    }
+
+    private static bool AllowsLocalPlannerOverride(string objective)
+    {
+        return LocalPlannerOverridePhrases.Any(phrase =>
+            objective.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<MaterializationResult> MaterializeLiveAsync(
         ScanAnalystPlanProposalDto proposal,
         string actorUserId,
         string action,
+        ScanAnalystPocContextSnapshot context,
         CancellationToken cancellationToken)
     {
         ScanPlanResponse? createdPlan = null;
         ScanJobResponse? queuedJob = null;
         ScanAnalystRunSummaryDto? runSummary = null;
+
+        var selectedLegacyTargets = ResolveSelectedLegacyTargets(proposal, context);
+        if (selectedLegacyTargets.Count > 0)
+        {
+            return await MaterializeLegacyAsync(proposal, actorUserId, action, context, selectedLegacyTargets, cancellationToken);
+        }
 
         var canMaterializePlan =
             proposal.TargetServerIds.Count > 0 &&
@@ -1045,6 +1359,71 @@ public sealed class ScanAnalystPocService
 
             await _scanJobQueue.EnqueueAsync(queuedJob.Id, cancellationToken);
             runSummary = await BuildLiveRunSummaryAsync(queuedJob.Id, cancellationToken);
+        }
+
+        return new MaterializationResult(createdPlan, queuedJob, runSummary);
+    }
+
+    private async Task<MaterializationResult> MaterializeLegacyAsync(
+        ScanAnalystPlanProposalDto proposal,
+        string actorUserId,
+        string action,
+        ScanAnalystPocContextSnapshot context,
+        IReadOnlyList<LegacyScanAnalystTargetContext> selectedTargets,
+        CancellationToken cancellationToken)
+    {
+        if (action == "RecommendOnly")
+        {
+            return new MaterializationResult(null, null, null);
+        }
+
+        var family = ToLegacyScannerFamily(proposal.ScannerCapability);
+        var rulePreset = context.LegacyRulePresets.FirstOrDefault(x => x.ScannerFamily.Equals(family, StringComparison.OrdinalIgnoreCase))
+            ?? new LegacyScanAnalystRulePresetContext(BuildLegacyRuleRevisionGuid(family), BuildLegacyRuleArtifactGuid(family), family, null);
+        var options = BuildLegacyPlanOptions(family);
+        var notes = string.Join(
+            Environment.NewLine,
+            new[]
+            {
+                proposal.OperatorNotes,
+                "Created by Zira from live legacy pipeline context.",
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        var legacyPlan = await _legacyScanPipelineService.CreatePlanAsync(
+            new LegacyPipelineScanPlanRequest(
+                proposal.Name,
+                [family],
+                action == "CreateAndRun" ? "Active" : proposal.Status,
+                "Manual",
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [family] = rulePreset.RulePath,
+                },
+                notes,
+                actorUserId,
+                Array.Empty<string>(),
+                selectedTargets.Select(x => x.TargetId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                new Dictionary<string, string?>(),
+                options),
+            cancellationToken);
+
+        var createdPlan = MapLegacyPlanToScanPlanResponse(legacyPlan, proposal, selectedTargets, rulePreset);
+        ScanJobResponse? queuedJob = null;
+        ScanAnalystRunSummaryDto? runSummary = null;
+
+        if (action == "CreateAndRun")
+        {
+            var run = await _legacyScanPipelineService.RunPlanAsync(
+                legacyPlan.Id,
+                new LegacyPipelineScanPlanRunRequest(actorUserId),
+                cancellationToken);
+            var firstJob = run?.Jobs.FirstOrDefault();
+            if (firstJob is not null)
+            {
+                queuedJob = MapLegacyJobToScanJobResponse(firstJob, actorUserId);
+                runSummary = await BuildLegacyRunSummaryAsync(queuedJob.Id, cancellationToken)
+                    ?? BuildLegacyRunSummary(firstJob, Array.Empty<LegacyPipelineScanResultResponse>());
+            }
         }
 
         return new MaterializationResult(createdPlan, queuedJob, runSummary);
@@ -1217,20 +1596,97 @@ public sealed class ScanAnalystPocService
             Detections: detections);
     }
 
-    private List<string> BuildFallbackTriggerParts()
+    private async Task<ScanAnalystRunSummaryDto?> BuildLegacyRunSummaryAsync(Guid scanJobId, CancellationToken cancellationToken)
+    {
+        var jobs = await _legacyScanPipelineService.ListJobsAsync(cancellationToken);
+        var job = jobs.FirstOrDefault(x => BuildLegacyJobGuid(x.Id) == scanJobId);
+        if (job is null)
+        {
+            return null;
+        }
+
+        var results = await _legacyScanPipelineService.ListResultsAsync(
+            job.Id,
+            targetId: null,
+            limit: 100,
+            scannerFamily: null,
+            status: null,
+            includeOrphaned: true,
+            cancellationToken);
+
+        return BuildLegacyRunSummary(job, results);
+    }
+
+    private static ScanAnalystRunSummaryDto BuildLegacyRunSummary(
+        LegacyPipelineScanJobResponse job,
+        IReadOnlyList<LegacyPipelineScanResultResponse> results)
+    {
+        var targetExecutions = results.Count == 0
+            ? new List<ScanAnalystRunTargetExecutionDto>
+            {
+                new(
+                    "Legacy pipeline",
+                    "pending",
+                    job.Status,
+                    string.IsNullOrWhiteSpace(job.Summary)
+                        ? "Legacy execution is queued and has not produced target results yet."
+                        : job.Summary,
+                    null),
+            }
+            : results
+                .OrderBy(x => x.TargetDisplay)
+                .Select(x => new ScanAnalystRunTargetExecutionDto(
+                    x.TargetDisplay,
+                    x.TargetId ?? "legacy-target",
+                    x.Status,
+                    $"{x.ScannerFamily.ToUpperInvariant()} completed with {x.FindingsCount} finding{(x.FindingsCount == 1 ? string.Empty : "s")}.",
+                    x.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase) ? "Legacy target execution failed." : null))
+                .ToList();
+
+        var detections = results
+            .Where(x => x.FindingsCount > 0)
+            .Take(25)
+            .Select(x => new ScanAnalystRunDetectionDto(
+                BuildLegacyResultGuid(x.Id),
+                $"{x.ScannerFamily.ToUpperInvariant()} finding",
+                x.TargetDisplay,
+                "Detection",
+                x.FinishedAtUtc ?? x.StartedAtUtc ?? DateTimeOffset.UtcNow))
+            .ToList();
+
+        return new ScanAnalystRunSummaryDto(
+            ScanJobId: BuildLegacyJobGuid(job.Id),
+            IsSimulated: false,
+            NarrativeSummary: BuildNarrativeSummary(
+                ToDisplayScannerCapability(job.ScannerFamily),
+                job.Status,
+                job.TotalTargets,
+                detections.Count,
+                Array.Empty<string>()),
+            JobStatus: job.Status,
+            TotalTargets: job.TotalTargets,
+            CompletedTargets: job.CompletedTargets,
+            FailedTargets: job.FailedTargets,
+            DetectionCount: detections.Count,
+            GeneratedAtUtc: DateTimeOffset.UtcNow,
+            TargetExecutions: targetExecutions,
+            Detections: detections);
+    }
+
+    private List<string> BuildFallbackTriggerParts(ScanAnalystAgentParametersDto parameters)
     {
         var triggerParts = new List<string>();
-        if (_options.WatchForRecentAlerts)
+        if (parameters.WatchForRecentAlerts)
         {
             triggerParts.Add("recent alerts");
         }
 
-        if (_options.WatchForNewHosts)
+        if (parameters.WatchForNewHosts)
         {
             triggerParts.Add("new hosts");
         }
 
-        if (_options.WatchForFailedRecentJobs)
+        if (parameters.WatchForFailedRecentJobs)
         {
             triggerParts.Add("failed recent jobs");
         }
@@ -1248,11 +1704,23 @@ public sealed class ScanAnalystPocService
         IReadOnlyList<AiScanAnalystManagedServerContext> managedServers,
         IReadOnlyList<AiScanAnalystAlertContext> recentAlerts,
         IReadOnlyList<AiScanAnalystJobContext> recentJobs,
-        DateTimeOffset recentAlertCutoffUtc)
+        DateTimeOffset recentAlertCutoffUtc,
+        IReadOnlyList<LegacyPipelineNetworkResponse> legacyNetworks,
+        IReadOnlyList<LegacyScanAnalystTargetContext> legacyTargets,
+        IReadOnlyList<LegacyPipelineScanPlanResponse> legacyPlans,
+        IReadOnlyList<LegacyPipelineScanJobResponse> legacyJobs,
+        ScanAnalystAgentParametersDto parameters)
     {
         var triggers = new List<AiScanAnalystTriggerContext>();
+        var legacyTargetTransitions = legacyTargets
+            .Select(x => new
+            {
+                Target = x,
+                BecameLive = _runtimeState.ObserveLegacyTargetStatus(x.TargetId, x.Status),
+            })
+            .ToList();
 
-        if (_options.WatchForRecentAlerts)
+        if (parameters.WatchForRecentAlerts)
         {
             triggers.AddRange(recentAlerts
                 .Where(x => x.LastDetectedAtUtc >= recentAlertCutoffUtc)
@@ -1268,7 +1736,7 @@ public sealed class ScanAnalystPocService
                     x.LastDetectedAtUtc)));
         }
 
-        if (_options.WatchForNewHosts)
+        if (parameters.WatchForNewHosts)
         {
             triggers.AddRange(discoveredHosts
                 .Where(x => !x.AlreadyPromoted)
@@ -1286,7 +1754,7 @@ public sealed class ScanAnalystPocService
                     x.LastCheckedAtUtc)));
         }
 
-        if (_options.WatchForFailedRecentJobs)
+        if (parameters.WatchForFailedRecentJobs)
         {
             triggers.AddRange(recentJobs
                 .Where(x => x.FailedTargets > 0 || x.Status.Contains("failed", StringComparison.OrdinalIgnoreCase))
@@ -1300,7 +1768,98 @@ public sealed class ScanAnalystPocService
                     null,
                     null,
                     null,
-                    x.CompletedAtUtc ?? x.QueuedAtUtc)));
+                x.CompletedAtUtc ?? x.QueuedAtUtc)));
+        }
+
+        if (parameters.WatchForNewHosts)
+        {
+            var coveredLegacyNetworkIds = legacyPlans
+                .SelectMany(x => x.NetworkIds)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var coveredLegacyTargetIds = legacyPlans
+                .SelectMany(x => x.TargetIds)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var legacyPlanById = legacyPlans.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+            var latestYaraRunByTargetId = legacyJobs
+                .Where(x =>
+                    x.ScanPlanId is not null
+                    && x.ScannerFamily.Equals("yara", StringComparison.OrdinalIgnoreCase)
+                    && legacyPlanById.ContainsKey(x.ScanPlanId))
+                .SelectMany(x => legacyPlanById[x.ScanPlanId!].TargetIds.Select(targetId => new
+                {
+                    TargetId = targetId,
+                    x.QueuedAtUtc,
+                }))
+                .GroupBy(x => x.TargetId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.Max(y => y.QueuedAtUtc), StringComparer.OrdinalIgnoreCase);
+            var liveTargetTriggerRows = legacyTargetTransitions
+                .Where(x =>
+                    x.Target.Status.Equals("Online", StringComparison.OrdinalIgnoreCase)
+                    && (x.BecameLive
+                        || !coveredLegacyTargetIds.Contains(x.Target.TargetId)
+                        || HasNoYaraRunAfterLatestLiveSweep(x.Target, latestYaraRunByTargetId)))
+                .OrderByDescending(x => x.Target.LastSweepAtUtc ?? DateTimeOffset.MinValue)
+                .Take(3)
+                .ToList();
+            var liveTargetTriggerIds = liveTargetTriggerRows
+                .Select(x => x.Target.TargetId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var onlineTargetsByNetwork = legacyTargets
+                .Where(x => x.Status.Equals("Online", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(x => x.NetworkId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.ToList(), StringComparer.OrdinalIgnoreCase);
+
+            triggers.AddRange(legacyNetworks
+                .Where(x => x.OnlineTargets > 0 && !coveredLegacyNetworkIds.Contains(x.Id))
+                .OrderByDescending(x => x.LastSweepAtUtc ?? DateTimeOffset.MinValue)
+                .Take(3)
+                .Select(x =>
+                {
+                    onlineTargetsByNetwork.TryGetValue(x.Id, out var networkTargets);
+                    var leadTarget = networkTargets?.OrderByDescending(target => target.LastSweepAtUtc ?? DateTimeOffset.MinValue).FirstOrDefault();
+                    return new AiScanAnalystTriggerContext(
+                        "legacy_uncovered_network",
+                        $"uncovered legacy network {x.Name}",
+                        $"Legacy network {x.Name} ({x.CidrBlock}) has {x.OnlineTargets} online target{(x.OnlineTargets == 1 ? string.Empty : "s")} and no current legacy scan plan coverage.",
+                        "High",
+                        leadTarget?.SyntheticTargetServerId.ToString("D"),
+                        leadTarget?.Hostname,
+                        leadTarget?.IpAddress,
+                        NormalizePreferredCapability(parameters.PreferredScannerFamily) ?? "Yara",
+                        x.LastSweepAtUtc ?? leadTarget?.LastSweepAtUtc ?? DateTimeOffset.UtcNow);
+                }));
+
+            triggers.AddRange(legacyTargets
+                .Where(x =>
+                    x.Status.Equals("Online", StringComparison.OrdinalIgnoreCase)
+                    && !coveredLegacyTargetIds.Contains(x.TargetId)
+                    && !coveredLegacyNetworkIds.Contains(x.NetworkId)
+                    && !liveTargetTriggerIds.Contains(x.TargetId))
+                .OrderByDescending(x => x.LastSweepAtUtc ?? DateTimeOffset.MinValue)
+                .Take(3)
+                .Select(x => new AiScanAnalystTriggerContext(
+                    LegacyUncoveredTargetTriggerType,
+                    $"uncovered legacy target {x.Hostname}",
+                    $"Legacy target {x.Hostname} ({x.IpAddress}) is online in {x.NetworkName} ({x.NetworkCidr}) and has no current legacy scan plan coverage.",
+                    "High",
+                    x.SyntheticTargetServerId.ToString("D"),
+                    x.Hostname,
+                    x.IpAddress,
+                    NormalizePreferredCapability(parameters.PreferredScannerFamily) ?? "Yara",
+                    x.LastSweepAtUtc ?? DateTimeOffset.UtcNow)));
+
+            triggers.AddRange(liveTargetTriggerRows
+                .Select(x => new AiScanAnalystTriggerContext(
+                    TargetBecameLiveTriggerType,
+                    $"target became live {x.Target.Hostname}",
+                    $"Legacy target {x.Target.Hostname} ({x.Target.IpAddress}) is live in {x.Target.NetworkName}; create and run a one-target YARA scan plan immediately.",
+                    "High",
+                    x.Target.SyntheticTargetServerId.ToString("D"),
+                    x.Target.Hostname,
+                    x.Target.IpAddress,
+                    "Yara",
+                    x.Target.LastSweepAtUtc ?? DateTimeOffset.UtcNow)));
         }
 
         triggers.AddRange(managedServers
@@ -1325,6 +1884,19 @@ public sealed class ScanAnalystPocService
             .OrderByDescending(x => x.ObservedAtUtc)
             .Take(8)
             .ToList();
+    }
+
+    private static bool HasNoYaraRunAfterLatestLiveSweep(
+        LegacyScanAnalystTargetContext target,
+        IReadOnlyDictionary<string, DateTimeOffset> latestYaraRunByTargetId)
+    {
+        if (target.LastSweepAtUtc is null)
+        {
+            return false;
+        }
+
+        return !latestYaraRunByTargetId.TryGetValue(target.TargetId, out var latestYaraRunAtUtc)
+            || latestYaraRunAtUtc < target.LastSweepAtUtc.Value;
     }
 
     private static List<AiScanAnalystTriggerContext> BuildMockTriggers(
@@ -1481,6 +2053,252 @@ public sealed class ScanAnalystPocService
         return editedPlan ?? generatedPlan;
     }
 
+    private static IReadOnlyList<LegacyScanAnalystTargetContext> ResolveSelectedLegacyTargets(
+        ScanAnalystPlanProposalDto proposal,
+        ScanAnalystPocContextSnapshot context)
+    {
+        if (context.LegacyTargets.Count == 0 || proposal.TargetServerIds.Count == 0)
+        {
+            return Array.Empty<LegacyScanAnalystTargetContext>();
+        }
+
+        var legacyBySyntheticId = context.LegacyTargets.ToDictionary(x => x.SyntheticTargetServerId);
+        return proposal.TargetServerIds
+            .Select(id => legacyBySyntheticId.TryGetValue(id, out var target) ? target : null)
+            .OfType<LegacyScanAnalystTargetContext>()
+            .DistinctBy(x => x.TargetId)
+            .ToList();
+    }
+
+    private static ScanAnalystPlanProposalDto BuildLiveTargetYaraProposal(
+        LegacyScanAnalystTargetContext target,
+        LegacyScanAnalystRulePresetContext rulePreset,
+        DateTimeOffset nowUtc)
+    {
+        var safeName = Regex.Replace(target.Hostname, "[^A-Za-z0-9-]+", "-").Trim('-');
+        if (string.IsNullOrWhiteSpace(safeName))
+        {
+            safeName = target.TargetId;
+        }
+
+        return new ScanAnalystPlanProposalDto(
+            Name: $"zira-live-target-yara-{safeName}-{nowUtc:yyyyMMddHHmmss}",
+            Description: $"Autonomous YARA scan for newly live target {target.Hostname} ({target.IpAddress}).",
+            ScannerCapability: "Yara",
+            RuleSelectionMode: "LegacyPreset",
+            RuleScopeType: "LegacyPipeline",
+            RuleScopeValue: rulePreset.RulePath,
+            CadenceType: "Manual",
+            IntervalMinutes: null,
+            RunAtHourUtc: null,
+            RunAtMinuteUtc: null,
+            WeeklyDayOfWeek: null,
+            OperatorNotes: $"Zira detected this target became live in {target.NetworkName} and automatically queued a bounded one-target YARA scan.",
+            Status: "Active",
+            TargetServerIds: [target.SyntheticTargetServerId],
+            RuleRevisionIds: [rulePreset.SyntheticRuleRevisionId],
+            Targets:
+            [
+                new ScanAnalystTargetProposalDto(
+                    target.SyntheticTargetServerId,
+                    target.Hostname,
+                    target.IpAddress,
+                    target.OperatingSystem,
+                    "LegacyPipeline",
+                    target.Status,
+                    target.Status.Equals("Online", StringComparison.OrdinalIgnoreCase) ? "Online" : "Offline",
+                    ["Yara"],
+                    "Target became live and is in scope for the autonomous YARA first-pass action."),
+            ],
+            Rules:
+            [
+                new ScanAnalystRuleProposalDto(
+                    rulePreset.SyntheticRuleRevisionId,
+                    rulePreset.SyntheticRuleArtifactId,
+                    "Legacy YARA preset",
+                    "yara",
+                    1,
+                    "legacy-preset",
+                    "validated",
+                    "LegacyPipeline",
+                    rulePreset.RulePath,
+                    "Default YARA preset selected for newly live endpoint coverage."),
+            ]);
+    }
+
+    private static ScanPlanResponse MapLegacyPlanToScanPlanResponse(
+        LegacyPipelineScanPlanResponse legacyPlan,
+        ScanAnalystPlanProposalDto proposal,
+        IReadOnlyList<LegacyScanAnalystTargetContext> selectedTargets,
+        LegacyScanAnalystRulePresetContext rulePreset)
+    {
+        return new ScanPlanResponse(
+            Id: BuildLegacyPlanGuid(legacyPlan.Id),
+            Name: legacyPlan.Name,
+            Description: proposal.Description,
+            ScannerCapability: string.Join(", ", legacyPlan.ScannerFamilies.Select(ToDisplayScannerCapability)),
+            RuleSelectionMode: "LegacyPreset",
+            RuleScopeType: "LegacyPipeline",
+            RuleScopeValue: rulePreset.RulePath,
+            CadenceType: legacyPlan.ScheduleType,
+            IntervalMinutes: null,
+            RunAtHourUtc: null,
+            RunAtMinuteUtc: null,
+            WeeklyDayOfWeek: null,
+            OperatorNotes: legacyPlan.Notes ?? proposal.OperatorNotes,
+            Status: legacyPlan.Status,
+            NextRunAtUtc: legacyPlan.NextRunAtUtc,
+            LastQueuedAtUtc: legacyPlan.LastRunAtUtc,
+            LastCompletedAtUtc: null,
+            LastResultStatus: null,
+            LastResultSummary: null,
+            TargetServerIds: selectedTargets.Select(x => x.SyntheticTargetServerId).ToArray(),
+            RuleRevisionIds: [rulePreset.SyntheticRuleRevisionId],
+            TargetServers: selectedTargets
+                .Select(x => new ScanPlanTargetSummaryResponse(x.SyntheticTargetServerId, x.Hostname, x.IpAddress))
+                .ToArray(),
+            Rules:
+            [
+                new ScanPlanRuleSummaryResponse(
+                    rulePreset.SyntheticRuleRevisionId,
+                    rulePreset.SyntheticRuleArtifactId,
+                    $"Legacy {ToDisplayScannerCapability(rulePreset.ScannerFamily)} preset",
+                    rulePreset.ScannerFamily,
+                    1,
+                    "legacy-preset"),
+            ],
+            CreatedAtUtc: legacyPlan.CreatedAtUtc,
+            UpdatedAtUtc: legacyPlan.UpdatedAtUtc);
+    }
+
+    private static ScanJobResponse MapLegacyJobToScanJobResponse(LegacyPipelineScanJobResponse job, string actorUserId)
+    {
+        var queuedAt = job.QueuedAtUtc;
+        var completedAt = job.FinishedAtUtc;
+        return new ScanJobResponse(
+            Id: BuildLegacyJobGuid(job.Id),
+            ScanPlanId: string.IsNullOrWhiteSpace(job.ScanPlanId) ? null : BuildLegacyPlanGuid(job.ScanPlanId),
+            TriggerSource: "LegacyPipeline",
+            Status: job.Status,
+            QueuedAtUtc: queuedAt,
+            StartedAtUtc: job.StartedAtUtc,
+            CompletedAtUtc: completedAt,
+            TriggeredByUserId: actorUserId,
+            Summary: job.Summary,
+            CancellationRequested: false,
+            CancellationRequestedAtUtc: null,
+            CancellationReason: null,
+            TotalTargets: job.TotalTargets,
+            CompletedTargets: job.CompletedTargets,
+            FailedTargets: job.FailedTargets,
+            CancelledTargets: 0,
+            PartiallyCompletedTargets: Math.Max(0, job.TotalTargets - job.CompletedTargets - job.FailedTargets),
+            CreatedAtUtc: queuedAt,
+            UpdatedAtUtc: completedAt ?? job.StartedAtUtc ?? queuedAt);
+    }
+
+    private static Dictionary<string, string?> BuildLegacyPlanOptions(string scannerFamily)
+    {
+        var family = ToLegacyScannerFamily(scannerFamily);
+        var options = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["createdBy"] = "Zira",
+        };
+
+        switch (family)
+        {
+            case "yara":
+                options[LegacyScanPipelineHelpers.BuildFamilyScopedOptionKey(family, "windowsScanPath")] = "C:\\";
+                options[LegacyScanPipelineHelpers.BuildFamilyScopedOptionKey(family, "linuxScanPath")] = "/";
+                break;
+            case "sigma":
+                options[LegacyScanPipelineHelpers.BuildFamilyScopedOptionKey(family, "minutesBack")] = "1440";
+                break;
+            case "snort":
+                options[LegacyScanPipelineHelpers.BuildFamilyScopedOptionKey(family, LegacyScanPipelineHelpers.SnortModeOptionKey)] = "hunt";
+                options[LegacyScanPipelineHelpers.BuildFamilyScopedOptionKey(family, "minutesBack")] = "60";
+                break;
+            case "suricata":
+                options[LegacyScanPipelineHelpers.BuildFamilyScopedOptionKey(family, LegacyScanPipelineHelpers.SuricataModeOptionKey)] = "hunt";
+                options[LegacyScanPipelineHelpers.BuildFamilyScopedOptionKey(family, "minutesBack")] = "60";
+                break;
+        }
+
+        return options;
+    }
+
+    private static string ToLegacyScannerFamily(string? value)
+    {
+        var normalized = NormalizePreferredCapability(value)?.ToLowerInvariant();
+        return normalized switch
+        {
+            "sigma" => "sigma",
+            "snort" => "snort",
+            "suricata" => "suricata",
+            _ => "yara",
+        };
+    }
+
+    private static string ToDisplayScannerCapability(string? value)
+    {
+        var normalized = ToLegacyScannerFamily(value);
+        return normalized switch
+        {
+            "sigma" => "Sigma",
+            "snort" => "Snort",
+            "suricata" => "Suricata",
+            _ => "Yara",
+        };
+    }
+
+    private static string NormalizeLegacyOperatingSystem(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Unknown";
+        }
+
+        var normalized = value.Trim();
+        if (normalized.Contains("win", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Windows";
+        }
+
+        if (normalized.Contains("linux", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("ubuntu", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("debian", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("rocky", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Linux";
+        }
+
+        return normalized;
+    }
+
+    private static Guid BuildLegacyTargetGuid(string targetId) => BuildStableGuid($"legacy-target:{targetId}");
+
+    private static Guid BuildLegacyNetworkGuid(string networkId) => BuildStableGuid($"legacy-network:{networkId}");
+
+    private static Guid BuildLegacyPlanGuid(string planId) => BuildStableGuid($"legacy-plan:{planId}");
+
+    private static Guid BuildLegacyJobGuid(string jobId) => BuildStableGuid($"legacy-job:{jobId}");
+
+    private static Guid BuildLegacyResultGuid(string resultId) => BuildStableGuid($"legacy-result:{resultId}");
+
+    private static Guid BuildLegacyRuleRevisionGuid(string scannerFamily) => BuildStableGuid($"legacy-rule-revision:{ToLegacyScannerFamily(scannerFamily)}");
+
+    private static Guid BuildLegacyRuleArtifactGuid(string scannerFamily) => BuildStableGuid($"legacy-rule-artifact:{ToLegacyScannerFamily(scannerFamily)}");
+
+    private static Guid BuildStableGuid(string input)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        var bytes = new byte[16];
+        Array.Copy(hash, bytes, bytes.Length);
+        bytes[7] = (byte)((bytes[7] & 0x0F) | 0x40);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        return new Guid(bytes);
+    }
+
     private static ScanAnalystPlanProposalDto ApplyMessageAdjustments(
         ScanAnalystPlanProposalDto proposal,
         string message,
@@ -1595,6 +2413,27 @@ public sealed class ScanAnalystPocService
         };
     }
 
+    private ScanAnalystAgentParametersDto GetEffectiveParameters()
+    {
+        return _runtimeState.GetEffectiveParameters(_options);
+    }
+
+    private static string NormalizePostureScannerFamily(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Auto";
+        }
+
+        var normalized = NormalizePreferredCapability(value);
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            return normalized;
+        }
+
+        throw new ArgumentException("PreferredScannerFamily must be Auto, Yara, Sigma, Snort, or Suricata.");
+    }
+
     private static IReadOnlyList<string> NormalizeSimulatedConditions(IReadOnlyList<string>? conditions)
     {
         if (conditions is null || conditions.Count == 0)
@@ -1667,7 +2506,30 @@ public sealed class ScanAnalystPocService
         IReadOnlyList<AiScanAnalystJobContext> RecentJobs,
         IReadOnlyList<AiScanAnalystAlertContext> RecentAlerts,
         IReadOnlyList<AiScanAnalystServerFactContext> ExternalServerFacts,
-        IReadOnlyList<AiScanAnalystTriggerContext> ActiveTriggers);
+        IReadOnlyList<AiScanAnalystTriggerContext> ActiveTriggers,
+        IReadOnlyList<LegacyScanAnalystTargetContext> LegacyTargets,
+        IReadOnlyList<LegacyScanAnalystRulePresetContext> LegacyRulePresets);
+
+    private sealed record LegacyScanAnalystTargetContext(
+        Guid SyntheticTargetServerId,
+        Guid SyntheticSubnetId,
+        string TargetId,
+        string NetworkId,
+        string NetworkName,
+        string NetworkCidr,
+        bool NetworkHasProtectedSshPassword,
+        string DisplayName,
+        string Hostname,
+        string IpAddress,
+        string Status,
+        string OperatingSystem,
+        DateTimeOffset? LastSweepAtUtc);
+
+    private sealed record LegacyScanAnalystRulePresetContext(
+        Guid SyntheticRuleRevisionId,
+        Guid SyntheticRuleArtifactId,
+        string ScannerFamily,
+        string? RulePath);
 
     private sealed record MaterializationResult(
         ScanPlanResponse? CreatedPlan,

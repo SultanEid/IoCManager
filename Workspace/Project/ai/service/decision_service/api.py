@@ -27,6 +27,8 @@ from .contracts import (
     GraphLinkCandidateResponse,
     ReportIngestionRequest,
     ReportIngestionResponse,
+    ReportMitigationRequest,
+    ReportMitigationResponse,
     ScanAnalystRequest,
     ScanAnalystResponse,
     ScoreBatchRequest,
@@ -43,6 +45,7 @@ from .feedback_store import FeedbackStore
 from .graph import score_graph_neighbors
 from .historical_learning import HistoricalLearningEngine
 from .registry import ModelRegistryEntry, ModelRegistryStore
+from .report_mitigation import recommend_mitigation_plan
 from .scan_analyst import recommend_scan_plan
 from .scorer import BaselineScorer, ScorerContext, ScoringThresholds
 from .snapshots import SnapshotDataset, SnapshotLoader
@@ -190,6 +193,13 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
     def ingest_report_alias(request: ReportIngestionRequest) -> ReportIngestionResponse:
         return extract_report(request)
 
+    @app.post("/report_mitigation", response_model=ReportMitigationResponse)
+    def report_mitigation_endpoint(request: ReportMitigationRequest) -> ReportMitigationResponse:
+        try:
+            return recommend_mitigation_plan(request, runtime.settings)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     @app.post("/graph_neighbors", response_model=list[GraphLinkCandidateResponse], deprecated=True)
     def graph_neighbors_endpoint(request: GraphLinkCandidateRequest) -> list[GraphLinkCandidateResponse]:
         return score_graph_neighbors(request)
@@ -208,7 +218,10 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
 
     @app.post("/scan_analyst", response_model=ScanAnalystResponse)
     def scan_analyst_endpoint(request: ScanAnalystRequest) -> ScanAnalystResponse:
-        return recommend_scan_plan(request, runtime.settings)
+        try:
+            return recommend_scan_plan(request, runtime.settings)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/evaluate_model", response_model=EvaluateModelResponse, deprecated=True)
     def evaluate_model_endpoint(request: EvaluateModelRequest) -> EvaluateModelResponse:

@@ -761,6 +761,59 @@ class ReportIngestionResponse(ApiModel):
     processed_at: datetime
 
 
+class ReportMitigationRequest(ReportIngestionRequest):
+    environment_context: dict[str, Any] = Field(default_factory=dict)
+    asset_context: list[dict[str, Any]] = Field(default_factory=list)
+    alert_context: list[dict[str, Any]] = Field(default_factory=list)
+    rule_context: list[dict[str, Any]] = Field(default_factory=list)
+    prior_outcome_context: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ReportMitigationActionResponse(ApiModel):
+    title: str
+    rationale: str
+    priority: Literal["critical", "high", "medium", "low"]
+    owner_hint: str = "security"
+    validation: str
+    automation_readiness: Literal["manual_review", "safe_to_draft", "policy_gated"]
+
+
+class ReportMitigationScanRecommendationResponse(ApiModel):
+    scanner_family: str
+    target_hint: str
+    rule_hint: str
+    rationale: str
+    priority: Literal["critical", "high", "medium", "low"]
+
+
+class ReportMitigationPlanResponse(ApiModel):
+    executive_summary: str
+    threat_summary: str
+    severity: Literal["critical", "high", "medium", "low"]
+    confidence: Literal["high", "medium", "low"]
+    affected_asset_hypotheses: list[str] = Field(default_factory=list)
+    immediate_actions: list[ReportMitigationActionResponse] = Field(default_factory=list)
+    detection_actions: list[ReportMitigationActionResponse] = Field(default_factory=list)
+    hardening_actions: list[ReportMitigationActionResponse] = Field(default_factory=list)
+    validation_steps: list[str] = Field(default_factory=list)
+    scan_recommendations: list[ReportMitigationScanRecommendationResponse] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    requires_human_review: bool = True
+
+
+class ReportMitigationResponse(ApiModel):
+    report_id: str
+    source_type: Literal["pdf", "blog", "bulletin"] = "blog"
+    planner_model: str
+    extracted_iocs: list[ExtractedIocResponse] = Field(default_factory=list)
+    claims: list[ExtractedClaimResponse] = Field(default_factory=list)
+    campaign_hints: list[str] = Field(default_factory=list)
+    malware_family_hints: list[str] = Field(default_factory=list)
+    mitigation_plan: ReportMitigationPlanResponse
+    generated_at: datetime
+
+
 class GraphCandidateObservableInput(ApiModel):
     observable_id: int = Field(gt=0)
     type: str
@@ -1150,6 +1203,7 @@ class ScanAnalystRequest(ApiModel):
     recent_alerts: list[ScanAnalystAlertInput] = Field(default_factory=list)
     external_server_facts: list[ScanAnalystServerFactInput] = Field(default_factory=list)
     active_triggers: list[ScanAnalystTriggerInput] = Field(default_factory=list)
+    allow_local_planner: bool = False
 
 
 class ScanAnalystTargetResponse(ApiModel):

@@ -39,17 +39,25 @@ def recommend_scan_plan(request: ScanAnalystRequest, settings: ServiceSettings |
         try:
             return _recommend_with_openai(request, heuristic, settings)
         except Exception:
-            return heuristic.model_copy(
-                update={
-                    "planner_mode": "openai_fallback",
-                    "observations": [
-                        *heuristic.observations,
-                        "OpenAI planner was configured but unavailable, so Zira used its local bounded planner.",
-                    ]
-                }
-            )
+            if request.allow_local_planner:
+                return heuristic.model_copy(
+                    update={
+                        "planner_mode": "local",
+                        "observations": [
+                            *heuristic.observations,
+                            "OpenAI planner was configured but unavailable; local planner was used because the request explicitly allowed it.",
+                        ]
+                    }
+                )
+            raise
 
-    return heuristic
+    if request.allow_local_planner:
+        return heuristic
+
+    raise RuntimeError(
+        "OpenAI planner is required for Zira scan-analysis requests. "
+        "Configure OPENAI_API_KEY or explicitly allow the local planner in the request."
+    )
 
 
 def _recommend_with_heuristics(request: ScanAnalystRequest) -> ScanAnalystResponse:

@@ -8,7 +8,11 @@ public sealed class DiscoveryExecutionOptions
     public int MaxParallelism { get; init; } = 32;
     public int MaxHostsPerRun { get; init; } = 256;
     public int DnsLookupTimeoutMilliseconds { get; init; } = 2000;
+    public bool AllowNonPrivateRanges { get; init; }
     public bool UseScriptSweepWhenAvailable { get; init; }
     public string? SweepScriptPath { get; init; } = "scripts/SweepNetworkv2.ps1";
     public string PowerShellExecutable { get; init; } = "powershell.exe";
+    public bool ScheduledLegacyNetworkSweepEnabled { get; init; } = true;
+    public int ScheduledLegacyNetworkSweepIntervalMinutes { get; init; } = 2;
+    public string ScheduledLegacyNetworkSweepActorUserId { get; init; } = "system-zira-discovery";
 }

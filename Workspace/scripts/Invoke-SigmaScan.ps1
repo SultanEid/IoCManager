@@ -135,7 +135,11 @@ New-Item -ItemType Directory -Force -Path $LocalOutDir | Out-Null
 function Get-SshCommonArgs {
     $usePasswordAuth = -not [string]::IsNullOrWhiteSpace($SshPassword) -and [string]::IsNullOrWhiteSpace($KeyPath)
     $args = @(
-        '-q'
+        '-q',
+        '-o', 'ConnectTimeout=10',
+        '-o', 'ConnectionAttempts=1',
+        '-o', 'ServerAliveInterval=5',
+        '-o', 'ServerAliveCountMax=1'
     )
     if (-not [string]::IsNullOrWhiteSpace($KeyPath)) {
         $args += @('-i', $KeyPath, '-o', 'IdentitiesOnly=yes')

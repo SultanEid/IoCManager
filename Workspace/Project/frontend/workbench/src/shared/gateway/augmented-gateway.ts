@@ -39,6 +39,7 @@ import type {
   SubmitAiDecisionOverrideOrClosureInput,
   Gateway,
   GenerateReportInput,
+  GenerateReportMitigationInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -60,6 +61,7 @@ import type {
   TriggerRollbackInput,
   RetryDistributionJobInput,
   SendScanAnalystChatTurnInput,
+  UpdateScanAnalystPostureInput,
   AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
@@ -170,6 +172,14 @@ export class AugmentedGateway implements Gateway {
 
   generateReport(input: GenerateReportInput) {
     return this.source.generateReport(input)
+  }
+
+  generateReportMitigation(input: GenerateReportMitigationInput) {
+    return this.source.generateReportMitigation(input)
+  }
+
+  listReportMitigationPlans(signal?: AbortSignal) {
+    return this.source.listReportMitigationPlans(signal)
   }
 
   deleteReport(reportId: string) {
@@ -322,6 +332,10 @@ export class AugmentedGateway implements Gateway {
 
   getScanAnalystStatus(signal?: AbortSignal) {
     return this.source.getScanAnalystStatus(signal)
+  }
+
+  updateScanAnalystPosture(input: UpdateScanAnalystPostureInput) {
+    return this.source.updateScanAnalystPosture(input)
   }
 
   sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput) {

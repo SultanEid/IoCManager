@@ -30,6 +30,45 @@ public sealed class AiScanAnalystController : ControllerBase
         return Ok(_service.GetStatus());
     }
 
+    [HttpPut("posture")]
+    [EnableRateLimiting(RateLimitPolicies.Write)]
+    [ProducesResponseType<ScanAnalystAgentStatusDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ScanAnalystAgentStatusDto>> UpdatePosture(
+        [FromBody] UpdateScanAnalystPostureRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = _service.UpdatePosture(request);
+
+            await _auditService.TryWriteAsync(
+                User,
+                actionType: "ai.scan_analyst.posture.update",
+                entityType: "scan_analyst_posture",
+                entityId: request.ActorUserId,
+                payload: new
+                {
+                    request.AutonomyEnabled,
+                    request.MaxTargetsPerRun,
+                    request.PreferredScannerFamily,
+                    request.AutoRun,
+                    request.QuietHours,
+                    request.WatchForNewHosts,
+                    request.WatchForFailedRecentJobs,
+                    request.WatchForRecentAlerts,
+                    request.RequireMatchingRuleFamily,
+                },
+                cancellationToken: cancellationToken);
+
+            return Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
     [HttpPost]
     [EnableRateLimiting(RateLimitPolicies.Write)]
     [ProducesResponseType<ScanAnalystResponseDto>(StatusCodes.Status200OK)]

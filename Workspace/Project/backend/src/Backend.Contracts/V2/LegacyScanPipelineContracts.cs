@@ -148,6 +148,8 @@ public sealed record LegacyPipelineScanJobResponse(
     string Id,
     string? ScanPlanId,
     string ScannerFamily,
+    string RuleInputMode,
+    string? RulePath,
     string? ExecutionMode,
     string TriggerType,
     string Status,

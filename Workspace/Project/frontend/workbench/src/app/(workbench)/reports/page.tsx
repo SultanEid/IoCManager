@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import {
   BarChart3,
   Clock3,
@@ -11,6 +13,7 @@ import {
   FolderOpen,
   Printer,
   LayoutTemplate,
+  ShieldCheck,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -146,6 +149,10 @@ function isSectionArray(value: unknown): value is GeneratedReportSectionResponse
   })
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
 function normalizeReportSection(section: GeneratedReportSectionResponse): GeneratedReportSectionResponse {
   return {
     ...section,
@@ -159,8 +166,175 @@ function readOptionalString(source: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim().length > 0 ? value : null
 }
 
+function readOptionalBoolean(source: Record<string, unknown>, key: string) {
+  const value = source[key]
+  return typeof value === "boolean" ? value : null
+}
+
+function readRecord(source: Record<string, unknown>, key: string) {
+  const value = source[key]
+  return isRecord(value) ? value : null
+}
+
+function readRecords(source: Record<string, unknown>, key: string) {
+  const value = source[key]
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+function readStringList(source: Record<string, unknown>, key: string) {
+  const value = source[key]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : []
+}
+
+function listOrFallback(items: string[], fallback: string) {
+  return items.length > 0 ? items : [fallback]
+}
+
+function summarizeMitigationActions(actions: Record<string, unknown>[]) {
+  return actions.slice(0, 6).map((action) => {
+    const title = readOptionalString(action, "title") ?? "Recommended action"
+    const priority = readOptionalString(action, "priority") ?? "Priority not set"
+    const readiness = readOptionalString(action, "automationReadiness") ?? "Readiness not set"
+    const rationale = readOptionalString(action, "rationale") ?? "No rationale recorded."
+    const validation = readOptionalString(action, "validation") ?? "No validation step recorded."
+    return `${priority}: ${title} - ${rationale} Validation: ${validation} (${readiness}).`
+  })
+}
+
 function buildScope(query: SnapshotQuery) {
   return summarizeQuery(query)
+}
+
+function buildAegisSnapshot(report: ReportResponse, record: Record<string, unknown>): ReportSnapshot | null {
+  const result = readRecord(record, "result")
+  const plan = result ? readRecord(result, "mitigationPlan") : null
+  if (!result || !plan) {
+    return null
+  }
+
+  const extractedIocs = readRecords(result, "extractedIocs")
+  const claims = readRecords(result, "claims")
+  const immediateActions = readRecords(plan, "immediateActions")
+  const detectionActions = readRecords(plan, "detectionActions")
+  const hardeningActions = readRecords(plan, "hardeningActions")
+  const scanRecommendations = readRecords(plan, "scanRecommendations")
+  const affectedAssets = readStringList(plan, "affectedAssetHypotheses")
+  const assumptions = readStringList(plan, "assumptions")
+  const gaps = readStringList(plan, "gaps")
+  const validationSteps = readStringList(plan, "validationSteps")
+  const sourceReportId = readOptionalString(record, "sourceReportId") ?? readOptionalString(result, "sourceReportId")
+  const sourceAlertId = readOptionalString(record, "sourceAlertId")
+  const trigger = readOptionalString(record, "autonomousTrigger")
+  const requiresHumanReview = readOptionalBoolean(plan, "requiresHumanReview")
+
+  return {
+    scope: sourceReportId ? `Aegis mitigation for source report ${sourceReportId}` : "Aegis mitigation plan",
+    query: {
+      source: trigger ?? (sourceAlertId ? "alert-driven" : "report-review"),
+      status: requiresHumanReview === false ? "Ready for operator review" : "Human review recommended",
+    },
+    sections: [
+      {
+        title: "Aegis mitigation plan",
+        summary: readOptionalString(plan, "executiveSummary") ?? "Aegis created a mitigation plan from the stored report evidence.",
+        metrics: [
+          { label: "Severity", value: readOptionalString(plan, "severity") ?? "Unknown", detail: "Aegis-assessed response severity." },
+          { label: "Confidence", value: readOptionalString(plan, "confidence") ?? "Unknown", detail: "Confidence based on extracted evidence and context." },
+          { label: "Planner", value: readOptionalString(result, "plannerModel") ?? "Aegis", detail: "Planner path used to create this mitigation plan." },
+          { label: "Linked alerts", value: String(report.alertIds.length), detail: "Alerts associated with this saved mitigation report." },
+        ],
+        highlights: listOrFallback(
+          [
+            readOptionalString(plan, "threatSummary"),
+            ...affectedAssets.slice(0, 5).map((asset) => `Affected asset hypothesis: ${asset}`),
+          ].filter((item): item is string => Boolean(item)),
+          "No threat summary was recorded for this Aegis plan.",
+        ),
+        narrative: sourceAlertId
+          ? `Aegis generated this plan after alert ${sourceAlertId}. It is advisory by default and does not modify systems.`
+          : "Aegis generated this plan from stored report evidence. It is advisory by default and does not modify systems.",
+        tables: [],
+      },
+      {
+        title: "Evidence extracted from the report",
+        summary: "Structured indicators and claims Aegis used while building the mitigation plan.",
+        metrics: [
+          { label: "IOCs", value: String(extractedIocs.length), detail: "IP addresses, domains, hashes, URLs, or related indicators." },
+          { label: "Claims", value: String(claims.length), detail: "Evidence statements extracted from the source report." },
+          { label: "Campaign hints", value: String(readStringList(result, "campaignHints").length), detail: "Campaign names or clusters detected in the report." },
+          { label: "Malware hints", value: String(readStringList(result, "malwareFamilyHints").length), detail: "Malware or tool family hints detected in the report." },
+        ],
+        highlights: listOrFallback(
+          extractedIocs.slice(0, 10).map((ioc) => {
+            const type = readOptionalString(ioc, "iocType") ?? "ioc"
+            const value = readOptionalString(ioc, "iocValue") ?? "unknown"
+            const confidence = typeof ioc.confidence === "number" ? ` (${Math.round(ioc.confidence * 100)}% confidence)` : ""
+            return `${type}: ${value}${confidence}`
+          }),
+          "No structured IOCs were extracted from the saved plan.",
+        ),
+        narrative: claims.length > 0
+          ? claims.slice(0, 3).map((claim) => readOptionalString(claim, "statement")).filter(Boolean).join(" ")
+          : null,
+        tables: [],
+      },
+      {
+        title: "Immediate mitigation actions",
+        summary: "Highest-priority recommendations for containment, triage, and operator review.",
+        metrics: [
+          { label: "Immediate", value: String(immediateActions.length), detail: "Actions Aegis thinks should happen first." },
+          { label: "Human review", value: requiresHumanReview === false ? "No" : "Yes", detail: "Whether Aegis requires operator approval before application." },
+        ],
+        highlights: listOrFallback(summarizeMitigationActions(immediateActions), "No immediate actions were recorded."),
+        narrative: null,
+        tables: [],
+      },
+      {
+        title: "Detection and hardening",
+        summary: "Follow-up monitoring and resilience recommendations.",
+        metrics: [
+          { label: "Detection", value: String(detectionActions.length), detail: "Recommended monitoring or detection improvements." },
+          { label: "Hardening", value: String(hardeningActions.length), detail: "Recommended configuration or resilience improvements." },
+          { label: "Validation", value: String(validationSteps.length), detail: "Ways to confirm mitigation worked." },
+        ],
+        highlights: listOrFallback(
+          [
+            ...summarizeMitigationActions(detectionActions),
+            ...summarizeMitigationActions(hardeningActions),
+            ...validationSteps.slice(0, 5).map((step) => `Validation: ${step}`),
+          ],
+          "No detection, hardening, or validation recommendations were recorded.",
+        ),
+        narrative: null,
+        tables: [],
+      },
+      {
+        title: "Zira follow-up suggestions",
+        summary: "Suggested scan ideas only. Zira remains responsible for deciding whether to create or run scan plans.",
+        metrics: [
+          { label: "Suggested scans", value: String(scanRecommendations.length), detail: "Aegis-to-Zira recommendations captured in the plan." },
+          { label: "Assumptions", value: String(assumptions.length), detail: "Assumptions Aegis made while planning." },
+          { label: "Gaps", value: String(gaps.length), detail: "Missing evidence Aegis wants filled later." },
+        ],
+        highlights: listOrFallback(
+          [
+            ...scanRecommendations.slice(0, 6).map((scan) => {
+              const scanner = readOptionalString(scan, "scannerFamily") ?? "scanner"
+              const target = readOptionalString(scan, "targetHint") ?? "target"
+              const rule = readOptionalString(scan, "ruleHint") ?? "rule"
+              const rationale = readOptionalString(scan, "rationale") ?? "No rationale recorded."
+              return `${scanner} on ${target} using ${rule}: ${rationale}`
+            }),
+            ...assumptions.slice(0, 4).map((item) => `Assumption: ${item}`),
+            ...gaps.slice(0, 4).map((item) => `Gap: ${item}`),
+          ],
+          "No follow-up scan suggestions, assumptions, or gaps were recorded.",
+        ),
+        narrative: null,
+        tables: [],
+      },
+    ],
+  }
 }
 
 function parseReportSnapshot(report: ReportResponse, targets: TargetServerResponse[]): ReportSnapshot {
@@ -168,6 +342,11 @@ function parseReportSnapshot(report: ReportResponse, targets: TargetServerRespon
     const parsed = JSON.parse(report.summaryJson) as unknown
     if (typeof parsed === "object" && parsed !== null) {
       const record = parsed as Record<string, unknown>
+      const aegisSnapshot = buildAegisSnapshot(report, record)
+      if (aegisSnapshot) {
+        return aegisSnapshot
+      }
+
       const filters = (typeof record.filters === "object" && record.filters !== null ? record.filters : record.query) as Record<string, unknown> | undefined
       const query: SnapshotQuery = filters
         ? {
@@ -225,6 +404,10 @@ function buildFallbackSnapshot(report: ReportResponse): ReportSnapshot {
   }
 }
 
+function isAegisMitigationReport(report: ReportResponse) {
+  return report.summaryJson.includes("aegisMitigationPlanVersion")
+}
+
 function BuilderMetric({
   icon: Icon,
   label,
@@ -253,6 +436,7 @@ function BuilderMetric({
 }
 
 export default function ReportsPage() {
+  const searchParams = useSearchParams()
   const { session } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? "system"
   const [refreshKey, setRefreshKey] = useState(0)
@@ -260,6 +444,7 @@ export default function ReportsPage() {
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
   const [preview, setPreview] = useState<ReportPreviewState | null>(null)
   const [review, setReview] = useState<ReportPreviewState | null>(null)
+  const [closedReviewId, setClosedReviewId] = useState<string | null>(null)
   const [reviewPdfUrl, setReviewPdfUrl] = useState<string | null>(null)
   const [reviewPdfLoading, setReviewPdfLoading] = useState(false)
   const [reviewPdfError, setReviewPdfError] = useState<string | null>(null)
@@ -282,6 +467,8 @@ export default function ReportsPage() {
 
   const targetsQuery = useWorkbenchQuery(["reports", "servers"], (signal) => gateway.listTargetServers(undefined, signal))
   const reportsQuery = useWorkbenchQuery(["reports", "library", refreshKey], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
+  const aegisPlansQuery = useWorkbenchQuery(["reports", "aegis-plans", refreshKey], (signal) => gateway.listReportMitigationPlans(signal))
+  const requestedReviewId = searchParams.get("review")
 
   const generate = async () => {
     setGenerating(true)
@@ -329,11 +516,17 @@ export default function ReportsPage() {
   const openSavedReport = async (report: ReportResponse, targets: TargetServerResponse[]) => {
     setErrorText(null)
     setMessage(null)
+    setClosedReviewId(null)
     const nextReview = { kind: "saved", report, snapshot: parseReportSnapshot(report, targets) } as const
     setPreview(nextReview)
     setReview(nextReview)
-    setMessage("Saved report opened in review mode.")
     clearReviewPdf()
+    if (isAegisMitigationReport(report)) {
+      setMessage("Aegis mitigation plan opened in structured review mode.")
+      return
+    }
+
+    setMessage("Saved report opened in review mode.")
     setReviewPdfLoading(true)
     try {
       const pdf = await requestBlob(`/api/v2/reports/${report.id}/pdf`)
@@ -346,9 +539,16 @@ export default function ReportsPage() {
   }
 
   const closeReview = () => {
+    if (review?.kind === "saved") {
+      setClosedReviewId(review.report.id)
+    }
+
     setReview(null)
     setPreview(null)
     clearReviewPdf()
+    if (requestedReviewId) {
+      window.history.replaceState(null, "", "/reports")
+    }
   }
 
   const deleteSavedReport = async (reportId: string, title: string) => {
@@ -393,16 +593,49 @@ export default function ReportsPage() {
     }))
   }
 
-  if (targetsQuery.isLoading || reportsQuery.isLoading) {
+  useEffect(() => {
+    if (
+      !requestedReviewId
+      || closedReviewId === requestedReviewId
+      || targetsQuery.isLoading
+      || reportsQuery.isLoading
+      || targetsQuery.isError
+      || reportsQuery.isError
+      || (review?.kind === "saved" && review.report.id === requestedReviewId)
+    ) {
+      return
+    }
+
+    const report = reportsQuery.data?.items.find((item) => item.id === requestedReviewId)
+    if (!report) {
+      return
+    }
+
+    setClosedReviewId(null)
+    void openSavedReport(report, targetsQuery.data ?? [])
+  }, [
+    closedReviewId,
+    requestedReviewId,
+    reportsQuery.data,
+    reportsQuery.isError,
+    reportsQuery.isLoading,
+    review,
+    targetsQuery.data,
+    targetsQuery.isError,
+    targetsQuery.isLoading,
+  ])
+
+  if (targetsQuery.isLoading || reportsQuery.isLoading || aegisPlansQuery.isLoading) {
     return <LoadingState label="Loading reports workspace" />
   }
 
-  if (targetsQuery.isError || reportsQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(targetsQuery.error ?? reportsQuery.error)} fallbackTitle="Reports unavailable" />
+  if (targetsQuery.isError || reportsQuery.isError || aegisPlansQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(targetsQuery.error ?? reportsQuery.error ?? aegisPlansQuery.error)} fallbackTitle="Reports unavailable" />
   }
 
   const targets = targetsQuery.data ?? []
   const reports = reportsQuery.data?.items ?? []
+  const aegisPlanBySourceReportId = new Map((aegisPlansQuery.data?.items ?? []).filter((plan) => plan.sourceReportId).map((plan) => [plan.sourceReportId, plan]))
   const generatedQuery: SnapshotQuery = {
     targetServerId: form.targetId || null,
     targetLabel: targets.find((item) => item.id === form.targetId)?.hostname ?? targets.find((item) => item.id === form.targetId)?.ipAddress ?? null,
@@ -424,6 +657,7 @@ export default function ReportsPage() {
   const reviewSections = (review?.kind === "saved" ? review.snapshot.sections : review?.report.sections)?.map(normalizeReportSection)
   const reviewQuery = review?.kind === "saved" ? review.snapshot.query : generatedQuery
   const reviewGeneratedAt = review?.kind === "saved" ? review.report.generatedAtUtc : review?.report.generatedAtUtc
+  const reviewIsAegisPlan = review?.kind === "saved" ? isAegisMitigationReport(review.report) : false
   const printReport = () => window.print()
 
   return (
@@ -721,12 +955,20 @@ export default function ReportsPage() {
                 {reports.map((report) => {
                   const snapshot = parseReportSnapshot(report, targets)
                   const deleting = deletingReportId === report.id
+                  const aegisPlan = aegisPlanBySourceReportId.get(report.id)
+                  const isAegisPlan = isAegisMitigationReport(report)
                   return (
                     <tr key={report.id} className="border-t border-border/50 align-top">
                       <td className="py-3">
                         <div>
                           <p className="font-medium text-foreground">{report.title}</p>
                           <p className="mt-1 text-xs text-muted-foreground">Report #{report.id}</p>
+                          {aegisPlan || isAegisPlan ? (
+                            <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-2 py-1 text-[11px] font-medium text-emerald-200">
+                              <ShieldCheck className="h-3 w-3" />
+                              {isAegisPlan ? "Aegis mitigation plan" : "Aegis plan available"}
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="py-3">{formatReportType(report.reportType)}</td>
@@ -737,6 +979,14 @@ export default function ReportsPage() {
                           <Button type="button" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
                             Open
                           </Button>
+                          {aegisPlan || isAegisPlan ? (
+                            <Link
+                              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                              href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
+                            >
+                              Open in Aegis
+                            </Link>
+                          ) : null}
                           <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={deleting}>
                             {deleting ? "Deleting..." : "Delete"}
                           </Button>
@@ -778,7 +1028,7 @@ export default function ReportsPage() {
                 {summarizeQuery(reviewQuery ?? {})}
               </div>
 
-              {review.kind === "saved" ? (
+              {review.kind === "saved" && !reviewIsAegisPlan ? (
                 <section className="mb-5 overflow-hidden rounded-2xl border border-border/65 bg-surface-2/45">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/55 px-4 py-3">
                     <div>
@@ -798,6 +1048,10 @@ export default function ReportsPage() {
                   ) : (
                     <div className="px-4 py-4 text-sm text-muted-foreground">Preparing PDF preview.</div>
                   )}
+                </section>
+              ) : review.kind === "saved" && reviewIsAegisPlan ? (
+                <section className="mb-5 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+                  Aegis mitigation plans are shown as structured recommendations below instead of a generic PDF iframe. Use Print / Export to export this view.
                 </section>
               ) : null}
 

@@ -21,6 +21,8 @@ import type {
   PowerBiVisualizationCatalogResponse,
   GeneratedReportResponse,
   ReportListResponse,
+  ReportMitigationListResponse,
+  ReportMitigationResponse,
   ScanJobResponse,
   ScanJobTargetExecutionResponse,
   ScanAnalystAgentStatusResponse,
@@ -76,6 +78,7 @@ import type {
   DetectionListQuery,
   Gateway,
   GenerateReportInput,
+  GenerateReportMitigationInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -101,6 +104,7 @@ import type {
   AssignWorkbenchRolePermissionInput,
   RetryDistributionJobInput,
   SendScanAnalystChatTurnInput,
+  UpdateScanAnalystPostureInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
@@ -452,6 +456,19 @@ export class MockGateway implements Gateway {
   private generatedReports: ReportListResponse["items"] = []
   private scanAnalystSessions = new Map<string, ScanAnalystChatResponse>()
   private scanAnalystRunSummaries = new Map<string, ScanAnalystRunSummaryResponse>()
+  private scanAnalystPosture: ScanAnalystAgentStatusResponse["parameters"] = {
+    enabled: true,
+    allowedSubnets: ["demo-lab"],
+    allowedEnvironments: ["Lab"],
+    maxTargetsPerRun: 5,
+    preferredScannerFamily: "Auto",
+    autoRun: true,
+    quietHours: "none",
+    watchForNewHosts: true,
+    watchForFailedRecentJobs: true,
+    watchForRecentAlerts: true,
+    requireMatchingRuleFamily: true,
+  }
 
   async login(username: string, _password: string): Promise<TokenResponse> {
     consume(_password)
@@ -711,6 +728,109 @@ export class MockGateway implements Gateway {
     }
 
     return copy(preview)
+  }
+
+  async generateReportMitigation(input: GenerateReportMitigationInput): Promise<ReportMitigationResponse> {
+    const generatedAt = new Date().toISOString()
+    const title = `Aegis mitigation: ${input.sourceName || "demo report"}`
+    const mitigationPlan = {
+      executiveSummary: "Aegis reviewed the supplied report content and produced a read-only mitigation plan.",
+      threatSummary: "Demo mode does not call the LLM, but it preserves the same output shape used by the live Aegis endpoint.",
+      severity: "medium",
+      confidence: "medium",
+      affectedAssetHypotheses: ["Review affected hosts and linked alerts before taking action."],
+      immediateActions: [
+        {
+          title: "Triage linked alerts",
+          rationale: "Confirm whether the report indicators match active detections.",
+          priority: "medium",
+          ownerHint: "SOC analyst",
+          validation: "Alert state and linked evidence are reviewed.",
+          automationReadiness: "manual_review",
+        },
+      ],
+      detectionActions: [],
+      hardeningActions: [],
+      validationSteps: ["Validate the indicators against current scan results."],
+      scanRecommendations: [
+        {
+          scannerFamily: "Yara",
+          targetHint: "Targets linked to the report",
+          ruleHint: "Relevant malware or suspicious artifact rules",
+          rationale: "Aegis can suggest scanning, but Zira remains responsible for scan-plan decisions.",
+          priority: "medium",
+        },
+      ],
+      assumptions: ["Demo mode response."],
+      gaps: ["Switch to ASP.NET mode with OpenAI configured for live mitigation planning."],
+      requiresHumanReview: true,
+    }
+    const persistedMitigationReport = {
+      id: crypto.randomUUID(),
+      title,
+      reportType: "Operational",
+      summaryJson: JSON.stringify({
+        aegisMitigationPlanVersion: 1,
+        sourceReportId: input.existingReportId ?? null,
+        result: { mitigationPlan },
+      }),
+      generatedAtUtc: generatedAt,
+      createdAtUtc: generatedAt,
+      updatedAtUtc: generatedAt,
+      alertIds: [],
+    }
+    this.generatedReports = [persistedMitigationReport, ...this.generatedReports]
+
+    return copy({
+      reportId: input.documentId ?? persistedMitigationReport.id,
+      sourceType: input.sourceType,
+      plannerModel: "demo",
+      extractedIocs: [],
+      claims: [],
+      campaignHints: [],
+      malwareFamilyHints: [],
+      mitigationPlan,
+      generatedAt,
+      sourceReportId: input.existingReportId ?? null,
+      persistedMitigationReport,
+    })
+  }
+
+  async listReportMitigationPlans(_signal?: AbortSignal): Promise<ReportMitigationListResponse> {
+    consume(_signal)
+    const items = this.generatedReports
+      .filter((item) => item.summaryJson.includes("aegisMitigationPlanVersion"))
+      .map((item) => {
+        let severity = "unknown"
+        let confidence = "unknown"
+        let executiveSummary = item.title
+        let sourceReportId: string | null = null
+        try {
+          const parsed = JSON.parse(item.summaryJson) as {
+            sourceReportId?: string | null
+            result?: { mitigationPlan?: { severity?: string; confidence?: string; executiveSummary?: string } }
+          }
+          severity = parsed.result?.mitigationPlan?.severity ?? severity
+          confidence = parsed.result?.mitigationPlan?.confidence ?? confidence
+          executiveSummary = parsed.result?.mitigationPlan?.executiveSummary ?? executiveSummary
+          sourceReportId = parsed.sourceReportId ?? null
+        } catch {
+          // Keep the fallback fields above.
+        }
+
+        return {
+          id: item.id,
+          title: item.title,
+          sourceReportId,
+          severity,
+          confidence,
+          executiveSummary,
+          generatedAtUtc: item.generatedAtUtc,
+          alertIds: item.alertIds,
+        }
+      })
+
+    return { items, totalCount: items.length }
   }
 
   async deleteReport(reportId: string): Promise<void> {
@@ -1000,26 +1120,15 @@ export class MockGateway implements Gateway {
 
     return {
       agentEnabled: true,
-      autonomyEnabled: true,
+      autonomyEnabled: this.scanAnalystPosture.enabled,
       databaseAvailable: false,
       operatingMode: "MockFallback",
       indicatorLabel: "Demo mode",
       degradedReason: "Live SQL data is unavailable for the demo scan-plan assistant.",
       activeSessionCount: this.scanAnalystSessions.size,
-      availableMockConditions: ["new_hosts_found", "failed_recent_job", "stale_coverage"],
+      availableMockConditions: ["new_hosts_found", "failed_recent_job", "stale_coverage", "recent_alert_detected"],
       activeMockConditions: ["new_hosts_found"],
-      parameters: {
-        enabled: true,
-        allowedSubnets: ["demo-lab"],
-        allowedEnvironments: ["Lab"],
-        maxTargetsPerRun: 5,
-        preferredScannerFamily: "Auto",
-        autoRun: true,
-        quietHours: "none",
-        watchForNewHosts: true,
-        watchForFailedRecentJobs: true,
-        requireMatchingRuleFamily: true,
-      },
+      parameters: this.scanAnalystPosture,
       personaName: "Zira",
       currentActivity: "Monitoring demo scan coverage and ready to draft a focused plan.",
       latestActionSummary: "Zira prepared a safe first-pass recommendation for newly observed hosts.",
@@ -1051,6 +1160,23 @@ export class MockGateway implements Gateway {
         occurredAtUtc: new Date(now.getTime() - 4 * 60_000).toISOString(),
       },
     }
+  }
+
+  async updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse> {
+    this.scanAnalystPosture = {
+      ...this.scanAnalystPosture,
+      enabled: input.autonomyEnabled,
+      maxTargetsPerRun: input.maxTargetsPerRun,
+      preferredScannerFamily: input.preferredScannerFamily,
+      autoRun: input.autoRun,
+      quietHours: input.quietHours,
+      watchForNewHosts: input.watchForNewHosts,
+      watchForFailedRecentJobs: input.watchForFailedRecentJobs,
+      watchForRecentAlerts: input.watchForRecentAlerts,
+      requireMatchingRuleFamily: input.requireMatchingRuleFamily,
+    }
+
+    return this.getScanAnalystStatus()
   }
 
   async sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse> {

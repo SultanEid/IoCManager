@@ -51,7 +51,7 @@ public sealed class DiscoveryTargetRangeParser
             throw new ArgumentException("Subnet CIDR does not contain any discoverable host addresses.", nameof(subnetCidr));
         }
 
-        if (!IsPrivateIpv4Range(networkValue, broadcastValue))
+        if (!_options.AllowNonPrivateRanges && !IsPrivateIpv4Range(networkValue, broadcastValue))
         {
             throw new ArgumentException("Discovery CIDR must be fully contained in an RFC1918 private IPv4 range.", nameof(subnetCidr));
         }
