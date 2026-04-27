@@ -28,9 +28,9 @@
       "scoring_profile_version": "heuristic-v1",
       "feature_schema_version": "cti-feature-schema-v1",
       "thresholds": {
-        "recommend": 0.95,
-        "escalate": 0.99,
-        "abstain": 0.75
+        "recommend": 0.8,
+        "escalate": 0.95,
+        "abstain": 0.55
       },
       "calibration": {
         "method": "isotonic",
@@ -70,12 +70,12 @@
       },
       "artifact_hashes": {
         "calibration": "0d3239275399217502afbc7738cfd4cb69568f5c14ed8051709007150a8588dc",
-        "thresholds": "fbc71e688fa23ac284e30c63fb8b2a8e7254e655712c0760cfb05bb7dfa452e3",
+        "thresholds": "efdd1af0be7dbca549533afc9e9f90a2f6d374de57fdd8037ff5cc1ff6440258",
         "metrics": "19d8945289c76e747b5d2f3499d3626db58fe6c9fff8cf973e986f9870c5b8c0",
         "cv_report": "b08a1b51bb74ffa1dd82857e7231d0554ef4773e3836ca2eac32589255d77741"
       },
       "dataset_manifest_hash": "84e9e49e0840c6664615c6ad518567038f2ed9d8ec221d530469262bf398cfba",
-      "notes": "Candidate baseline trained with held-out test split and 5-fold CV on development data."
+      "notes": "Candidate baseline trained with held-out test split and 5-fold CV on development data. Local threshold tuning lowers recommend/escalate/abstain gates to improve coverage for app IOC review."
     }
   ]
 }

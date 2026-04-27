@@ -178,9 +178,9 @@ def _fit_thresholds(scores: list[float], labels: list[int], target_recall: float
             best_recommend = float(score)
             break
 
-    recommend = float(np.clip(best_recommend, 0.10, 0.95))
-    escalate = float(np.clip(recommend + 0.18, recommend, 0.99))
-    abstain = float(np.clip(recommend - 0.20, 0.05, recommend))
+    recommend = float(np.clip(best_recommend, 0.10, 0.80))
+    escalate = float(np.clip(recommend + 0.15, recommend, 0.95))
+    abstain = float(np.clip(recommend - 0.25, 0.05, 0.55))
     return {"recommend": recommend, "escalate": escalate, "abstain": abstain}
 
 
