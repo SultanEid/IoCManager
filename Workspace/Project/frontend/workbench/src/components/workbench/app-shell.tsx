@@ -308,7 +308,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         <motion.aside
           animate={{ width: collapsed ? 96 : 292 }}
           transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-          className="hidden border-r border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--shell-sidebar)_94%,transparent),color-mix(in_srgb,var(--background)_86%,transparent))] shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent),18px_0_42px_color-mix(in_srgb,var(--foreground)_24%,transparent)] backdrop-blur lg:flex lg:flex-col"
+          className="hidden border-r border-border/70 bg-shell-sidebar shadow-[inset_-1px_0_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)] lg:flex lg:flex-col"
         >
           <div className={cn("px-3", collapsed ? "flex flex-col items-center gap-2 py-3" : "flex h-16 items-center justify-between")}>
             <div className={cn("flex items-center gap-2", collapsed && "w-full justify-center")}>
@@ -373,9 +373,6 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-3">
-                  <span className="wb-kicker hidden rounded-full border border-border/60 bg-surface-2/80 px-2 py-1 sm:inline-flex">
-                    {resolvedRoute.module}
-                  </span>
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_90%,transparent),color-mix(in_srgb,var(--surface-1)_76%,transparent))] text-foreground shadow-[var(--shadow-soft)]">
                       {RouteIcon ? <RouteIcon className="h-4.5 w-4.5" /> : <Search className="h-4.5 w-4.5" />}

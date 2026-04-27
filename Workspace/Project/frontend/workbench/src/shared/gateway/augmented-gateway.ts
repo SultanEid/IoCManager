@@ -170,6 +170,10 @@ export class AugmentedGateway implements Gateway {
     return this.source.listReports(query, signal)
   }
 
+  getReport(reportId: string, signal?: AbortSignal) {
+    return this.source.getReport(reportId, signal)
+  }
+
   generateReport(input: GenerateReportInput) {
     return this.source.generateReport(input)
   }

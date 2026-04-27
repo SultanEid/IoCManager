@@ -21,6 +21,7 @@ import type {
   PowerBiVisualizationCatalogResponse,
   GeneratedReportResponse,
   ReportListResponse,
+  ReportResponse,
   ReportMitigationListResponse,
   ReportMitigationResponse,
   ScanJobResponse,
@@ -669,6 +670,16 @@ export class MockGateway implements Gateway {
       page: page.page,
       pageSize: page.pageSize,
     }
+  }
+
+  async getReport(reportId: string, _signal?: AbortSignal): Promise<ReportResponse> {
+    consume(_signal)
+    const report = this.generatedReports.find((item) => item.id === reportId)
+    if (!report) {
+      throw new Error("Report not found.")
+    }
+
+    return copy(report)
   }
 
   async generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse> {

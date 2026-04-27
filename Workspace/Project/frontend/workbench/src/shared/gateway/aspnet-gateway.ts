@@ -31,6 +31,7 @@ import {
   managedServerScannerAssignmentResponseSchema,
   powerBiVisualizationCatalogResponseSchema,
   generatedReportResponseSchema,
+  reportResponseSchema,
   reportMitigationListResponseSchema,
   reportMitigationResponseSchema,
   reportListResponseSchema,
@@ -97,6 +98,7 @@ import {
   type IocListResponse,
   type PowerBiVisualizationCatalogResponse,
   type ReportListResponse,
+  type ReportResponse,
   type ReportMitigationListResponse,
   type ReportMitigationResponse,
   type ScanJobResponse,
@@ -373,6 +375,10 @@ export class AspNetGateway {
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
     return requestJson(`/api/v2/reports${suffix}`, reportListResponseSchema, { signal })
+  }
+
+  async getReport(reportId: string, signal?: AbortSignal): Promise<ReportResponse> {
+    return requestJson(`/api/v2/reports/${encodeURIComponent(reportId)}`, reportResponseSchema, { signal })
   }
 
   async generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse> {

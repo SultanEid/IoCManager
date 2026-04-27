@@ -95,7 +95,7 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     title: "Alert Registry",
     subtitle: "Stored IOC-driven alerts with queue posture, evidence links, and target context.",
     icon: Activity,
-    commandAliases: ["Alerts", "Alert Registry", "Alert Queue", "Queue", "Triage Queue"],
+    commandAliases: ["Alerts", "Alert Registry", "Alert Search"],
   },
   {
     id: "servers",
@@ -117,7 +117,7 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     title: "Scans",
     subtitle: "Search scan results, detection history, and execution outcomes.",
     icon: Workflow,
-    commandAliases: ["Scans", "Result Ingestion", "Normalized Result Ingestion"],
+    commandAliases: ["Scans", "Scan Results", "Detection History"],
   },
   {
     id: "scan-plan",
@@ -150,7 +150,7 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     title: "Rules Management",
     subtitle: "YARA, Sigma, Snort, and Suricata rule authoring, review, simulation, and release controls.",
     icon: SearchCode,
-    commandAliases: ["Rules Management", "Rule Repository", "Rules", "Rule Management", "Rule Distribution", "Distribution", "Deployments"],
+    commandAliases: ["Rules Management", "Rule Repository", "Rules", "Rule Management"],
   },
   {
     id: "ioc-ingestion",

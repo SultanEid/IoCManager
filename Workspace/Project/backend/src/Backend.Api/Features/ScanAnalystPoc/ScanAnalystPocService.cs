@@ -167,23 +167,27 @@ public sealed class ScanAnalystPocService
         ScanAnalystPocContextSnapshot context,
         AiScanAnalystTriggerContext trigger,
         LegacyScanAnalystTargetContext target,
+        string action,
         CancellationToken cancellationToken)
     {
         var nowUtc = DateTimeOffset.UtcNow;
+        var shouldRun = action == "CreateAndRun";
         var rulePreset = context.LegacyRulePresets.FirstOrDefault(x => x.ScannerFamily.Equals("yara", StringComparison.OrdinalIgnoreCase))
             ?? new LegacyScanAnalystRulePresetContext(BuildLegacyRuleRevisionGuid("yara"), BuildLegacyRuleArtifactGuid("yara"), "yara", null);
         var proposal = BuildLiveTargetYaraProposal(target, rulePreset, nowUtc);
         var materialized = await MaterializeLegacyAsync(
             proposal,
             _options.SystemActorUserId,
-            "CreateAndRun",
+            action,
             context,
             [target],
             cancellationToken);
         var analysis = new ScanAnalystResponseDto(
-            Action: "CreateAndRun",
+            Action: action,
             OperatingMode: context.OperatingMode,
-            Summary: $"Zira detected {target.Hostname} became live and created a one-target YARA scan plan for it.",
+            Summary: shouldRun
+                ? $"Zira detected {target.Hostname} became live and ran a one-target YARA scan plan for it."
+                : $"Zira detected {target.Hostname} became live and created a one-target YARA scan plan for review.",
             PlannerMode: "bounded-local",
             Observations:
             [
@@ -195,7 +199,9 @@ public sealed class ScanAnalystPocService
             [
                 "A target becoming live is treated as a high-signal coverage event.",
                 "YARA is the default first-pass scanner for newly live endpoint targets because it can validate file and artifact indicators with bounded scope.",
-                "Zira created and ran the plan automatically because this trigger is explicitly allowed by the autonomous posture.",
+                shouldRun
+                    ? "Zira created and ran the plan automatically because AutoRun is enabled in the autonomous posture."
+                    : "Zira created the plan for review because AutoRun is disabled in the autonomous posture.",
             ],
             ValidationWarnings: Array.Empty<string>(),
             RecommendedScannerCapability: "Yara",
@@ -207,7 +213,9 @@ public sealed class ScanAnalystPocService
         var snapshot = _sessionStore.GetOrCreate(null);
         var userMessage = new ScanAnalystAgentMessageDto(
             "system",
-            $"Autonomous trigger: {trigger.TriggerLabel}. Create and run a bounded YARA scan for {target.Hostname}.",
+            shouldRun
+                ? $"Autonomous trigger: {trigger.TriggerLabel}. Create and run a bounded YARA scan for {target.Hostname}."
+                : $"Autonomous trigger: {trigger.TriggerLabel}. Create a bounded YARA scan plan for {target.Hostname}.",
             nowUtc);
         var agentMessage = new ScanAnalystAgentMessageDto(
             "agent",
@@ -231,7 +239,9 @@ public sealed class ScanAnalystPocService
 
         return new ScanAnalystChatResponseDto(
             updated.SessionId,
-            $"Zira ran a bounded YARA scan for newly live target {target.Hostname}.",
+            shouldRun
+                ? $"Zira ran a bounded YARA scan for newly live target {target.Hostname}."
+                : $"Zira created a bounded YARA scan plan for newly live target {target.Hostname}.",
             analysis.OperatingMode,
             _runtimeState.DatabaseAvailable,
             updated.ActiveMockConditions,
@@ -361,7 +371,12 @@ public sealed class ScanAnalystPocService
 
         if (TryFindLiveTargetYaraTrigger(activeTriggers, context, out var liveTargetTrigger, out var liveTarget))
         {
-            return await RunBoundedLiveTargetYaraActionAsync(context, liveTargetTrigger, liveTarget, cancellationToken);
+            return await RunBoundedLiveTargetYaraActionAsync(
+                context,
+                liveTargetTrigger,
+                liveTarget,
+                parameters.AutoRun ? "CreateAndRun" : "CreatePlan",
+                cancellationToken);
         }
 
         var objective =

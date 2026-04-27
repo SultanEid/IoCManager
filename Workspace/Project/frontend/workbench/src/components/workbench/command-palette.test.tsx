@@ -34,7 +34,7 @@ afterEach(() => {
 })
 
 function getPaletteInput() {
-  const inputs = screen.getAllByPlaceholderText("Search routes, queue focus, alert ids, and alert titles...")
+  const inputs = screen.getAllByPlaceholderText("Search workspace...")
   return inputs[inputs.length - 1]
 }
 
@@ -59,14 +59,14 @@ describe("WorkbenchCommandPalette", () => {
     expect(push).toHaveBeenCalledWith("/alerts/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69")
   })
 
-  it("supports free-text fallback to queue search", async () => {
+  it("supports free-text fallback to alert search", async () => {
     const user = userEvent.setup()
     push.mockReset()
     render(<WorkbenchCommandPalette open onOpenChange={() => undefined} roles={["Analyst"]} />)
 
     await user.type(getPaletteInput(), "dns beacon")
 
-    await user.click(screen.getByText('Search queue for "dns beacon"'))
-    expect(push).toHaveBeenCalledWith("/queue?q=dns%20beacon")
+    await user.click(screen.getByText('Search alerts for "dns beacon"'))
+    expect(push).toHaveBeenCalledWith("/alerts?q=dns%20beacon")
   })
 })

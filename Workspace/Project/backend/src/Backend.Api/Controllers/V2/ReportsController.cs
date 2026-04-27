@@ -155,6 +155,27 @@ public sealed class ReportsController : ControllerBase
         return Ok(new ReportListResponse(items, totalCount, page, pageSize));
     }
 
+    [HttpGet("{reportId:guid}")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType<ReportResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ReportResponse>> Get(Guid reportId, CancellationToken cancellationToken)
+    {
+        var report = await _dbContext.ReportsV2.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId, cancellationToken);
+        if (report is null)
+        {
+            return NotFound();
+        }
+
+        var alertIds = await _dbContext.ReportAlerts
+            .AsNoTracking()
+            .Where(x => x.ReportId == reportId)
+            .Select(x => x.AlertId)
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(report.ToReportResponse(alertIds));
+    }
+
     [HttpGet("power-bi")]
     [EnableRateLimiting(RateLimitPolicies.Read)]
     [ProducesResponseType<PowerBiVisualizationCatalogResponse>(StatusCodes.Status200OK)]
@@ -526,7 +547,7 @@ public sealed class ReportsController : ControllerBase
                 AlertCount = distinctAlertIds.Length,
             },
             cancellationToken);
-        return CreatedAtAction(nameof(List), new { id = report.Id }, report.ToReportResponse(distinctAlertIds));
+        return CreatedAtAction(nameof(Get), new { reportId = report.Id }, report.ToReportResponse(distinctAlertIds));
     }
 
     [HttpDelete("{reportId:guid}")]

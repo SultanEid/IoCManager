@@ -43,8 +43,8 @@ type IocExplorerFilters = {
   pageSize: number
 }
 
-const DEFAULT_PAGE_SIZE = 100
-const PAGE_SIZE_OPTIONS = [50, 100, 250]
+const DEFAULT_PAGE_SIZE = 50
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 250]
 const IOC_DECISION_POLL_INTERVAL_MS = 2500
 const IOC_DECISION_POLL_MAX_ATTEMPTS = 12
 
@@ -201,7 +201,11 @@ export default function IocsExplorerPage() {
     setFilters(parsedFilters)
   }, [parsedFilters])
 
-  const targetsQuery = useWorkbenchQuery(["legacy-pipeline", "ioc-explorer-targets"], (signal) => listLegacyTargets(undefined, signal))
+  const targetsQuery = useWorkbenchQuery(
+    ["legacy-pipeline", "ioc-explorer-targets"],
+    (signal) => listLegacyTargets(undefined, signal),
+    { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false },
+  )
   const findingsQuery = useWorkbenchQuery(
     ["legacy-pipeline", "ioc-findings", parsedFilters],
     (signal) =>
@@ -270,9 +274,9 @@ export default function IocsExplorerPage() {
     hasDetectionContext: Boolean(latestIocDecisionData?.detectionId),
   })
 
-  const targets = targetsQuery.data ?? []
   const findingsPage = findingsQuery.data
-  const findings = findingsPage?.items ?? []
+  const targets = useMemo(() => targetsQuery.data ?? [], [targetsQuery.data])
+  const findings = useMemo(() => findingsPage?.items ?? [], [findingsPage?.items])
   const totalCount = findingsPage?.totalCount ?? 0
   const currentPage = findingsPage?.page ?? parsedFilters.page
   const pageSize = findingsPage?.pageSize ?? parsedFilters.pageSize
@@ -682,10 +686,10 @@ export default function IocsExplorerPage() {
           )
         ) : (
           <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
-            <Table>
+            <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-surface-2/85 backdrop-blur supports-[backdrop-filter]:bg-surface-2/75">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-10">
+                  <TableHead className="w-10 px-2">
                     <input
                       type="checkbox"
                       checked={allVisibleSelected}
@@ -693,13 +697,13 @@ export default function IocsExplorerPage() {
                       onChange={toggleSelectAllVisible}
                     />
                   </TableHead>
-                  <TableHead>Scanner</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Rule Name</TableHead>
-                  <TableHead>Indicator Value</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead className="w-12">Open</TableHead>
+                  <TableHead className="w-[8rem]">Scanner</TableHead>
+                  <TableHead className="w-[18%]">Target</TableHead>
+                  <TableHead className="w-[24%]">Rule Name</TableHead>
+                  <TableHead className="w-[28%]">Indicator Value</TableHead>
+                  <TableHead className="w-[8rem]">Severity</TableHead>
+                  <TableHead className="w-[12rem]">Timestamp</TableHead>
+                  <TableHead className="w-11 px-2">Open</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -712,7 +716,7 @@ export default function IocsExplorerPage() {
                       className="cursor-pointer"
                       onClick={() => setSelectedIocId(finding.iocId)}
                     >
-                      <TableCell onClick={(event) => event.stopPropagation()}>
+                      <TableCell className="px-2" onClick={(event) => event.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selected}
@@ -723,29 +727,33 @@ export default function IocsExplorerPage() {
                       <TableCell>
                         <ScannerFamilyBadge family={finding.scannerFamily} size="sm" />
                       </TableCell>
-                      <TableCell>
-                        <div className="min-w-[15rem]">
-                          <p className="font-medium">{finding.targetDisplay}</p>
-                          <p className="text-xs text-muted-foreground">{finding.targetIp ?? "Unresolved target"}</p>
+                      <TableCell className="whitespace-normal">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium" title={finding.targetDisplay}>{finding.targetDisplay}</p>
+                          <p className="truncate text-xs text-muted-foreground" title={finding.targetIp ?? "Unresolved target"}>
+                            {finding.targetIp ?? "Unresolved target"}
+                          </p>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="max-w-[18rem] whitespace-normal">
-                          <p className="font-medium">{finding.ruleName}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{finding.status}</p>
+                      <TableCell className="whitespace-normal">
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 font-medium" title={finding.ruleName}>{finding.ruleName}</p>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{finding.status}</p>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="max-w-[22rem] whitespace-normal">
-                          <p className="line-clamp-2">{finding.indicatorValue}</p>
+                      <TableCell className="whitespace-normal">
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 break-words" title={finding.indicatorValue}>{finding.indicatorValue}</p>
                           <p className="mt-1 text-xs text-muted-foreground">{finding.indicatorKind}</p>
                         </div>
                       </TableCell>
                       <TableCell>
                         <StatusBadge value={finding.severity} />
                       </TableCell>
-                      <TableCell>{formatTimestamp(finding.timestampUtc)}</TableCell>
-                      <TableCell>
+                      <TableCell className="truncate" title={formatTimestamp(finding.timestampUtc)}>
+                        {formatTimestamp(finding.timestampUtc)}
+                      </TableCell>
+                      <TableCell className="px-2">
                         <Button
                           type="button"
                           size="icon-xs"

@@ -25,6 +25,7 @@ import type {
   PowerBiVisualizationCatalogResponse,
   GeneratedReportResponse,
   ReportListResponse,
+  ReportResponse,
   ReportMitigationListResponse,
   ReportMitigationResponse,
   RuleDistributionAttemptResponse,
@@ -784,6 +785,7 @@ export interface Gateway {
   getAlertDetail(alertId: string, signal?: AbortSignal): Promise<V2AlertDetailResponse>
   updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
   listReports(query?: ReportListQuery, signal?: AbortSignal): Promise<ReportListResponse>
+  getReport(reportId: string, signal?: AbortSignal): Promise<ReportResponse>
   generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>
   generateReportMitigation(input: GenerateReportMitigationInput): Promise<ReportMitigationResponse>
   listReportMitigationPlans(signal?: AbortSignal): Promise<ReportMitigationListResponse>
