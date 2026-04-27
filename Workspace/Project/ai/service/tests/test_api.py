@@ -829,6 +829,19 @@ def test_health_includes_version_metadata(client) -> None:
     assert body["datasetManifestHash"] is not None
 
 
+def test_model_statistics_includes_active_model_metrics(client) -> None:
+    response = client.get("/model_statistics")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["modelVersion"] == "v1-test"
+    assert body["datasetVersion"] == "test-v1"
+    assert body["metrics"]["precision"] == 0.6
+    assert body["metrics"]["recall"] == 0.8
+    assert body["thresholds"]["recommend"] == 0.55
+    assert body["datasetCounts"]["observables"] == 3
+    assert body["datasetCounts"]["sourceTrust"] == 3
+
+
 def test_app_metadata_uses_ioc_manager_identity(client) -> None:
     assert client.app.title == "IoC Manager Decision Sidecar"
     assert "decision support" in client.app.description.lower()

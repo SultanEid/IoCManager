@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Backend.Contracts.V2;
 using Backend.Infrastructure.Compatibility.LegacyAzure;
@@ -370,9 +371,7 @@ public sealed partial class LegacyScanPipelineService
                     row.ScanResult is not null
                         ? LegacyScanPipelineHelpers.ToDateTimeOffset(row.ScanResult.FinishedAt)
                         : LegacyScanPipelineHelpers.ToDateTimeOffset(row.ScanJob.FinishedAt)),
-            row.Ioc.YaraDetail is null
-                ? null
-                : new LegacyPipelineIocFindingYaraDetailResponse(row.Ioc.YaraDetail.FilePath, row.Ioc.YaraDetail.FileHash),
+            ToYaraDetailResponse(row.Ioc),
             row.Ioc.SigmaDetail is null
                 ? null
                 : new LegacyPipelineIocFindingSigmaDetailResponse(
@@ -387,6 +386,44 @@ public sealed partial class LegacyScanPipelineService
                     row.Ioc.NetworkDetail.Protocol,
                     NormalizeFindingSeverity(row.Ioc.NetworkDetail.Severity),
                     row.Ioc.NetworkDetail.FlowId));
+    }
+
+    private static LegacyPipelineIocFindingYaraDetailResponse? ToYaraDetailResponse(LegacyPipelineIocEntity ioc)
+    {
+        if (ioc.YaraDetail is null)
+        {
+            return null;
+        }
+
+        var fileHash = LegacyScanPipelineHelpers.CleanOrNull(ioc.YaraDetail.FileHash)
+            ?? ExtractYaraFileHash(ioc.RawPayload);
+
+        return new LegacyPipelineIocFindingYaraDetailResponse(ioc.YaraDetail.FilePath, fileHash);
+    }
+
+    internal static string? ExtractYaraFileHash(string? rawPayload)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            var root = document.RootElement;
+            return LegacyScanPipelineHelpers.CleanOrNull(
+                LegacyScanPipelineHelpers.ReadJsonString(root, "file_hash")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "fileHash")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "sha256")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "sha1")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "md5")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "hash"));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     internal static (string Value, string Kind) ResolveIndicator(LegacyPipelineIocEntity ioc)

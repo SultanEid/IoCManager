@@ -22,6 +22,18 @@ public sealed class LegacyScanPipelinePainLevelTests
     }
 
     [Fact]
+    public void ExtractYaraFileHash_ReadsPayloadHash()
+    {
+        const string rawPayload = """
+            {"rule":"IOCManager_ZombieVM_Mixed_Indicators","file":"C:\\IOC\\ZombieVM\\configs\\bluefin.json","strings":[],"file_hash":"30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9"}
+            """;
+
+        LegacyScanPipelineService.ExtractYaraFileHash(rawPayload)
+            .Should()
+            .Be("30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9");
+    }
+
+    [Fact]
     public void ResolvePainLevel_NetworkSourceOrDestinationIp_UsesIpTier()
     {
         var ioc = BuildIoc(

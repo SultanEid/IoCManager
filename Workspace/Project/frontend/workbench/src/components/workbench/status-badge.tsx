@@ -32,6 +32,14 @@ export const STATUS_TONE_BY_KEY: Record<string, string> = {
   medium: "border-cyan-300/35 bg-cyan-400/10 text-cyan-100",
   low: "border-violet-300/30 bg-violet-400/10 text-violet-100",
   critical: "border-rose-300/40 bg-rose-400/12 text-rose-200",
+  malicious: "border-red-300/45 bg-red-500/15 text-red-100",
+  likelymalicious: "border-red-300/45 bg-red-500/15 text-red-100",
+  suspicious: "border-orange-300/45 bg-orange-500/15 text-orange-100",
+  benign: "border-blue-300/45 bg-blue-500/15 text-blue-100",
+  likelybenign: "border-blue-300/45 bg-blue-500/15 text-blue-100",
+  falsepositive: "border-violet-300/45 bg-violet-500/15 text-violet-100",
+  insufficientevidence: "border-slate-300/35 bg-slate-400/12 text-slate-100",
+  staleorrevoked: "border-slate-300/35 bg-slate-400/12 text-slate-100",
   failing: "border-rose-300/40 bg-rose-400/12 text-rose-200",
   fail: "border-rose-300/40 bg-rose-400/12 text-rose-200",
   rejected: "border-rose-300/40 bg-rose-400/12 text-rose-200",
@@ -58,6 +66,11 @@ const DISPLAY_LABEL_BY_KEY: Record<string, string> = {
   sigma: "Sigma",
   snort: "Snort",
   suricata: "Suricata",
+  benign: "Non-malicious",
+  likelybenign: "Likely Non-malicious",
+  falsepositive: "False Positive",
+  insufficientevidence: "Insufficient Evidence",
+  staleorrevoked: "Stale or Revoked",
 }
 
 function normalize(value: string) {

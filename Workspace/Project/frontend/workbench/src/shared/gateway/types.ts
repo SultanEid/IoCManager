@@ -1,5 +1,6 @@
 import type {
   AlertResponse,
+  AiModelStatistics,
   AiDecisionActionPlanOrPendingResponse,
   AiDecisionExplanationOrPendingResponse,
   AiDecisionResultResponse,
@@ -866,6 +867,7 @@ export interface Gateway {
   listScanJobTargets(scanJobId: string, signal?: AbortSignal): Promise<ScanJobTargetExecutionResponse[]>
   cancelScanJob(scanJobId: string, actorUserId: string, reason?: string): Promise<ScanJobResponse>
   getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse>
+  getAiModelStatistics(signal?: AbortSignal): Promise<AiModelStatistics>
   updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse>
   sendScanAnalystChatTurn(input: SendScanAnalystChatTurnInput): Promise<ScanAnalystChatResponse>
   getScanAnalystRunSummary(scanJobId: string, signal?: AbortSignal): Promise<ScanAnalystRunSummaryResponse>

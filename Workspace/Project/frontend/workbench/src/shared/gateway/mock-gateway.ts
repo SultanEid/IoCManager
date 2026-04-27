@@ -1176,6 +1176,48 @@ export class MockGateway implements Gateway {
     }
   }
 
+  async getAiModelStatistics(_signal?: AbortSignal) {
+    consume(_signal)
+    return {
+      modelId: "cti-v1-baseline",
+      modelVersion: "mock-v1",
+      status: "active",
+      datasetVersion: "mock-dataset-v1",
+      scoringProfileVersion: "heuristic-v1",
+      featureSchemaVersion: "cti-feature-schema-v1",
+      createdAtUtc: "2026-04-26T06:02:15.209852Z",
+      publishedAtUtc: "2026-04-26T06:02:44.547760Z",
+      trainingWindowStartUtc: "2025-12-08T16:58:48Z",
+      trainingWindowEndUtc: "2026-04-26T06:01:19.498829Z",
+      evaluationWindowStartUtc: "2025-12-13T01:16:25Z",
+      evaluationWindowEndUtc: "2026-04-26T06:01:19.498829Z",
+      datasetManifestHash: "mock-manifest-hash",
+      metrics: {
+        precision: 1,
+        recall: 0.996,
+        prAuc: 0.999,
+        calibrationError: 0.001,
+        abstainRate: 0.483,
+        coverage: 0.517,
+        validationSampleSize: 518,
+      },
+      thresholds: {
+        recommend: 0.8,
+        escalate: 0.95,
+        abstain: 0.55,
+      },
+      datasetCounts: {
+        observables: 5178,
+        detections: 5178,
+        outcomes: 5178,
+        sourceTrust: 13,
+      },
+      runtimeWarnings: [],
+      readinessStatus: "ready",
+      notes: "Mock baseline model statistics.",
+    }
+  }
+
   async updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse> {
     this.scanAnalystPosture = {
       ...this.scanAnalystPosture,

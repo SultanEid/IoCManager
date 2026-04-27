@@ -28,6 +28,7 @@ from .contracts import (
     HistoricalLearningQueryRequest,
     HistoricalLearningQueryResponse,
     HistoricalSimilarDetectionResponse,
+    ModelStatisticsResponse,
     GraphLinkCandidateRequest,
     GraphLinkCandidateResponse,
     ReportIngestionRequest,
@@ -169,6 +170,34 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
             "runtimeWarnings": runtime.startup_warnings,
             "readinessStatus": readiness["status"],
         }
+
+    @app.get("/model_statistics", response_model=ModelStatisticsResponse)
+    def model_statistics() -> ModelStatisticsResponse:
+        entry = runtime.active_model_entry
+        if entry is None:
+            raise HTTPException(status_code=404, detail="No active model is registered.")
+
+        return ModelStatisticsResponse(
+            model_id=entry.model_id,
+            model_version=entry.model_version,
+            status=entry.status,
+            dataset_version=entry.dataset_version,
+            scoring_profile_version=entry.scoring_profile_version,
+            feature_schema_version=entry.feature_schema_version,
+            created_at_utc=entry.created_at_utc,
+            published_at_utc=entry.published_at_utc,
+            training_window_start_utc=entry.training_window_start_utc,
+            training_window_end_utc=entry.training_window_end_utc,
+            evaluation_window_start_utc=entry.evaluation_window_start_utc,
+            evaluation_window_end_utc=entry.evaluation_window_end_utc,
+            dataset_manifest_hash=entry.dataset_manifest_hash,
+            metrics=entry.metrics,
+            thresholds=entry.thresholds,
+            dataset_counts=_active_dataset_counts(runtime),
+            runtime_warnings=runtime.startup_warnings,
+            readiness_status=_readiness_payload(runtime)["status"],
+            notes=entry.notes,
+        )
 
     @app.post("/score_case", response_model=CaseScoreVectorResponse, deprecated=True)
     def score_case(request: ScoreCaseRequest) -> CaseScoreVectorResponse:
@@ -411,6 +440,24 @@ def _build_runtime(settings: ServiceSettings) -> ServiceRuntime:
         active_dataset_entry=active_dataset_entry,
         startup_warnings=startup_warnings,
     )
+
+
+def _active_dataset_counts(runtime: ServiceRuntime) -> dict[str, int]:
+    dataset_version = runtime.active_model_entry.dataset_version if runtime.active_model_entry else runtime.scorer.dataset_version
+    if not dataset_version or dataset_version == "unknown":
+        return {}
+
+    try:
+        snapshot = runtime.snapshot_loader.load(dataset_version)
+    except Exception:
+        return {}
+
+    return {
+        "observables": int(len(snapshot.observables)),
+        "detections": int(len(snapshot.detections)),
+        "outcomes": int(len(snapshot.outcomes)),
+        "sourceTrust": int(len(snapshot.source_trust)),
+    }
 
 
 def _is_authorized_request(settings: ServiceSettings, request: Request) -> bool:

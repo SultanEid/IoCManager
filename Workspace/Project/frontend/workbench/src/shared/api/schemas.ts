@@ -400,6 +400,28 @@ export const healthReadySchema = z.object({
   components: z.array(healthReadyComponentSchema),
 })
 
+export const aiModelStatisticsSchema = z.object({
+  modelId: z.string(),
+  modelVersion: z.string(),
+  status: z.string(),
+  datasetVersion: z.string(),
+  scoringProfileVersion: z.string(),
+  featureSchemaVersion: z.string(),
+  createdAtUtc: z.string().nullable(),
+  publishedAtUtc: z.string().nullable(),
+  trainingWindowStartUtc: z.string().nullable(),
+  trainingWindowEndUtc: z.string().nullable(),
+  evaluationWindowStartUtc: z.string().nullable(),
+  evaluationWindowEndUtc: z.string().nullable(),
+  datasetManifestHash: z.string().nullable(),
+  metrics: z.record(z.string(), z.number()),
+  thresholds: z.record(z.string(), z.number()),
+  datasetCounts: z.record(z.string(), z.number()),
+  runtimeWarnings: z.array(z.string()),
+  readinessStatus: z.string(),
+  notes: z.string().nullable(),
+})
+
 export const userResponseSchema = z.object({
   id: z.string(),
   userName: z.string(),
@@ -1585,6 +1607,7 @@ export type FeedbackResponse = z.infer<typeof feedbackResponseSchema>
 export type HealthInfo = z.infer<typeof healthInfoSchema>
 export type HealthAdmin = z.infer<typeof healthAdminSchema>
 export type HealthReady = z.infer<typeof healthReadySchema>
+export type AiModelStatistics = z.infer<typeof aiModelStatisticsSchema>
 export type UserResponse = z.infer<typeof userResponseSchema>
 export type RoleResponse = z.infer<typeof roleResponseSchema>
 export type PermissionResponse = z.infer<typeof permissionResponseSchema>

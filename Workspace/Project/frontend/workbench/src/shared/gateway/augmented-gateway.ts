@@ -338,6 +338,10 @@ export class AugmentedGateway implements Gateway {
     return this.source.getScanAnalystStatus(signal)
   }
 
+  getAiModelStatistics(signal?: AbortSignal) {
+    return this.source.getAiModelStatistics(signal)
+  }
+
   updateScanAnalystPosture(input: UpdateScanAnalystPostureInput) {
     return this.source.updateScanAnalystPosture(input)
   }

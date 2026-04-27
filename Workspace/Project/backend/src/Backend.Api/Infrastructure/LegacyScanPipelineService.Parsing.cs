@@ -348,7 +348,14 @@ public sealed partial class LegacyScanPipelineService
                 LegacyScanPipelineHelpers.CleanOrNull(target.TargetOsType),
                 LegacyScanPipelineHelpers.ReadJsonString(match, "rule") ?? LegacyScanPipelineHelpers.ReadJsonString(match, "Rule") ?? "unknown",
                 match.GetRawText(),
-                new LegacyPipelinePersistedYaraDetail(LegacyScanPipelineHelpers.ReadJsonString(match, "file") ?? LegacyScanPipelineHelpers.ReadJsonString(match, "path") ?? "unknown", null),
+                new LegacyPipelinePersistedYaraDetail(
+                    LegacyScanPipelineHelpers.ReadJsonString(match, "file") ?? LegacyScanPipelineHelpers.ReadJsonString(match, "path") ?? "unknown",
+                    LegacyScanPipelineHelpers.ReadJsonString(match, "file_hash")
+                        ?? LegacyScanPipelineHelpers.ReadJsonString(match, "fileHash")
+                        ?? LegacyScanPipelineHelpers.ReadJsonString(match, "sha256")
+                        ?? LegacyScanPipelineHelpers.ReadJsonString(match, "sha1")
+                        ?? LegacyScanPipelineHelpers.ReadJsonString(match, "md5")
+                        ?? LegacyScanPipelineHelpers.ReadJsonString(match, "hash")),
                 null,
                 null);
         }

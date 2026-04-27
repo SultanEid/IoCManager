@@ -4,6 +4,7 @@ import { ApiError } from "@/shared/api/error"
 import {
   alertResponseSchema,
   alertListResponseSchema,
+  aiModelStatisticsSchema,
   v2AlertDetailResponseSchema,
   aiDecisionActionPlanOrPendingResponseSchema,
   aiDecisionExplanationOrPendingResponseSchema,
@@ -74,6 +75,7 @@ import {
   userResponseSchema,
   type AlertListResponse,
   type AlertResponse,
+  type AiModelStatistics,
   type AiDecisionActionPlanOrPendingResponse,
   type AiDecisionExplanationOrPendingResponse,
   type AiDecisionResultResponse,
@@ -1012,6 +1014,10 @@ export class AspNetGateway {
 
   async getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse> {
     return requestJson("/api/v2/ai/scan-analyst/status", scanAnalystAgentStatusResponseSchema, { signal })
+  }
+
+  async getAiModelStatistics(signal?: AbortSignal): Promise<AiModelStatistics> {
+    return requestJson("/api/v2/ai/model-statistics", aiModelStatisticsSchema, { signal })
   }
 
   async updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse> {

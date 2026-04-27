@@ -84,6 +84,19 @@ function readErrorMessage(error: unknown) {
   return failure.message || "Request failed."
 }
 
+function normalizeDecisionStatus(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? ""
+}
+
+function isPendingDecisionStatus(value: string | null | undefined) {
+  return normalizeDecisionStatus(value) === "queued" || normalizeDecisionStatus(value) === "running"
+}
+
+function isFailedDecisionStatus(value: string | null | undefined) {
+  const status = normalizeDecisionStatus(value)
+  return status === "failed" || status === "error" || status === "cancelled" || status === "canceled"
+}
+
 function InlineState({
   title,
   description,
@@ -158,7 +171,7 @@ function formatPercent(value: number) {
 }
 
 function isDecisionTelemetryReason(reason: string) {
-  return /(verdict=|calibrated_signal=|uncertainty=|conflict=)/i.test(reason)
+  return /(verdict=|calibrated_signal=|uncertainty=|conflict=|evidence bucket scores)/i.test(reason)
 }
 
 function formatDecisionSummary(verdict: string) {
@@ -182,6 +195,59 @@ function formatDecisionSummary(verdict: string) {
     default:
       return "The model returned a decision for this IOC."
   }
+}
+
+function formatDecisionVerdictLabel(verdict: string) {
+  switch (verdict) {
+    case "malicious":
+      return "Malicious"
+    case "likely_malicious":
+      return "Likely malicious"
+    case "suspicious":
+      return "Suspicious"
+    case "benign":
+      return "Non-malicious"
+    case "likely_benign":
+      return "Likely non-malicious"
+    case "false_positive":
+      return "False positive"
+    case "stale_or_revoked":
+      return "Stale or revoked"
+    case "insufficient_evidence":
+      return "Insufficient evidence"
+    default:
+      return verdict.replace(/_/g, " ")
+  }
+}
+
+function decisionVerdictTone(verdict: string) {
+  switch (verdict) {
+    case "malicious":
+    case "likely_malicious":
+      return "border-red-300/50 bg-red-500/18 text-red-50 shadow-[0_0_24px_rgba(239,68,68,0.18)]"
+    case "suspicious":
+      return "border-orange-300/55 bg-orange-500/18 text-orange-50 shadow-[0_0_24px_rgba(249,115,22,0.16)]"
+    case "benign":
+    case "likely_benign":
+      return "border-blue-300/55 bg-blue-500/18 text-blue-50 shadow-[0_0_24px_rgba(59,130,246,0.16)]"
+    case "false_positive":
+      return "border-violet-300/55 bg-violet-500/18 text-violet-50 shadow-[0_0_24px_rgba(139,92,246,0.16)]"
+    case "insufficient_evidence":
+    case "stale_or_revoked":
+      return "border-slate-300/45 bg-slate-400/14 text-slate-50 shadow-[0_0_24px_rgba(148,163,184,0.12)]"
+    default:
+      return "border-border/80 bg-surface-2/80 text-foreground"
+  }
+}
+
+function DecisionVerdictBadge({ verdict }: { verdict: string }) {
+  return (
+    <span
+      className={`inline-flex min-h-10 items-center rounded-xl border px-4 py-2 text-sm font-bold uppercase tracking-[0.12em] ${decisionVerdictTone(verdict)}`}
+    >
+      {formatDecisionVerdictLabel(verdict)}
+    </span>
+  )
 }
 
 export default function IocsExplorerPage() {
@@ -262,12 +328,10 @@ export default function IocsExplorerPage() {
   const latestIocDecisionData = latestIocDecisionQuery.data ?? null
   const latestIocDecision = latestIocDecisionQuery.data?.result.decision ?? null
   const latestIocDecisionResult = latestIocDecisionQuery.data?.result ?? null
-  const latestIocTelemetryReason =
-    latestIocDecision?.reasons.find((reason) => isDecisionTelemetryReason(reason)) ?? null
+  const latestIocDecisionStatus = latestIocDecisionResult?.status ?? null
   const latestIocNarrativeReasons =
     latestIocDecision?.reasons.filter((reason) => !isDecisionTelemetryReason(reason)) ?? []
   const latestIocLeadReason = latestIocNarrativeReasons[0] ?? null
-  const latestIocSupportingReasons = latestIocNarrativeReasons.slice(1, 3)
   const latestIocConfidenceReasons = explainDecisionConfidence({
     result: latestIocDecisionResult,
     sourceLabel: latestRelatedDetection?.source ?? "IOC-native generation",
@@ -424,8 +488,18 @@ export default function IocsExplorerPage() {
         }
       }
 
-      await Promise.all([latestIocDecisionQuery.refetch(), relatedDetectionsQuery.refetch()])
-      setGenerateDecisionStatus("Latest AI decision loaded for this IOC.")
+      const [latestRefresh] = await Promise.all([latestIocDecisionQuery.refetch(), relatedDetectionsQuery.refetch()])
+      const latestResult = latestRefresh.data?.result
+      if (latestResult?.decision) {
+        setGenerateDecisionStatus("Latest AI decision loaded for this IOC.")
+      } else if (isPendingDecisionStatus(latestResult?.status)) {
+        setGenerateDecisionStatus("AI decision is still running. This drawer will show the verdict after refresh.")
+      } else if (isFailedDecisionStatus(latestResult?.status)) {
+        setGenerateDecisionError(latestResult?.failureMessage ?? "AI decision failed before producing a verdict.")
+        setGenerateDecisionStatus(null)
+      } else {
+        setGenerateDecisionStatus("AI decision request was accepted, but no verdict has been returned yet.")
+      }
     } catch (error) {
       setGenerateDecisionError(readErrorMessage(error))
       setGenerateDecisionStatus(null)
@@ -776,7 +850,7 @@ export default function IocsExplorerPage() {
       </article>
 
       <Sheet open={selectedIocId !== null} onOpenChange={(open) => !open && setSelectedIocId(null)}>
-        <SheetContent side="right" className="w-full max-w-2xl overflow-y-auto border-border/70 bg-surface-1/96 px-6">
+        <SheetContent side="right" className="!w-[min(96vw,72rem)] !max-w-none overflow-y-auto border-border/70 bg-surface-1/96 px-8">
           <SheetHeader>
             <SheetTitle>IOC detail</SheetTitle>
             <SheetDescription>
@@ -911,6 +985,28 @@ export default function IocsExplorerPage() {
                         failure={classifyUiError(latestIocDecisionQuery.error)}
                         fallbackTitle="AI decision unavailable"
                       />
+                    ) : !latestIocDecision && latestIocDecisionResult ? (
+                      <InlineState
+                        title={
+                          isPendingDecisionStatus(latestIocDecisionStatus)
+                            ? "AI decision in progress"
+                            : isFailedDecisionStatus(latestIocDecisionStatus)
+                              ? "AI decision failed"
+                              : "AI decision has no verdict yet"
+                        }
+                        description={
+                          isFailedDecisionStatus(latestIocDecisionStatus)
+                            ? latestIocDecisionResult.failureMessage ?? "The backend did not return a failure detail."
+                            : `Current status: ${latestIocDecisionResult.status}. Refresh or generate again after the sidecar finishes processing.`
+                        }
+                        tone={
+                          isFailedDecisionStatus(latestIocDecisionStatus)
+                            ? "danger"
+                            : isPendingDecisionStatus(latestIocDecisionStatus)
+                              ? "warning"
+                              : "default"
+                        }
+                      />
                     ) : !latestIocDecision ? (
                       <SearchEmptyState
                         title="No AI decision recorded yet"
@@ -929,35 +1025,35 @@ export default function IocsExplorerPage() {
                       />
                     ) : (
                       <div className="space-y-4">
-                        <div className="rounded-xl border border-border/70 bg-surface-1/70 p-4">
-                          <div className="flex flex-col gap-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="space-y-3">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <StatusBadge value={latestIocDecision.verdict} />
-                                  <StatusBadge value={latestIocDecisionResult?.status ?? "unknown"} />
-                                </div>
-                                <div className="space-y-1.5">
-                                  <p className="text-base font-semibold tracking-tight">
-                                    {formatDecisionSummary(latestIocDecision.verdict)}
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {latestIocLeadReason ?? "No operator-facing explanation was stored for this decision."}
-                                  </p>
-                                </div>
+                        <div className="rounded-xl border border-border/70 bg-surface-1/70 p-5">
+                          <div className="flex flex-col gap-5">
+                            <div className="space-y-4">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <DecisionVerdictBadge verdict={latestIocDecision.verdict} />
+                                <StatusBadge value={latestIocDecisionResult?.status ?? "unknown"} />
                               </div>
-
-                              <dl className="grid min-w-[16rem] gap-x-6 gap-y-3 sm:grid-cols-2">
-                                <div>
-                                  <dt className="wb-kicker">Confidence</dt>
-                                  <dd className="mt-1 text-lg font-semibold">{formatPercent(latestIocDecision.confidence)}</dd>
-                                </div>
-                                <div>
-                                  <dt className="wb-kicker">False Positive Risk</dt>
-                                  <dd className="mt-1 text-lg font-semibold">{formatPercent(latestIocDecision.falsePositiveRisk)}</dd>
-                                </div>
-                              </dl>
+                              <div className="space-y-2">
+                                <p className="text-2xl font-semibold leading-snug tracking-tight">
+                                  {formatDecisionSummary(latestIocDecision.verdict)}
+                                </p>
+                                {latestIocLeadReason ? (
+                                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                                    {latestIocLeadReason}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
+
+                            <dl className="grid gap-3 sm:grid-cols-2">
+                              <div className="rounded-lg border border-border/60 bg-surface-2/55 p-4">
+                                <dt className="wb-kicker">Confidence</dt>
+                                <dd className="mt-2 text-3xl font-semibold tracking-tight">{formatPercent(latestIocDecision.confidence)}</dd>
+                              </div>
+                              <div className="rounded-lg border border-border/60 bg-surface-2/55 p-4">
+                                <dt className="wb-kicker">False Positive Risk</dt>
+                                <dd className="mt-2 text-3xl font-semibold tracking-tight">{formatPercent(latestIocDecision.falsePositiveRisk)}</dd>
+                              </div>
+                            </dl>
 
                             <div className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
                               <p className="wb-kicker">Why this confidence</p>
@@ -971,14 +1067,6 @@ export default function IocsExplorerPage() {
                                   />
                                 ))}
                               </div>
-                            </div>
-
-                            <div className="rounded-lg border border-border/60 bg-surface-2/45 px-3 py-2.5 text-sm text-muted-foreground">
-                              {latestIocDecisionData?.detectionId
-                                ? latestRelatedDetection?.ruleName
-                                  ? `Linked to detection ${latestRelatedDetection.ruleName}. Open full decision to review the full detection context.`
-                                  : "A full detection view is available for this AI decision."
-                                : "This decision was generated directly from IOC context. No full detection page has been materialized for this IOC yet."}
                             </div>
 
                             <dl className="grid gap-x-4 gap-y-3 rounded-lg border border-border/60 bg-surface-2/35 px-3 py-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
@@ -1024,36 +1112,6 @@ export default function IocsExplorerPage() {
                           </div>
                         </div>
 
-                        {latestIocSupportingReasons.length > 0 || latestIocTelemetryReason ? (
-                          <div className="rounded-lg border border-border/70 bg-surface-1/70 p-4">
-                            <p className="wb-kicker">Decision notes</p>
-                            <div className="mt-3 space-y-3">
-                              {latestIocSupportingReasons.length > 0 ? (
-                                <ul className="space-y-2 text-sm text-muted-foreground">
-                                  {latestIocSupportingReasons.map((reason) => (
-                                    <li key={reason} className="flex gap-2">
-                                      <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
-                                      <span>{reason}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                              {latestIocTelemetryReason ? (
-                                <details className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
-                                  <summary className="cursor-pointer list-none text-xs font-semibold tracking-tight text-muted-foreground">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span>Technical details</span>
-                                      <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/80">Expand</span>
-                                    </div>
-                                  </summary>
-                                  <div className="mt-3 rounded-md border border-dashed border-border/60 bg-surface-2/35 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                                    <span className="font-medium text-foreground">Scoring note:</span> {latestIocTelemetryReason}
-                                  </div>
-                                </details>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : null}
                       </div>
                     )}
                   </div>
