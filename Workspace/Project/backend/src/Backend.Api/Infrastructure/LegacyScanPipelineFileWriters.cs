@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using Backend.Contracts.V2;
 
@@ -12,6 +13,82 @@ internal static class LegacyScanPipelineFileWriters
     private const float MarginRight = 52f;
     private const float MarginTop = 54f;
     private const float MarginBottom = 48f;
+
+    public static void WriteSimpleHtml(
+        string path,
+        string title,
+        string reportType,
+        string scope,
+        DateTimeOffset generatedAtUtc,
+        LegacyPipelineReportQueryResponse query,
+        IReadOnlyList<LegacyPipelineReportSectionResponse> sections)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("<!doctype html>");
+        builder.AppendLine("<html lang=\"en\">");
+        builder.AppendLine("<head>");
+        builder.AppendLine("  <meta charset=\"utf-8\">");
+        builder.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+        builder.Append("  <title>").Append(Html(title)).AppendLine("</title>");
+        builder.AppendLine("  <style>");
+        builder.AppendLine("    :root{--ink:#172033;--muted:#5f6b7a;--line:#dbe3ee;--panel:#f7f9fc;--accent:#0f6b8f;--accent-soft:#e5f3f8}*{box-sizing:border-box}body{margin:0;background:#eef3f8;color:var(--ink);font:14px/1.55 Arial,Helvetica,sans-serif}main{max-width:1120px;margin:0 auto;padding:32px 24px 48px}header,.section{border:1px solid var(--line);background:#fff;border-radius:18px;box-shadow:0 18px 48px rgba(23,32,51,.08)}header{padding:28px}.section{margin-top:22px;padding:22px;break-inside:avoid}.kicker{margin:0 0 10px;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}h1{margin:0;font-size:30px;line-height:1.15}h2{margin:0 0 8px;font-size:20px}p{margin:0}.summary{color:var(--muted)}.meta,.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:18px}.meta div,.metric,.highlight{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px}.label{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:4px;font-weight:700}.metric strong{display:block;margin-top:4px;font-size:18px}.metric small{display:block;margin-top:4px;color:var(--muted)}.highlights{display:grid;gap:8px;margin-top:16px}@media print{body{background:#fff}main{max-width:none;padding:0}header,.section{box-shadow:none;break-inside:avoid}}");
+        builder.AppendLine("  </style>");
+        builder.AppendLine("</head>");
+        builder.AppendLine("<body><main>");
+        builder.AppendLine("  <header>");
+        builder.AppendLine("    <p class=\"kicker\">IOC Manager Report</p>");
+        builder.Append("    <h1>").Append(Html(title)).AppendLine("</h1>");
+        builder.Append("    <p class=\"summary\">").Append(Html(reportType)).Append(" | ").Append(Html(scope)).AppendLine("</p>");
+        builder.AppendLine("    <div class=\"meta\">");
+        AppendHtmlMeta(builder, "Generated UTC", generatedAtUtc.ToString("u", CultureInfo.InvariantCulture));
+        AppendHtmlMeta(builder, "Job Filter", query.JobId ?? "All");
+        AppendHtmlMeta(builder, "Target Filter", query.TargetId ?? "All");
+        AppendHtmlMeta(builder, "Subnet Filter", query.NetworkId ?? "All");
+        AppendHtmlMeta(builder, "Scanner Filter", query.ScannerFamily ?? "All");
+        AppendHtmlMeta(builder, "Severity Filter", query.Severity ?? "All");
+        AppendHtmlMeta(builder, "Status Filter", query.Status ?? "All");
+        AppendHtmlMeta(builder, "From UTC", query.FromUtc ?? "Not set");
+        AppendHtmlMeta(builder, "To UTC", query.ToUtc ?? "Not set");
+        builder.AppendLine("    </div>");
+        builder.AppendLine("  </header>");
+
+        foreach (var section in sections)
+        {
+            builder.AppendLine("  <section class=\"section\">");
+            builder.Append("    <h2>").Append(Html(section.Title)).AppendLine("</h2>");
+            builder.Append("    <p class=\"summary\">").Append(Html(section.Summary)).AppendLine("</p>");
+            if (section.Metrics.Count > 0)
+            {
+                builder.AppendLine("    <div class=\"metrics\">");
+                foreach (var metric in section.Metrics)
+                {
+                    builder.AppendLine("      <div class=\"metric\">");
+                    builder.Append("        <span class=\"label\">").Append(Html(metric.Label)).AppendLine("</span>");
+                    builder.Append("        <strong>").Append(Html(metric.Value)).AppendLine("</strong>");
+                    builder.Append("        <small>").Append(Html(metric.Detail)).AppendLine("</small>");
+                    builder.AppendLine("      </div>");
+                }
+
+                builder.AppendLine("    </div>");
+            }
+
+            if (section.Highlights.Count > 0)
+            {
+                builder.AppendLine("    <div class=\"highlights\">");
+                foreach (var highlight in section.Highlights)
+                {
+                    builder.Append("      <p class=\"highlight\">").Append(Html(highlight)).AppendLine("</p>");
+                }
+
+                builder.AppendLine("    </div>");
+            }
+
+            builder.AppendLine("  </section>");
+        }
+
+        builder.AppendLine("</main></body></html>");
+        File.WriteAllText(path, builder.ToString(), new UTF8Encoding(false));
+    }
 
     public static void WriteSimpleCsv(
         string path,
@@ -107,6 +184,16 @@ internal static class LegacyScanPipelineFileWriters
         builder.Append(',');
         builder.AppendLine(EscapeCsv(value));
     }
+
+    private static void AppendHtmlMeta(StringBuilder builder, string label, string value)
+    {
+        builder.AppendLine("      <div>");
+        builder.Append("        <span class=\"label\">").Append(Html(label)).AppendLine("</span>");
+        builder.Append("        <span class=\"value\">").Append(Html(value)).AppendLine("</span>");
+        builder.AppendLine("      </div>");
+    }
+
+    private static string Html(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 
     private static string EscapeCsv(string? value)
     {

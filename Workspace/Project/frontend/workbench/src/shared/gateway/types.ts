@@ -785,6 +785,7 @@ export interface Gateway {
   listAlertRegistry(query?: AlertListQuery, signal?: AbortSignal): Promise<AlertListResponse>
   getAlertDetail(alertId: string, signal?: AbortSignal): Promise<V2AlertDetailResponse>
   updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
+  updateAlertIocStatus(alertId: string, iocId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
   listReports(query?: ReportListQuery, signal?: AbortSignal): Promise<ReportListResponse>
   getReport(reportId: string, signal?: AbortSignal): Promise<ReportResponse>
   generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>

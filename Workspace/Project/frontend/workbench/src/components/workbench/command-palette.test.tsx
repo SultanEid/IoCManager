@@ -39,6 +39,13 @@ function getPaletteInput() {
 }
 
 describe("WorkbenchCommandPalette", () => {
+  it("does not expose dialog content while closed", () => {
+    render(<WorkbenchCommandPalette open={false} onOpenChange={() => undefined} roles={["Analyst"]} />)
+
+    expect(screen.queryByText("IoC Manager Command Palette")).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText("Search workspace...")).not.toBeInTheDocument()
+  })
+
   it("matches route search terms", async () => {
     const user = userEvent.setup()
     render(<WorkbenchCommandPalette open onOpenChange={() => undefined} roles={["Analyst"]} />)

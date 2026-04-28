@@ -40,8 +40,18 @@ export const v2AlertResponseSchema = z.object({
   createdAtUtc: z.string(),
   updatedAtUtc: z.string(),
 })
+export const alertProgressResponseSchema = z.object({
+  totalIocs: z.number().int(),
+  openCount: z.number().int(),
+  inReviewCount: z.number().int(),
+  completedCount: z.number().int(),
+  percentComplete: z.number().int(),
+})
+export const v2AlertResponseWithProgressSchema = v2AlertResponseSchema.extend({
+  progress: alertProgressResponseSchema,
+})
 export const alertListResponseSchema = z.object({
-  items: z.array(v2AlertResponseSchema),
+  items: z.array(v2AlertResponseWithProgressSchema),
   totalCount: z.number().int(),
   page: z.number().int(),
   pageSize: z.number().int(),
@@ -77,6 +87,9 @@ export const v2AlertLinkedIocSchema = z.object({
   indicatorValue: safeString,
   indicatorKind: safeString,
   severity: safeString,
+  status: safeString,
+  statusUpdatedAtUtc: z.string(),
+  statusUpdatedByUserId: safeString,
   timestampUtc: z.string(),
   rawPayload: z.string().nullable(),
   yaraDetail: v2AlertLinkedIocYaraDetailSchema.nullable(),
@@ -91,7 +104,7 @@ export const v2AlertLinkedScanResultSchema = z.object({
   startedAtUtc: z.string().nullable(),
   finishedAtUtc: z.string().nullable(),
 })
-export const v2AlertDetailResponseSchema = v2AlertResponseSchema.extend({
+export const v2AlertDetailResponseSchema = v2AlertResponseWithProgressSchema.extend({
   target: v2AlertTargetSummarySchema.nullable(),
   linkedIocs: z.array(v2AlertLinkedIocSchema),
   linkedScanResults: z.array(v2AlertLinkedScanResultSchema),
@@ -1569,7 +1582,8 @@ export const jobRunResponseSchema = z.object({
 
 export type TokenResponse = z.infer<typeof tokenResponseSchema>
 export type AlertResponse = z.infer<typeof alertResponseSchema>
-export type V2AlertResponse = z.infer<typeof v2AlertResponseSchema>
+export type AlertProgressResponse = z.infer<typeof alertProgressResponseSchema>
+export type V2AlertResponse = z.infer<typeof v2AlertResponseWithProgressSchema>
 export type AlertListResponse = z.infer<typeof alertListResponseSchema>
 export type V2AlertTargetSummary = z.infer<typeof v2AlertTargetSummarySchema>
 export type V2AlertLinkedIocYaraDetail = z.infer<typeof v2AlertLinkedIocYaraDetailSchema>

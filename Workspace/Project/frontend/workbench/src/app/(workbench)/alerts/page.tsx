@@ -34,6 +34,75 @@ type AlertFiltersState = {
   page: number
 }
 
+function AlertProgressCell({ alert }: { alert: V2AlertResponse }) {
+  if (alert.progress.totalIocs === 0) {
+    return (
+      <div className="min-w-28 rounded-lg border border-border/65 bg-surface-2/55 px-2 py-1.5 text-xs text-muted-foreground">
+        No linked IOCs
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-w-32">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-semibold text-foreground">{alert.progress.percentComplete}%</span>
+        <span className="text-muted-foreground">
+          {alert.progress.completedCount}/{alert.progress.totalIocs}
+        </span>
+      </div>
+      <div
+        className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-1"
+        role="progressbar"
+        aria-label={`IOC progress for ${alert.title}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={alert.progress.percentComplete}
+      >
+        <div className="h-full rounded-full bg-cyan-300" style={{ width: `${alert.progress.percentComplete}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function AlertMobileCard({ alert, onOpen }: { alert: V2AlertResponse; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="block w-full rounded-xl border border-border/70 bg-surface-2/55 p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm font-semibold tracking-tight">{alert.title}</p>
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{alert.summary}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <StatusBadge value={alert.severity} />
+          <StatusBadge value={alert.status} />
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+        <div>
+          <p className="wb-kicker">Scanner</p>
+          <div className="mt-1"><ScannerFamilyBadge family={alert.scannerFamily} size="sm" /></div>
+        </div>
+        <div>
+          <p className="wb-kicker">Target</p>
+          <p className="mt-1 break-words text-foreground">{alert.targetDisplay}</p>
+        </div>
+        <div>
+          <p className="wb-kicker">Owner</p>
+          <p className="mt-1 text-foreground">{alert.ownerUserId === "unassigned" ? "Unassigned" : alert.ownerUserId}</p>
+        </div>
+      </div>
+      <div className="mt-3">
+        <AlertProgressCell alert={alert} />
+      </div>
+    </button>
+  )
+}
+
 const columns: ColumnDef<V2AlertResponse>[] = [
   {
     accessorKey: "title",
@@ -67,6 +136,11 @@ const columns: ColumnDef<V2AlertResponse>[] = [
   {
     accessorKey: "linkedIocCount",
     header: "Linked IOCs",
+  },
+  {
+    accessorKey: "progress",
+    header: "Progress",
+    cell: ({ row }) => <AlertProgressCell alert={row.original} />,
   },
   {
     accessorKey: "lastDetectedAtUtc",
@@ -186,24 +260,24 @@ export default function AlertsPage() {
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
       <motion.header className="wb-page-header" variants={panelMotion}>
         <p className="wb-kicker">Alert Posture</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-tight">Stored alerts promoted from fresh IOC findings</h2>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight">Case alert queue</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review IOC-driven alerts, search the queue, and pivot into exact evidence, target context, and related scan runs.
+          Track case progress and evidence.
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Stored Alerts</p>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-2.5">
+            <p className="wb-kicker">Stored Cases</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{total}</p>
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-2.5">
             <p className="wb-kicker">Open In Page</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{openAlerts}</p>
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-2.5">
             <p className="wb-kicker">Critical In Page</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{criticalAlerts}</p>
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-2.5">
             <p className="wb-kicker">Unassigned In Page</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{unassignedAlerts}</p>
           </div>
@@ -310,7 +384,16 @@ export default function AlertsPage() {
             />
           )
         ) : (
-          <DataGrid data={rows} columns={columns} onRowClick={(row) => router.push(`/alerts/${row.id}`)} />
+          <>
+            <div className="grid gap-3 lg:hidden">
+              {rows.map((row) => (
+                <AlertMobileCard key={row.id} alert={row} onOpen={() => router.push(`/alerts/${row.id}`)} />
+              ))}
+            </div>
+            <div className="hidden lg:block">
+              <DataGrid data={rows} columns={columns} onRowClick={(row) => router.push(`/alerts/${row.id}`)} />
+            </div>
+          </>
         )}
 
         <div className="flex items-center justify-between text-sm">

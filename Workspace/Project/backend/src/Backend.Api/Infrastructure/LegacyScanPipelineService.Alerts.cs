@@ -9,17 +9,23 @@ public sealed partial class LegacyScanPipelineService
 {
     private const string AlertQueueOwnerUserId = "unassigned";
     private const string AlertPromotionActorUserId = "legacy-pipeline";
+    private const int AlertTitleMaxLength = 200;
+    private const int AlertSummaryMaxLength = 4000;
+    private const int AlertRuleNameMaxLength = 255;
 
-    private sealed record PromotableIocCandidate(
+    internal sealed record FindingAlertCandidate(
         LegacyPipelinePersistedIoc Ioc,
         string ScannerFamily,
         AlertSeverity Severity,
         string RuleName,
         string TargetDisplay,
+        string IndicatorValue,
+        string IndicatorKind,
         DateTimeOffset DetectedAtUtc);
 
     private async Task PromoteIocsToAlertsAsync(
         LegacyPipelineTargetEntity target,
+        int resultId,
         IReadOnlyList<LegacyPipelinePersistedIoc> iocs,
         CancellationToken cancellationToken)
     {
@@ -29,97 +35,46 @@ public sealed partial class LegacyScanPipelineService
         }
 
         var nowUtc = DateTimeOffset.UtcNow;
-        var freshnessFloorUtc = nowUtc.AddHours(-24);
-        var candidates = iocs
-            .Select(ioc => BuildPromotableCandidate(target, ioc))
-            .Where(candidate => candidate is not null && candidate.DetectedAtUtc >= freshnessFloorUtc)
-            .Cast<PromotableIocCandidate>()
-            .ToArray();
+        var candidates = BuildFindingAlertCandidates(target, iocs);
 
-        if (candidates.Length == 0)
+        if (candidates.Count == 0)
         {
             return;
         }
 
         var candidateIocIds = candidates.Select(candidate => candidate.Ioc.Id).ToArray();
-        var matchingRuleNames = candidates.Select(item => item.RuleName).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var matchingFamilies = candidates.Select(item => item.ScannerFamily).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var existingAlerts = await _ctiDbContext.AlertsV2
-            .Where(alert => alert.TargetId == target.TargetId
-                && matchingRuleNames.Contains(alert.RuleName)
-                && matchingFamilies.Contains(alert.ScannerFamily))
-            .OrderByDescending(alert => alert.LastDetectedAtUtc)
-            .ToListAsync(cancellationToken);
-
-        var existingAlertLinks = await _ctiDbContext.AlertIocs
+        var linkedIocIds = await _ctiDbContext.AlertIocs
             .Where(link => candidateIocIds.Contains(link.IocId))
-            .Select(link => new { link.AlertId, link.IocId })
+            .Select(link => link.IocId)
             .ToListAsync(cancellationToken);
+        var linkedIocIdSet = linkedIocIds.ToHashSet();
 
-        var chosenAlerts = new Dictionary<string, Alert>(StringComparer.OrdinalIgnoreCase);
         foreach (var candidate in candidates.OrderBy(item => item.DetectedAtUtc))
         {
-            var dedupeKey = BuildAlertDedupeKey(target.TargetId, candidate.ScannerFamily, candidate.RuleName);
-            if (!chosenAlerts.TryGetValue(dedupeKey, out var alert))
-            {
-                alert = ResolveAlertForCandidate(existingAlerts, target.TargetId, candidate, nowUtc);
-                chosenAlerts[dedupeKey] = alert;
-            }
-            else
-            {
-                alert.RefreshDetection(
-                    BuildAlertTitle(candidate),
-                    BuildAlertSummary(candidate),
-                    candidate.Severity,
-                    candidate.DetectedAtUtc,
-                    AlertPromotionActorUserId,
-                    nowUtc);
-            }
-
-            if (existingAlertLinks.Any(link => link.AlertId == alert.Id && link.IocId == candidate.Ioc.Id))
+            if (linkedIocIdSet.Contains(candidate.Ioc.Id))
             {
                 continue;
             }
 
+            var alert = CreateFindingAlert(target.TargetId, resultId, candidate, nowUtc);
+            _ctiDbContext.AlertsV2.Add(alert);
+
             _ctiDbContext.AlertIocs.Add(AlertIoc.Create(alert.Id, candidate.Ioc.Id, nowUtc));
-            existingAlertLinks.Add(new { AlertId = alert.Id, IocId = candidate.Ioc.Id });
+            linkedIocIdSet.Add(candidate.Ioc.Id);
         }
 
         await _ctiDbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private Alert ResolveAlertForCandidate(
-        IReadOnlyList<Alert> existingAlerts,
+    private static Alert CreateFindingAlert(
         int targetId,
-        PromotableIocCandidate candidate,
+        int resultId,
+        FindingAlertCandidate candidate,
         DateTimeOffset nowUtc)
     {
-        var title = BuildAlertTitle(candidate);
-        var summary = BuildAlertSummary(candidate);
-        var matchingAlerts = existingAlerts
-            .Where(alert => alert.TargetId == targetId
-                && string.Equals(alert.ScannerFamily, candidate.ScannerFamily, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(alert.RuleName, candidate.RuleName, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        var activeAlert = matchingAlerts.FirstOrDefault(alert => alert.Status is AlertStatus.Open or AlertStatus.Investigating);
-        if (activeAlert is not null)
-        {
-            activeAlert.RefreshDetection(title, summary, candidate.Severity, candidate.DetectedAtUtc, AlertPromotionActorUserId, nowUtc);
-            return activeAlert;
-        }
-
-        var resolvedAlert = matchingAlerts.FirstOrDefault(alert => alert.Status == AlertStatus.Resolved);
-        if (resolvedAlert is not null)
-        {
-            resolvedAlert.RefreshDetection(title, summary, candidate.Severity, candidate.DetectedAtUtc, AlertPromotionActorUserId, nowUtc);
-            resolvedAlert.SetStatus(AlertStatus.Open, AlertPromotionActorUserId, nowUtc);
-            return resolvedAlert;
-        }
-
-        var created = Alert.Create(
-            title,
-            summary,
+        return Alert.Create(
+            BuildFindingAlertTitle(candidate, resultId),
+            BuildFindingAlertSummary(candidate, resultId),
             candidate.Severity,
             AlertQueueOwnerUserId,
             "Analyst",
@@ -130,34 +85,37 @@ public sealed partial class LegacyScanPipelineService
             candidate.DetectedAtUtc,
             AlertPromotionActorUserId,
             nowUtc);
-        _ctiDbContext.AlertsV2.Add(created);
-        return created;
     }
 
-    private static PromotableIocCandidate? BuildPromotableCandidate(LegacyPipelineTargetEntity target, LegacyPipelinePersistedIoc ioc)
+    internal static IReadOnlyList<FindingAlertCandidate> BuildFindingAlertCandidates(
+        LegacyPipelineTargetEntity target,
+        IReadOnlyList<LegacyPipelinePersistedIoc> iocs)
+        => iocs
+            .Select(ioc => BuildFindingAlertCandidate(target, ioc))
+            .Where(candidate => candidate is not null)
+            .Cast<FindingAlertCandidate>()
+            .ToArray();
+
+    private static FindingAlertCandidate? BuildFindingAlertCandidate(LegacyPipelineTargetEntity target, LegacyPipelinePersistedIoc ioc)
     {
         if (!RuleFamilyCatalog.TryNormalize(ioc.ScannerType, out var normalizedFamily))
         {
             return null;
         }
 
-        var severity = ResolveAlertPromotionSeverity(ioc);
-        if (severity is not AlertSeverity.High and not AlertSeverity.Critical)
-        {
-            return null;
-        }
-
-        var ruleName = string.IsNullOrWhiteSpace(ioc.RuleName) ? "unknown" : ioc.RuleName.Trim();
-        return new PromotableIocCandidate(
+        var (indicatorValue, indicatorKind) = ResolveFindingIndicator(normalizedFamily, ioc);
+        return new FindingAlertCandidate(
             ioc,
             normalizedFamily,
-            severity,
-            ruleName,
+            ResolveFindingAlertSeverity(ioc),
+            Truncate(string.IsNullOrWhiteSpace(ioc.RuleName) ? "unknown" : ioc.RuleName.Trim(), AlertRuleNameMaxLength),
             LegacyScanPipelineHelpers.BuildTargetDisplay(target),
+            indicatorValue,
+            indicatorKind,
             ioc.TimestampUtc);
     }
 
-    private static AlertSeverity ResolveAlertPromotionSeverity(LegacyPipelinePersistedIoc ioc)
+    internal static AlertSeverity ResolveFindingAlertSeverity(LegacyPipelinePersistedIoc ioc)
     {
         if (ioc.SigmaDetail is not null)
         {
@@ -169,7 +127,27 @@ public sealed partial class LegacyScanPipelineService
             return NormalizeAlertSeverity(ioc.NetworkDetail.Severity);
         }
 
-        return AlertSeverity.Low;
+        return AlertSeverity.Medium;
+    }
+
+    private static (string Value, string Kind) ResolveFindingIndicator(string normalizedFamily, LegacyPipelinePersistedIoc ioc)
+    {
+        if (string.Equals(normalizedFamily, "yara", StringComparison.OrdinalIgnoreCase))
+        {
+            return (
+                FirstNonEmpty(ioc.YaraDetail?.FileHash, ioc.YaraDetail?.FilePath, ioc.RawPayload, ioc.RuleName),
+                ioc.YaraDetail?.FileHash is null ? "file" : "file_hash");
+        }
+
+        if (string.Equals(normalizedFamily, "sigma", StringComparison.OrdinalIgnoreCase))
+        {
+            return (FirstNonEmpty(ioc.SigmaDetail?.CommandLine, ioc.RawPayload, ioc.RuleName), "event");
+        }
+
+        var networkIndicator = string.IsNullOrWhiteSpace(ioc.NetworkDetail?.SourceIp) && string.IsNullOrWhiteSpace(ioc.NetworkDetail?.DestIp)
+            ? FirstNonEmpty(ioc.RawPayload, ioc.RuleName)
+            : $"{FirstNonEmpty(ioc.NetworkDetail?.SourceIp, "unknown")} -> {FirstNonEmpty(ioc.NetworkDetail?.DestIp, "unknown")}";
+        return (networkIndicator, "network");
     }
 
     private static AlertSeverity NormalizeAlertSeverity(string? rawValue)
@@ -201,12 +179,30 @@ public sealed partial class LegacyScanPipelineService
         };
     }
 
-    private static string BuildAlertDedupeKey(int targetId, string scannerFamily, string ruleName)
-        => $"{targetId}:{scannerFamily}:{ruleName}".ToLowerInvariant();
+    private static string BuildFindingAlertTitle(FindingAlertCandidate candidate, int resultId)
+        => Truncate(
+            $"Case alert: {candidate.ScannerFamily.ToUpperInvariant()} {candidate.RuleName} on {candidate.TargetDisplay} (scan {resultId})",
+            AlertTitleMaxLength);
 
-    private static string BuildAlertTitle(PromotableIocCandidate candidate)
-        => $"{candidate.ScannerFamily.ToUpperInvariant()} {candidate.RuleName} on {candidate.TargetDisplay}";
+    private static string BuildFindingAlertSummary(FindingAlertCandidate candidate, int resultId)
+        => Truncate(
+            $"{candidate.Severity} severity {candidate.ScannerFamily.ToUpperInvariant()} finding from scan result {resultId}. "
+            + $"Rule '{candidate.RuleName}' matched {candidate.IndicatorKind} '{candidate.IndicatorValue}' on {candidate.TargetDisplay}.",
+            AlertSummaryMaxLength);
 
-    private static string BuildAlertSummary(PromotableIocCandidate candidate)
-        => $"{candidate.Severity} severity {candidate.ScannerFamily.ToUpperInvariant()} finding '{candidate.RuleName}' matched on {candidate.TargetDisplay}.";
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return "unknown";
+    }
+
+    private static string Truncate(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
 }

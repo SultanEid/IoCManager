@@ -1,7 +1,18 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ExternalLink, Eye, FileJson, FileSpreadsheet, Search } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ExternalLink,
+  Eye,
+  FileJson,
+  FileSpreadsheet,
+  Search,
+  X,
+} from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { StatusBadge } from "@/components/workbench/status-badge"
@@ -27,6 +38,7 @@ import {
   listLegacyIocFindings,
   listLegacyTargets,
 } from "@/shared/gateway/legacy-scan-pipeline"
+import type { LegacyPipelineIocFinding } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { EmptyState, LoadingState, SearchEmptyState } from "@/shared/ui/state-panels"
@@ -250,6 +262,190 @@ function DecisionVerdictBadge({ verdict }: { verdict: string }) {
   )
 }
 
+type ActiveFilterChip = {
+  key: keyof Pick<IocExplorerFilters, "q" | "scannerFamily" | "targetId" | "severity" | "painLevel" | "fromUtc" | "toUtc">
+  label: string
+  value: string
+}
+
+function clampPage(page: number, totalPages: number) {
+  return Math.min(Math.max(page, 1), Math.max(totalPages, 1))
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat().format(value)
+}
+
+function formatLocalInputLabel(value: string) {
+  return value ? value.replace("T", " ") : ""
+}
+
+function PaginationControls({
+  currentPage,
+  totalPages,
+  totalCount,
+  pageSize,
+  loading,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  currentPage: number
+  totalPages: number
+  totalCount: number
+  pageSize: number
+  loading: boolean
+  onPageChange: (page: number) => void
+  onPageSizeChange: (pageSize: number) => void
+}) {
+  const boundedPage = clampPage(currentPage, totalPages)
+  const rangeStart = totalCount === 0 ? 0 : (boundedPage - 1) * pageSize + 1
+  const rangeEnd = totalCount === 0 ? 0 : Math.min(boundedPage * pageSize, totalCount)
+  const atFirstPage = loading || boundedPage <= 1
+  const atLastPage = loading || boundedPage >= totalPages
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
+      <div className="min-w-0">
+        {loading ? (
+          <p>Loading findings for the current query.</p>
+        ) : (
+          <>
+            <p className="font-medium text-foreground">
+              Showing {formatCount(rangeStart)}-{formatCount(rangeEnd)} of {formatCount(totalCount)} findings
+            </p>
+            <p className="mt-0.5">
+              Page {formatCount(boundedPage)} of {formatCount(totalPages)}
+            </p>
+          </>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span>Page size</span>
+          <select
+            aria-label="Page size"
+            className="h-8 rounded-lg border border-border/70 bg-surface-1 px-2 text-xs"
+            value={pageSize}
+            disabled={loading}
+            onChange={(event) => {
+              const nextPageSize = Number.parseInt(event.target.value, 10) || DEFAULT_PAGE_SIZE
+              onPageSizeChange(nextPageSize)
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-1" aria-label="Pagination controls">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to first page"
+            title="Go to first page"
+            onClick={() => onPageChange(1)}
+            disabled={atFirstPage}
+          >
+            <ChevronsLeft className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to previous page"
+            title="Go to previous page"
+            onClick={() => onPageChange(boundedPage - 1)}
+            disabled={atFirstPage}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to next page"
+            title="Go to next page"
+            onClick={() => onPageChange(boundedPage + 1)}
+            disabled={atLastPage}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to last page"
+            title="Go to last page"
+            onClick={() => onPageChange(totalPages)}
+            disabled={atLastPage}
+          >
+            <ChevronsRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FindingMobileCard({
+  finding,
+  selected,
+  onToggleSelected,
+  onOpen,
+}: {
+  finding: LegacyPipelineIocFinding
+  selected: boolean
+  onToggleSelected: () => void
+  onOpen: () => void
+}) {
+  return (
+    <article
+      className={`rounded-xl border p-3 transition-colors ${
+        selected ? "border-primary/45 bg-primary/10" : "border-border/70 bg-surface-2/55"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ScannerFamilyBadge family={finding.scannerFamily} size="sm" />
+            <StatusBadge value={finding.severity} />
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm font-semibold tracking-tight">{finding.ruleName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{finding.targetDisplay}</p>
+        </div>
+        <input
+          type="checkbox"
+          checked={selected}
+          aria-label={`Select finding ${finding.iocId}`}
+          onChange={onToggleSelected}
+          className="mt-1"
+        />
+      </div>
+
+      <div className="mt-3 rounded-lg border border-border/55 bg-surface-1/65 p-2">
+        <p
+          className="max-h-10 overflow-hidden break-words text-xs leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+          title={finding.indicatorValue}
+        >
+          {finding.indicatorValue}
+        </p>
+        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{finding.indicatorKind}</p>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>{formatTimestamp(finding.timestampUtc)}</span>
+        <Button type="button" size="sm" variant="outline" onClick={onOpen}>
+          <Eye className="h-3.5 w-3.5" />
+          Open
+        </Button>
+      </div>
+    </article>
+  )
+}
+
 export default function IocsExplorerPage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -389,6 +585,40 @@ export default function IocsExplorerPage() {
       || parsedFilters.fromUtc
       || parsedFilters.toUtc,
   )
+  const canClearFilters = filteredOut || parsedFilters.pageSize !== DEFAULT_PAGE_SIZE
+  const targetLabelById = useMemo(() => {
+    return new Map(
+      targets.map((target) => [
+        target.id,
+        target.displayName ?? target.hostname ?? target.ipAddress,
+      ]),
+    )
+  }, [targets])
+  const activeFilterChips = useMemo<ActiveFilterChip[]>(() => {
+    const chips: ActiveFilterChip[] = []
+    if (parsedFilters.q) chips.push({ key: "q", label: "Search", value: parsedFilters.q })
+    if (parsedFilters.scannerFamily) {
+      chips.push({ key: "scannerFamily", label: "Scanner", value: parsedFilters.scannerFamily })
+    }
+    if (parsedFilters.targetId) {
+      chips.push({
+        key: "targetId",
+        label: "Target",
+        value: targetLabelById.get(parsedFilters.targetId) ?? parsedFilters.targetId,
+      })
+    }
+    if (parsedFilters.severity) chips.push({ key: "severity", label: "Severity", value: parsedFilters.severity })
+    if (parsedFilters.painLevel) {
+      chips.push({ key: "painLevel", label: "Pyramid", value: formatPainLevelLabel(parsedFilters.painLevel) })
+    }
+    if (parsedFilters.fromUtc) {
+      chips.push({ key: "fromUtc", label: "From", value: formatLocalInputLabel(parsedFilters.fromUtc) })
+    }
+    if (parsedFilters.toUtc) {
+      chips.push({ key: "toUtc", label: "To", value: formatLocalInputLabel(parsedFilters.toUtc) })
+    }
+    return chips
+  }, [parsedFilters, targetLabelById])
 
   const applyFilters = () => {
     const next = buildQuery({ ...filters, page: 1 })
@@ -412,13 +642,40 @@ export default function IocsExplorerPage() {
   }
 
   const updatePageState = (nextPage: number, nextPageSize = parsedFilters.pageSize) => {
+    const nextTotalPages = Math.max(1, Math.ceil(totalCount / nextPageSize))
     const next = buildQuery({
       ...parsedFilters,
-      page: Math.max(nextPage, 1),
+      page: clampPage(nextPage, nextTotalPages),
       pageSize: nextPageSize,
     })
     router.replace(next ? `${pathname}?${next}` : pathname)
   }
+
+  const updatePageSize = (nextPageSize: number) => {
+    setFilters((current) => ({ ...current, page: 1, pageSize: nextPageSize }))
+    updatePageState(1, nextPageSize)
+  }
+
+  const removeFilter = (key: ActiveFilterChip["key"]) => {
+    const nextFilters = { ...parsedFilters, [key]: "", page: 1 }
+    setFilters(nextFilters)
+    const next = buildQuery(nextFilters)
+    router.replace(next ? `${pathname}?${next}` : pathname)
+  }
+
+  useEffect(() => {
+    if (!findingsPage || findingsLoading) {
+      return
+    }
+
+    const effectivePage = clampPage(findingsPage.page, totalPages)
+    if (parsedFilters.page === effectivePage) {
+      return
+    }
+
+    const next = buildQuery({ ...parsedFilters, page: effectivePage, pageSize })
+    router.replace(next ? `${pathname}?${next}` : pathname)
+  }, [findingsLoading, findingsPage, pageSize, parsedFilters, pathname, router, totalPages])
 
   const toggleSelected = (iocId: string) => {
     setSelectedIds((current) =>
@@ -521,9 +778,9 @@ export default function IocsExplorerPage() {
     <section className="wb-page space-y-6">
       <header className="wb-page-header">
         <p className="wb-kicker">IOCs Explorer</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-tight">Investigate normalized findings across all scanners</h2>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight">Normalized findings explorer</h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Review normalized YARA, SIGMA, SNORT, and SURICATA detections with shared filters, raw payload access, and scanner-specific context.
+          Review scanner detections and evidence.
         </p>
         {parsedFilters.painLevel ? (
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs text-primary">
@@ -531,7 +788,7 @@ export default function IocsExplorerPage() {
             <span>{formatPainLevelLabel(parsedFilters.painLevel)}</span>
           </div>
         ) : null}
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Loaded Findings</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{findingsLoading ? "..." : findings.length}</p>
@@ -554,89 +811,135 @@ export default function IocsExplorerPage() {
       </header>
 
       <article className="wb-panel space-y-4">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(180px,0.6fr))]">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              value={filters.q}
-              onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))}
-              placeholder="Search rule name, value, payload, command line, or network indicators"
-            />
-          </div>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.scannerFamily}
-            onChange={(event) => setFilters((current) => ({ ...current, scannerFamily: event.target.value }))}
-          >
-            <option value="">All scanners</option>
-            <option value="YARA">YARA</option>
-            <option value="SIGMA">SIGMA</option>
-            <option value="SNORT">SNORT</option>
-            <option value="SURICATA">SURICATA</option>
-          </select>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.targetId}
-            onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value }))}
-            disabled={targetsLoading}
-          >
-            <option value="">{targetsLoading ? "Loading targets..." : "All targets"}</option>
-            {targets.map((target) => (
-              <option key={target.id} value={target.id}>
-                {target.displayName ?? target.hostname ?? target.ipAddress}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.severity}
-            onChange={(event) => setFilters((current) => ({ ...current, severity: event.target.value }))}
-          >
-            <option value="">All severities</option>
-            {severityOptions.map((severity) => (
-              <option key={severity} value={severity}>
-                {severity}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid gap-3 xl:grid-cols-[minmax(220px,0.8fr)_minmax(220px,0.8fr)_auto]">
-          <Input
-            type="datetime-local"
-            value={filters.fromUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, fromUtc: event.target.value }))}
-          />
-          <Input
-            type="datetime-local"
-            value={filters.toUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value }))}
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" onClick={applyFilters}>
-              Apply
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={clearFilters}>
-              Clear
-            </Button>
-            {parsedFilters.painLevel ? (
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            applyFilters()
+          }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold tracking-tight">Investigation filters</h3>
+              <p className="text-xs text-muted-foreground">
+                Narrow the table by scanner, target, severity, time range, or indicator text.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" size="sm">
+                Apply filters
+              </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  const nextFilters = { ...filters, painLevel: "", page: 1 }
-                  setFilters(nextFilters)
-                  const next = buildQuery(nextFilters)
-                  router.replace(next ? `${pathname}?${next}` : pathname)
-                }}
+                onClick={clearFilters}
+                disabled={!canClearFilters}
               >
-                Clear pyramid filter
+                Reset
               </Button>
-            ) : null}
+            </div>
           </div>
-        </div>
+
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(180px,0.55fr))]">
+            <label className="block">
+              <span className="sr-only">Search findings</span>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  value={filters.q}
+                  onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))}
+                  placeholder="Search rule name, value, payload, command line, or network indicators"
+                />
+              </div>
+            </label>
+            <label className="block">
+              <span className="sr-only">Scanner family</span>
+              <select
+                className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                value={filters.scannerFamily}
+                onChange={(event) => setFilters((current) => ({ ...current, scannerFamily: event.target.value }))}
+              >
+                <option value="">All scanners</option>
+                <option value="YARA">YARA</option>
+                <option value="SIGMA">SIGMA</option>
+                <option value="SNORT">SNORT</option>
+                <option value="SURICATA">SURICATA</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="sr-only">Target</span>
+              <select
+                className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                value={filters.targetId}
+                onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value }))}
+                disabled={targetsLoading}
+              >
+                <option value="">{targetsLoading ? "Loading targets..." : "All targets"}</option>
+                {targets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.displayName ?? target.hostname ?? target.ipAddress}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="sr-only">Severity</span>
+              <select
+                className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                value={filters.severity}
+                onChange={(event) => setFilters((current) => ({ ...current, severity: event.target.value }))}
+              >
+                <option value="">All severities</option>
+                {severityOptions.map((severity) => (
+                  <option key={severity} value={severity}>
+                    {severity}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-[minmax(220px,0.8fr)_minmax(220px,0.8fr)]">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Observed after</span>
+              <Input
+                type="datetime-local"
+                value={filters.fromUtc}
+                onChange={(event) => setFilters((current) => ({ ...current, fromUtc: event.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Observed before</span>
+              <Input
+                type="datetime-local"
+                value={filters.toUtc}
+                onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value }))}
+              />
+            </label>
+          </div>
+        </form>
+
+        {activeFilterChips.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Active</span>
+            {activeFilterChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                className="inline-flex max-w-full items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary transition-colors hover:border-primary/55 hover:bg-primary/15"
+                onClick={() => removeFilter(chip.key)}
+                aria-label={`Remove ${chip.label.toLowerCase()} filter`}
+                title={`Remove ${chip.label.toLowerCase()} filter`}
+              >
+                <span className="font-semibold">{chip.label}</span>
+                <span className="max-w-64 truncate text-primary/90">{chip.value}</span>
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
+        ) : null}
       </article>
 
       <article className="wb-panel space-y-4">
@@ -647,7 +950,10 @@ export default function IocsExplorerPage() {
               One searchable table over persisted findings from host and network scanners.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2">
+            <span className="text-xs text-muted-foreground">
+              {selectedRows.length === 0 ? "No rows selected" : `${formatCount(selectedRows.length)} selected`}
+            </span>
             <Button
               type="button"
               size="sm"
@@ -671,52 +977,15 @@ export default function IocsExplorerPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
-          {findingsLoading ? <p>Loading findings for the current query.</p> : null}
-          <p className={findingsLoading ? "hidden" : undefined}>
-            Page {currentPage} of {totalPages} Â· {totalCount} matching findings
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2">
-              <span>Page size</span>
-              <select
-                className="h-8 rounded-lg border border-border/70 bg-surface-1 px-2 text-xs"
-                value={pageSize}
-                disabled={findingsLoading}
-                onChange={(event) => {
-                  const nextPageSize = Number.parseInt(event.target.value, 10) || DEFAULT_PAGE_SIZE
-                  setFilters((current) => ({ ...current, page: 1, pageSize: nextPageSize }))
-                  updatePageState(1, nextPageSize)
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => updatePageState(currentPage - 1)}
-              disabled={findingsLoading || currentPage <= 1}
-            >
-              Previous
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => updatePageState(currentPage + 1)}
-              disabled={findingsLoading || currentPage >= totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-
+        <PaginationControls
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          loading={findingsLoading}
+          onPageChange={updatePageState}
+          onPageSizeChange={updatePageSize}
+        />
         {findingsLoading ? (
           <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
             <div className="border-b border-border/70 bg-surface-2/70 px-4 py-3">
@@ -759,8 +1028,9 @@ export default function IocsExplorerPage() {
             />
           )
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
-            <Table className="table-fixed">
+          <>
+            <div className="hidden overflow-hidden rounded-xl border border-border/75 bg-surface-1/90 lg:block">
+              <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-surface-2/85 backdrop-blur supports-[backdrop-filter]:bg-surface-2/75">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-10 px-2">
@@ -787,7 +1057,7 @@ export default function IocsExplorerPage() {
                     <TableRow
                       key={finding.iocId}
                       data-state={selected ? "selected" : undefined}
-                      className="cursor-pointer"
+                      className="cursor-pointer transition-colors hover:bg-primary/5 data-[state=selected]:bg-primary/10 data-[state=selected]:shadow-[inset_3px_0_0_color-mix(in_srgb,var(--primary)_70%,transparent)]"
                       onClick={() => setSelectedIocId(finding.iocId)}
                     >
                       <TableCell className="px-2" onClick={(event) => event.stopPropagation()}>
@@ -811,13 +1081,23 @@ export default function IocsExplorerPage() {
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         <div className="min-w-0">
-                          <p className="line-clamp-2 font-medium" title={finding.ruleName}>{finding.ruleName}</p>
+                          <p
+                            className="max-h-10 overflow-hidden break-words font-medium leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                            title={finding.ruleName}
+                          >
+                            {finding.ruleName}
+                          </p>
                           <p className="mt-1 truncate text-xs text-muted-foreground">{finding.status}</p>
                         </div>
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         <div className="min-w-0">
-                          <p className="line-clamp-2 break-words" title={finding.indicatorValue}>{finding.indicatorValue}</p>
+                          <p
+                            className="max-h-10 overflow-hidden break-words leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                            title={finding.indicatorValue}
+                          >
+                            {finding.indicatorValue}
+                          </p>
                           <p className="mt-1 text-xs text-muted-foreground">{finding.indicatorKind}</p>
                         </div>
                       </TableCell>
@@ -832,6 +1112,8 @@ export default function IocsExplorerPage() {
                           type="button"
                           size="icon-xs"
                           variant="ghost"
+                          aria-label={`Open finding ${finding.ruleName}`}
+                          title="Open finding detail"
                           onClick={(event) => {
                             event.stopPropagation()
                             setSelectedIocId(finding.iocId)
@@ -844,9 +1126,35 @@ export default function IocsExplorerPage() {
                   )
                 })}
               </TableBody>
-            </Table>
-          </div>
+              </Table>
+            </div>
+            <div className="grid gap-3 lg:hidden">
+              {findings.map((finding) => {
+                const selected = selectedIds.includes(finding.iocId)
+                return (
+                  <FindingMobileCard
+                    key={finding.iocId}
+                    finding={finding}
+                    selected={selected}
+                    onToggleSelected={() => toggleSelected(finding.iocId)}
+                    onOpen={() => setSelectedIocId(finding.iocId)}
+                  />
+                )
+              })}
+            </div>
+          </>
         )}
+        {!findingsLoading && totalCount > 0 ? (
+          <PaginationControls
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={pageSize}
+            loading={false}
+            onPageChange={updatePageState}
+            onPageSizeChange={updatePageSize}
+          />
+        ) : null}
       </article>
 
       <Sheet open={selectedIocId !== null} onOpenChange={(open) => !open && setSelectedIocId(null)}>

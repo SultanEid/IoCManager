@@ -379,7 +379,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold tracking-tight">{resolvedRoute.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">{resolvedRoute.subtitle}</p>
+                      <p className="hidden truncate text-xs text-muted-foreground sm:block">{resolvedRoute.subtitle}</p>
                     </div>
                   </div>
                 </div>
@@ -444,6 +444,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
               <Button
                 size="sm"
                 variant="outline"
+                className="hidden sm:inline-flex"
                 onClick={() => {
                   signOut()
                   router.replace("/auth")

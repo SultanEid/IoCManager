@@ -92,7 +92,7 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
     router.push(href)
   }
 
-  return (
+  const dialog = open ? (
     <CommandDialog
       open={open}
       onOpenChange={(next) => {
@@ -181,5 +181,7 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
         </CommandList>
       </Command>
     </CommandDialog>
-  )
+  ) : null
+
+  return dialog
 }

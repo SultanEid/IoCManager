@@ -155,6 +155,8 @@
   html,
   body {
     min-height: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   body {
@@ -188,15 +190,29 @@
 
 @layer components {
   .wb-page {
-    @apply space-y-5 lg:space-y-6;
+    @apply min-w-0 max-w-full space-y-5 overflow-x-clip lg:space-y-6;
   }
 
   .wb-page-header {
-    @apply px-0 py-0;
+    @apply min-w-0 max-w-full px-0 py-0;
+  }
+
+  .wb-page-header h1,
+  .wb-page-header h2 {
+    max-width: 12rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+
+  .wb-page-header p {
+    max-width: 16rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .wb-panel {
-    @apply relative overflow-hidden rounded-[1.45rem] border border-border/75 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_92%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] p-4 backdrop-blur md:p-5;
+    @apply relative min-w-0 max-w-full overflow-hidden rounded-[1.45rem] border border-border/75 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_92%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] p-4 backdrop-blur md:p-5;
     box-shadow: var(--shadow-panel);
   }
 
@@ -220,7 +236,7 @@
   }
 
   .wb-shell-main {
-    @apply mx-auto w-full max-w-[1700px] px-3 pb-7 pt-4 sm:px-4 md:px-6 md:pt-5 xl:px-8;
+    @apply mx-auto min-w-0 w-full max-w-[1700px] px-3 pb-7 pt-4 sm:px-4 md:px-6 md:pt-5 xl:px-8;
   }
 
   .wb-hero {

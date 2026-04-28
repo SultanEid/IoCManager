@@ -10,6 +10,9 @@ export const STATUS_TONE_BY_KEY: Record<string, string> = {
   promote: "border-emerald-300/35 bg-emerald-400/12 text-emerald-200",
   healthy: "border-emerald-300/35 bg-emerald-400/12 text-emerald-200",
   open: "border-blue-300/35 bg-blue-400/12 text-blue-200",
+  inreview: "border-amber-300/35 bg-amber-400/12 text-amber-200",
+  contained: "border-emerald-300/35 bg-emerald-400/12 text-emerald-200",
+  acceptedrisk: "border-cyan-300/35 bg-cyan-400/10 text-cyan-100",
   proposed: "border-blue-300/35 bg-blue-400/12 text-blue-200",
   parsed: "border-blue-300/35 bg-blue-400/12 text-blue-200",
   validated: "border-blue-300/35 bg-blue-400/12 text-blue-200",
@@ -69,6 +72,8 @@ const DISPLAY_LABEL_BY_KEY: Record<string, string> = {
   benign: "Non-malicious",
   likelybenign: "Likely Non-malicious",
   falsepositive: "False Positive",
+  inreview: "In Review",
+  acceptedrisk: "Accepted Risk",
   insufficientevidence: "Insufficient Evidence",
   staleorrevoked: "Stale or Revoked",
 }

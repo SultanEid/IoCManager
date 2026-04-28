@@ -1,4 +1,5 @@
 using Backend.Api.Infrastructure;
+using Backend.Domain.IocManager;
 using Backend.Infrastructure.Compatibility.LegacyAzure;
 using FluentAssertions;
 
@@ -109,6 +110,45 @@ public sealed class LegacyScanPipelinePainLevelTests
         var ioc = BuildIoc(scannerType: "SIGMA", ruleName: "Suspicious remote host", rawPayload: "198.51.100.25");
 
         ResolvePainLevel(ioc).Should().Be("IP");
+    }
+
+    [Fact]
+    public void BuildFindingAlertCandidates_IncludesEverySupportedFinding()
+    {
+        var target = new LegacyPipelineTargetEntity
+        {
+            TargetId = 159,
+            DisplayName = "Zombie",
+            IPAddress = "192.168.207.130",
+        };
+        var yaraFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            "YARA",
+            "Zombie",
+            "Windows",
+            "IOCManager_ZombieVM_Mixed_Indicators",
+            "{}",
+            new LegacyPipelinePersistedYaraDetail(@"C:\IOC\bluefin.json", "30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9"),
+            null,
+            null);
+        var lowNetworkFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            "SURICATA",
+            "Zombie",
+            "Windows",
+            "Low priority network match",
+            "{}",
+            null,
+            null,
+            new LegacyPipelinePersistedNetworkDetail("192.168.207.130", "203.0.113.25", "tcp", "Low", 42));
+
+        var candidates = LegacyScanPipelineService.BuildFindingAlertCandidates(target, [yaraFinding, lowNetworkFinding]);
+
+        candidates.Should().HaveCount(2);
+        candidates.Should().Contain(candidate => candidate.Ioc.Id == yaraFinding.Id && candidate.Severity == AlertSeverity.Medium);
+        candidates.Should().Contain(candidate => candidate.Ioc.Id == lowNetworkFinding.Id && candidate.Severity == AlertSeverity.Low);
     }
 
     private static string ResolvePainLevel(LegacyPipelineIocEntity ioc)

@@ -1751,6 +1751,23 @@ namespace Backend.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("LinkedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("Open");
+
+                    b.Property<DateTimeOffset>("StatusUpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("StatusUpdatedByUserId")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasDefaultValue("system");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IocId");

@@ -49,7 +49,6 @@ const mockedGateway = vi.hoisted(() => ({
   generateReport: vi.fn(),
   deleteReport: vi.fn(),
 }))
-const mockedRequestBlob = vi.hoisted(() => vi.fn())
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -91,10 +90,6 @@ vi.mock("@/shared/query/use-workbench-query", () => ({
   useWorkbenchQuery: mockedUseWorkbenchQuery,
 }))
 
-vi.mock("@/shared/api/client", () => ({
-  requestBlob: mockedRequestBlob,
-}))
-
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
@@ -134,18 +129,6 @@ describe("ReportsPage mode behavior", () => {
         },
       }
     })
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      value: vi.fn(() => "blob:report-preview"),
-    })
-    Object.defineProperty(URL, "revokeObjectURL", {
-      configurable: true,
-      value: vi.fn(),
-    })
-    mockedRequestBlob.mockResolvedValue({
-      blob: new Blob(["%PDF-1.4"], { type: "application/pdf" }),
-      fileName: "report.pdf",
-    })
   })
 
   it("renders contract-backed empty state in normal mode", () => {
@@ -170,16 +153,16 @@ describe("ReportsPage mode behavior", () => {
       title: "Executive Summary - 2026-04-24 08:32 UTC",
       reportType: "ExecutiveSummary",
       summaryJson: JSON.stringify({
-        scope: "Global scope",
-        filters: {},
-        sections: [
+        Scope: "Global scope",
+        Filters: {},
+        Sections: [
           {
-            title: "Executive Assessment",
-            summary: "Decision-ready summary.",
-            metrics: [],
-            highlights: ["Critical posture."],
-            narrative: null,
-            tables: [],
+            Title: "Executive Assessment",
+            Summary: "Decision-ready summary.",
+            Metrics: [],
+            Highlights: ["Critical posture."],
+            Narrative: null,
+            Tables: [],
           },
         ],
       }),
@@ -212,10 +195,11 @@ describe("ReportsPage mode behavior", () => {
 
     render(<ReportsPage />)
 
-    fireEvent.click(screen.getByRole("button", { name: /^Open$/ }))
+    fireEvent.click(screen.getAllByRole("button", { name: /^Preview$/ })[0])
 
     expect(await screen.findByRole("dialog", { name: "Report review" })).toBeInTheDocument()
     expect(screen.getAllByText("Executive Assessment").length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("link", { name: /Export HTML/i })[0]).toHaveAttribute("href", `/api/v2/reports/${report.id}/html`)
 
     fireEvent.click(screen.getByRole("button", { name: "Close report review" }))
 
@@ -224,6 +208,44 @@ describe("ReportsPage mode behavior", () => {
     })
     expect(screen.getByText("No preview yet")).toBeInTheDocument()
     expect(screen.queryByText("Critical posture.")).not.toBeInTheDocument()
+  })
+
+  it("renders a persisted generated preview with an HTML export action", async () => {
+    const persistedReport = {
+      id: "28a7a4d1-b7c3-4a89-af8e-b7da9ff760a6",
+      title: "Executive Summary - 2026-04-24 08:32 UTC",
+      reportType: "ExecutiveSummary",
+      summaryJson: "{}",
+      generatedAtUtc: "2026-04-24T08:32:07Z",
+      createdAtUtc: "2026-04-24T08:32:07Z",
+      updatedAtUtc: "2026-04-24T08:32:07Z",
+      alertIds: [],
+    }
+    mockedGateway.generateReport.mockResolvedValue({
+      requestedReportType: "ExecutiveSummary",
+      title: persistedReport.title,
+      status: "persisted",
+      generatedAtUtc: persistedReport.generatedAtUtc,
+      sections: [
+        {
+          title: "Executive Assessment",
+          summary: "Decision-ready summary.",
+          metrics: [],
+          highlights: ["Critical posture."],
+          narrative: null,
+          tables: [],
+        },
+      ],
+      alertIds: [],
+      persistedReport,
+    })
+
+    render(<ReportsPage />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Preview report/i }))
+
+    expect(await screen.findByText("Critical posture.")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /Export HTML/i })).toHaveAttribute("href", `/api/v2/reports/${persistedReport.id}/html`)
   })
 
   it("opens a review query report by id when it is outside the first page", async () => {

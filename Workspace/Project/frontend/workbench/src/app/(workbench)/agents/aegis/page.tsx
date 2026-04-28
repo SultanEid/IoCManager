@@ -128,11 +128,9 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
               {result.sourceReportId ? (
                 <Link
                   className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                  href={`/api/v2/reports/${encodeURIComponent(result.sourceReportId)}/pdf`}
-                  target="_blank"
-                  rel="noreferrer"
+                  href={`/reports?review=${encodeURIComponent(result.sourceReportId)}`}
                 >
-                  Source PDF
+                  Source report
                 </Link>
               ) : null}
             </div>

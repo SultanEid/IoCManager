@@ -18,6 +18,55 @@ import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
 
 const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
+const IOC_STATUS_OPTIONS = ["Open", "InReview", "Contained", "FalsePositive", "AcceptedRisk"] as const
+
+function formatIocStatus(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+}
+
+function ProgressMeter({
+  percentComplete,
+  completed,
+  total,
+}: {
+  percentComplete: number
+  completed: number
+  total: number
+}) {
+  if (total === 0) {
+    return (
+      <div className="rounded-lg border border-border/65 bg-surface-1/60 px-3 py-2">
+        <p className="text-sm font-semibold tracking-tight">No linked IOC evidence yet</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Progress will appear after findings are linked to this case.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold tracking-tight">{percentComplete}% complete</p>
+        <p className="text-xs text-muted-foreground">
+          {completed} / {total} IOC(s)
+        </p>
+      </div>
+      <div
+        className="mt-2 h-2 overflow-hidden rounded-full bg-surface-1"
+        role="progressbar"
+        aria-label="Case IOC progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percentComplete}
+      >
+        <div className="h-full rounded-full bg-cyan-300" style={{ width: `${percentComplete}%` }} />
+      </div>
+    </div>
+  )
+}
 
 function ownerLabel(ownerUserId: string) {
   return ownerUserId === "unassigned" ? "Unassigned" : ownerUserId
@@ -94,6 +143,7 @@ export default function AlertDetailPage() {
   const { session } = useAuth()
   const alertId = params.alertId
   const [statusUpdate, setStatusUpdate] = useState<string | null>(null)
+  const [iocStatusUpdate, setIocStatusUpdate] = useState<string | null>(null)
   const [detailOverride, setDetailOverride] = useState<V2AlertDetailResponse | null>(null)
 
   const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal), {
@@ -122,6 +172,21 @@ export default function AlertDetailPage() {
     }
   }
 
+  const updateIocStatus = async (iocId: string, nextStatus: string) => {
+    if (!detail || iocStatusUpdate) {
+      return
+    }
+
+    const actorUserId = session?.username ?? session?.userId ?? "workbench"
+    try {
+      setIocStatusUpdate(iocId)
+      const updated = await gateway.updateAlertIocStatus(alertId, iocId, nextStatus, actorUserId)
+      setDetailOverride(updated)
+    } finally {
+      setIocStatusUpdate(null)
+    }
+  }
+
   if (!isModeConfigured) {
     const failure = classifyUiError(null, { modeMisconfigured: true })
     return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
@@ -140,9 +205,9 @@ export default function AlertDetailPage() {
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
       <motion.header className="wb-page-header" variants={panelMotion}>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="wb-kicker">Alert Detail</p>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight">{detail.title}</h1>
+            <h1 className="mt-1 max-w-5xl text-xl font-semibold tracking-tight break-words">{detail.title}</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{detail.summary}</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -161,9 +226,20 @@ export default function AlertDetailPage() {
             <p className="wb-kicker">Target</p>
             <p className="mt-1 text-sm font-semibold">{detail.targetDisplay}</p>
           </div>
-          <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
-            <p className="wb-kicker">Linked IOCs</p>
-            <p className="mt-1 text-sm font-semibold">{detail.linkedIocCount}</p>
+          <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3 md:col-span-2">
+            <p className="wb-kicker">Case Progress</p>
+            <div className="mt-2">
+              <ProgressMeter
+                percentComplete={detail.progress.percentComplete}
+                completed={detail.progress.completedCount}
+                total={detail.progress.totalIocs}
+              />
+            </div>
+            {detail.progress.totalIocs > 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {detail.progress.openCount} open | {detail.progress.inReviewCount} in review
+              </p>
+            ) : null}
           </div>
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <p className="wb-kicker">Last Seen</p>
@@ -270,8 +346,26 @@ export default function AlertDetailPage() {
                       <span>{new Date(ioc.timestampUtc).toLocaleString()}</span>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge value={ioc.severity} />
+                    <StatusBadge value={ioc.status} />
+                    <label className="sr-only" htmlFor={`ioc-status-${ioc.iocId}`}>
+                      Update IOC status
+                    </label>
+                    <select
+                      id={`ioc-status-${ioc.iocId}`}
+                      className="h-8 rounded-lg border border-border/70 bg-surface-1 px-2 text-xs"
+                      value={ioc.status}
+                      disabled={iocStatusUpdate === ioc.iocId}
+                      aria-label={`Update status for IOC ${ioc.iocId}`}
+                      onChange={(event) => void updateIocStatus(ioc.iocId, event.target.value)}
+                    >
+                      {IOC_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {formatIocStatus(option)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -284,6 +378,12 @@ export default function AlertDetailPage() {
                     <dt className="wb-kicker">IOC Id</dt>
                     <dd className="mt-1 break-all text-foreground">{ioc.iocId}</dd>
                   </div>
+                  <div>
+                    <dt className="wb-kicker">Status Updated</dt>
+                    <dd className="mt-1 text-foreground">
+                      {new Date(ioc.statusUpdatedAtUtc).toLocaleString()} by {ioc.statusUpdatedByUserId}
+                    </dd>
+                  </div>
                 </dl>
 
                 <div className="mt-4">
@@ -291,12 +391,14 @@ export default function AlertDetailPage() {
                   <ScannerSpecificFields detail={ioc} />
                 </div>
 
-                <div className="mt-4">
-                  <SectionHeader title="Raw Payload" description="Original persisted scanner payload for the finding." />
-                  <pre className="overflow-x-auto rounded-lg border border-border/70 bg-surface-1/80 p-3 text-xs text-muted-foreground">
+                <details className="mt-4 rounded-lg border border-border/70 bg-surface-1/60 p-3">
+                  <summary className="cursor-pointer text-xs font-semibold tracking-tight text-muted-foreground">
+                    Raw payload
+                  </summary>
+                  <pre className="mt-3 overflow-x-auto text-xs text-muted-foreground">
                     {ioc.rawPayload ?? "No raw payload available."}
                   </pre>
-                </div>
+                </details>
               </section>
             ))}
           </div>

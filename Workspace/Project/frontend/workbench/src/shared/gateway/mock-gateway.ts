@@ -511,6 +511,13 @@ export class MockGateway implements Gateway {
         targetDisplay: "Demo target",
         ruleName: item.title,
         linkedIocCount: 0,
+        progress: {
+          totalIocs: 0,
+          openCount: 0,
+          inReviewCount: 0,
+          completedCount: 0,
+          percentComplete: 0,
+        },
         firstDetectedAtUtc: item.createdAtUtc,
         lastDetectedAtUtc: item.updatedAtUtc,
         createdAtUtc: item.createdAtUtc,
@@ -548,6 +555,13 @@ export class MockGateway implements Gateway {
       targetDisplay: "Demo target",
       ruleName: item.title,
       linkedIocCount: 0,
+      progress: {
+        totalIocs: 0,
+        openCount: 0,
+        inReviewCount: 0,
+        completedCount: 0,
+        percentComplete: 0,
+      },
       firstDetectedAtUtc: item.createdAtUtc,
       lastDetectedAtUtc: item.updatedAtUtc,
       createdAtUtc: item.createdAtUtc,
@@ -561,6 +575,11 @@ export class MockGateway implements Gateway {
   async updateAlertStatus(alertId: string, status: string, _actorUserId: string): Promise<V2AlertDetailResponse> {
     consume(_actorUserId)
     return this.getAlertDetail(alertId).then((detail) => ({ ...detail, status }))
+  }
+
+  async updateAlertIocStatus(alertId: string, iocId: string, status: string, _actorUserId: string): Promise<V2AlertDetailResponse> {
+    consume(iocId, status, _actorUserId)
+    return this.getAlertDetail(alertId)
   }
 
   async listCases(_signal?: AbortSignal) {

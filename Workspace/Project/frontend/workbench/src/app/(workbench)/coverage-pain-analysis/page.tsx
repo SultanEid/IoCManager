@@ -26,12 +26,12 @@ import { classifyUiError } from "@/shared/api/error-classification"
 import { getLegacyPainAnalysis, type LegacyPipelinePainAnalysis } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
-import { LoadingState } from "@/shared/ui/state-panels"
 
 const PAIN_LEVELS = ["Ttp", "Tool", "HostArtifact", "Domain", "IP", "Hash"] as const
-const RANGE_WINDOW_DAYS = 7
+const RANGE_WINDOWS = [7, 30, 90] as const
 
 type PainLevel = (typeof PAIN_LEVELS)[number]
+type RangeWindowDays = (typeof RANGE_WINDOWS)[number]
 
 const LEVEL_META: Record<PainLevel, {
   icon: LucideIcon
@@ -124,12 +124,22 @@ function formatPercent(share: number, count: number) {
   return `${Math.round(percent)}%`
 }
 
-function buildRange() {
-  const toUtc = new Date()
-  const fromUtc = new Date(toUtc.getTime() - RANGE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+function buildRange(windowDays: RangeWindowDays, anchor: Date) {
+  const toUtc = anchor
+  const fromUtc = new Date(toUtc.getTime() - windowDays * 24 * 60 * 60 * 1000)
   return {
     fromUtc: fromUtc.toISOString(),
     toUtc: toUtc.toISOString(),
+  }
+}
+
+function buildEmptyAnalysis(range: { fromUtc: string; toUtc: string }): LegacyPipelinePainAnalysis {
+  return {
+    fromUtc: range.fromUtc,
+    toUtc: range.toUtc,
+    totalCount: 0,
+    levels: [],
+    trend: [],
   }
 }
 
@@ -149,19 +159,22 @@ function buildPostureSummary(analysis: LegacyPipelinePainAnalysis) {
 
 export default function PyramidOfPainPage() {
   const router = useRouter()
-  const [range] = useState(buildRange)
+  const [rangeAnchor] = useState(() => new Date())
+  const [activeWindowDays, setActiveWindowDays] = useState<RangeWindowDays>(7)
+  const range = useMemo(() => buildRange(activeWindowDays, rangeAnchor), [activeWindowDays, rangeAnchor])
   const [activeLevel, setActiveLevel] = useState<PainLevel>("Ttp")
   const analysisQuery = useWorkbenchQuery(
-    ["legacy-pipeline", "pain-analysis", range],
+    ["legacy-pipeline", "pain-analysis", activeWindowDays, range],
     (signal) => getLegacyPainAnalysis(range, signal),
     {
-      staleTime: 60_000,
-      gcTime: 300_000,
+      staleTime: 5 * 60_000,
+      gcTime: 15 * 60_000,
       placeholderData: (previousData) => previousData,
+      refetchOnWindowFocus: false,
     },
   )
 
-  const analysis = analysisQuery.data
+  const analysis = analysisQuery.data ?? buildEmptyAnalysis(range)
   const orderedLevels = useMemo(() => {
     const byLevel = new Map(analysis?.levels.map((item) => [item.level, item]) ?? [])
     return PAIN_LEVELS.map((level) => byLevel.get(level) ?? {
@@ -175,15 +188,12 @@ export default function PyramidOfPainPage() {
 
   const activeLevelSummary = orderedLevels.find((level) => level.level === activeLevel) ?? orderedLevels[0]
   const maxCount = Math.max(...orderedLevels.map((level) => level.count), 1)
-  const postureSummary = analysis ? buildPostureSummary(analysis) : ""
+  const postureSummary = analysisQuery.data ? buildPostureSummary(analysis) : "Loading Pyramid of Pain data for the selected window."
   const activeMeta = LEVEL_META[activeLevelSummary.level as PainLevel]
   const ActiveIcon = activeMeta.icon
+  const isRefreshing = analysisQuery.isFetching && !analysisQuery.isLoading
 
-  if (analysisQuery.isLoading) {
-    return <LoadingState label="Loading Pyramid of Pain" />
-  }
-
-  if (analysisQuery.isError || !analysis) {
+  if (analysisQuery.isError && !analysisQuery.data) {
     return (
       <ClassifiedFailureState
         failure={classifyUiError(analysisQuery.error)}
@@ -208,11 +218,21 @@ export default function PyramidOfPainPage() {
             <p className="mt-4 max-w-2xl text-sm text-foreground/90">{postureSummary}</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" variant="outline" className="gap-2">
-              <Clock3 className="h-3.5 w-3.5" />
-              7 days
-            </Button>
+          <div className="flex flex-wrap items-center gap-2" aria-label="Pyramid duration">
+            {RANGE_WINDOWS.map((windowDays) => (
+              <Button
+                key={windowDays}
+                type="button"
+                size="sm"
+                variant={activeWindowDays === windowDays ? "default" : "outline"}
+                className="gap-2"
+                onClick={() => setActiveWindowDays(windowDays)}
+                aria-pressed={activeWindowDays === windowDays}
+              >
+                <Clock3 className="h-3.5 w-3.5" />
+                {windowDays} days
+              </Button>
+            ))}
             <Button
               type="button"
               size="sm"
@@ -226,6 +246,7 @@ export default function PyramidOfPainPage() {
               Open IOC Explorer
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
+            {isRefreshing ? <span className="text-xs text-muted-foreground">Refreshing...</span> : null}
           </div>
         </div>
       </header>
@@ -238,7 +259,7 @@ export default function PyramidOfPainPage() {
         <div className="wb-metric-card">
           <p className="wb-kicker">Window</p>
           <div className="mt-2 flex items-center gap-2">
-            <StatusBadge value="7 days" />
+            <StatusBadge value={`${activeWindowDays} days`} />
             <span className="text-xs text-muted-foreground">
               {range.fromUtc.slice(0, 10)} to {range.toUtc.slice(0, 10)}
             </span>
@@ -296,6 +317,7 @@ export default function PyramidOfPainPage() {
                     opacity: level.count > 0 ? 0.82 + intensity * 0.18 : 0.54,
                   } as CSSProperties}
                   aria-pressed={isActive}
+                  aria-label={`${formatPainLevelLabel(level.level)} tier, ${formatCount(level.count)} findings`}
                 >
                   <div className="flex min-w-0 items-center gap-3 px-4 sm:px-8">
                     <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-black/18", meta.accent)}>
@@ -347,7 +369,7 @@ export default function PyramidOfPainPage() {
           <div className="mt-5 flex items-center justify-between gap-3 border-t border-border/60 pt-5">
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
               <BarChart3 className="h-3.5 w-3.5" />
-              Current 7-day sample
+              Current {activeWindowDays}-day sample
             </div>
             <Link
               href={`/ioc-ingestion?painLevel=${encodeURIComponent(activeLevelSummary.level)}&fromUtc=${encodeURIComponent(range.fromUtc)}&toUtc=${encodeURIComponent(range.toUtc)}`}

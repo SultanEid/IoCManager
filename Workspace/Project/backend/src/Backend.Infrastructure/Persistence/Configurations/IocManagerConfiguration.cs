@@ -931,6 +931,8 @@ public sealed class AlertIocConfiguration : IEntityTypeConfiguration<AlertIoc>
     {
         builder.ToTable("alert_iocs");
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).HasDefaultValue(AlertIocStatus.Open).IsRequired();
+        builder.Property(x => x.StatusUpdatedByUserId).HasMaxLength(128).HasDefaultValue("system").IsRequired();
 
         builder.HasOne<Alert>()
             .WithMany()

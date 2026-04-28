@@ -192,6 +192,63 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
     }
 
     [Fact]
+    public async Task AlertIocProgress_StatusWorkflowUpdatesCaseProgress()
+    {
+        using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
+
+        var alertResponse = await leadClient.PostAsJsonAsync("/api/v2/alerts", new CreateAlertRequest(
+            Title: "Progress case alert",
+            Summary: "Alert with linked IOC investigation progress",
+            Severity: "High",
+            OwnerUserId: "lead-1",
+            ApprovalTierRequired: "Lead",
+            DetectedAtUtc: DateTimeOffset.UtcNow,
+            ActorUserId: "lead-1"));
+        alertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var alert = await alertResponse.Content.ReadFromJsonAsync<AlertResponse>(JsonOptions);
+        alert.Should().NotBeNull();
+
+        var iocId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
+            dbContext.AlertIocs.Add(AlertIoc.Create(alert!.Id, iocId, DateTimeOffset.UtcNow, "lead-1"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var initial = await leadClient.GetFromJsonAsync<AlertDetailResponse>($"/api/v2/alerts/{alert!.Id:D}", JsonOptions);
+        initial.Should().NotBeNull();
+        initial!.Progress.TotalIocs.Should().Be(1);
+        initial.Progress.OpenCount.Should().Be(1);
+        initial.Progress.PercentComplete.Should().Be(0);
+
+        var inReviewResponse = await leadClient.PatchAsJsonAsync(
+            $"/api/v2/alerts/{alert.Id:D}/iocs/{iocId:D}/status",
+            new UpdateAlertIocStatusRequest("InReview", "lead-1"));
+        inReviewResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var inReview = await inReviewResponse.Content.ReadFromJsonAsync<AlertDetailResponse>(JsonOptions);
+        inReview.Should().NotBeNull();
+        inReview!.Status.Should().Be("Investigating");
+        inReview.Progress.InReviewCount.Should().Be(1);
+        inReview.Progress.PercentComplete.Should().Be(50);
+
+        var containedResponse = await leadClient.PatchAsJsonAsync(
+            $"/api/v2/alerts/{alert.Id:D}/iocs/{iocId:D}/status",
+            new UpdateAlertIocStatusRequest("Contained", "lead-1"));
+        containedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var contained = await containedResponse.Content.ReadFromJsonAsync<AlertDetailResponse>(JsonOptions);
+        contained.Should().NotBeNull();
+        contained!.Status.Should().Be("Investigating");
+        contained.Progress.CompletedCount.Should().Be(1);
+        contained.Progress.PercentComplete.Should().Be(100);
+
+        var missingResponse = await leadClient.PatchAsJsonAsync(
+            $"/api/v2/alerts/{alert.Id:D}/iocs/{Guid.NewGuid():D}/status",
+            new UpdateAlertIocStatusRequest("InReview", "lead-1"));
+        missingResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task LegacyReportGenerate_WithPersistTrue_ReturnsBadRequestWithoutLegacyReport()
     {
         using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
@@ -523,6 +580,45 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
             "Scope And Analytics Appendix");
         report.Sections.Should().OnlyContain(x => x.Tables != null);
         report.Sections.First(x => x.Title == "IOC And Rule Evidence").Tables!.Should().ContainSingle(x => x.Title == "Evidence table");
+
+        var savedReportResponse = await leadClient.PostAsJsonAsync(
+            "/api/v2/reports/generate",
+            new GenerateReportRequest(
+                ReportType: "ExecutiveSummary",
+                Title: "Executive <Summary> & Review",
+                FromUtc: observedAtUtc.AddMinutes(-5).ToString("O"),
+                ToUtc: observedAtUtc.AddMinutes(5).ToString("O"),
+                TargetServerId: server.Id,
+                ScannerFamily: "yara",
+                Severity: null,
+                Status: null,
+                IocType: null,
+                Source: null,
+                Persist: true,
+                ActorUserId: "lead-1"));
+        savedReportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var savedReport = await savedReportResponse.Content.ReadFromJsonAsync<GeneratedReportResponse>(JsonOptions);
+        savedReport.Should().NotBeNull();
+        savedReport!.PersistedReport.Should().NotBeNull();
+
+        var htmlResponse = await leadClient.GetAsync($"/api/v2/reports/{savedReport.PersistedReport!.Id:D}/html");
+        htmlResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        htmlResponse.Content.Headers.ContentType?.MediaType.Should().Be("text/html");
+        htmlResponse.Content.Headers.ContentType?.CharSet.Should().Be("utf-8");
+        (htmlResponse.Content.Headers.ContentDisposition?.FileNameStar
+            ?? htmlResponse.Content.Headers.ContentDisposition?.FileName
+            ?? string.Empty).Should().Contain(".html");
+        var html = await htmlResponse.Content.ReadAsStringAsync();
+        html.Should().Contain("Executive &lt;Summary&gt; &amp; Review");
+        html.Should().Contain("Executive Assessment");
+        html.Should().Contain("Evidence table");
+        html.Should().Contain("IOC And Rule Evidence");
+        html.Should().Contain(server.Hostname);
+
+        var removedPdfResponse = await leadClient.GetAsync($"/api/v2/reports/{savedReport.PersistedReport.Id:D}/pdf");
+        removedPdfResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var missingHtmlResponse = await leadClient.GetAsync($"/api/v2/reports/{Guid.NewGuid():D}/html");
+        missingHtmlResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var detail = await leadClient.GetFromJsonAsync<DetectionDetailResponse>(
             $"/api/v2/scanning/results/{detection.Id}",

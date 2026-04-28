@@ -332,6 +332,16 @@ export class AspNetGateway {
     })
   }
 
+  async updateAlertIocStatus(alertId: string, iocId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse> {
+    return requestJson(`/api/v2/alerts/${alertId}/iocs/${iocId}/status`, v2AlertDetailResponseSchema, {
+      method: "PATCH",
+      body: {
+        status,
+        actorUserId,
+      },
+    })
+  }
+
   // Legacy aliases retained for one release cycle.
   async listCases(signal?: AbortSignal): Promise<CaseResponse[]> {
     return this.listAlerts(signal)

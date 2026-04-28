@@ -90,6 +90,10 @@ export class AugmentedGateway implements Gateway {
     return this.source.updateAlertStatus(alertId, status, actorUserId)
   }
 
+  updateAlertIocStatus(alertId: string, iocId: string, status: string, actorUserId: string) {
+    return this.source.updateAlertIocStatus(alertId, iocId, status, actorUserId)
+  }
+
   listAlerts(signal?: AbortSignal) {
     return this.source.listAlerts(signal)
   }
