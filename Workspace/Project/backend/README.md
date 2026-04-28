@@ -78,6 +78,29 @@ pip install -e .[dev]
 uvicorn decision_service.main:app --host 0.0.0.0 --port 8100
 ```
 
+## Power BI dashboard embeds
+
+The dashboard supports two Power BI modes:
+
+- Placeholder/direct iframe mode for local development when service-principal
+  credentials are not configured.
+- App-owned embed mode for durable rendering. Configure `Reporting:PowerBi`
+  with `Enabled=true`, `TenantId`, `ClientId`, `ClientSecret`, workspace IDs,
+  and report IDs. The backend will request Power BI embed tokens and the
+  workbench refreshes them before expiry, so visuals do not depend on a browser
+  Power BI sign-in cookie.
+
+Use deployment secrets or environment variables for credentials, for example:
+
+```powershell
+REPORTING__POWERBI__ENABLED=true
+REPORTING__POWERBI__TENANTID=<tenant-id>
+REPORTING__POWERBI__CLIENTID=<service-principal-client-id>
+REPORTING__POWERBI__CLIENTSECRET=<service-principal-secret>
+REPORTING__POWERBI__WORKSPACES__0__WORKSPACEID=<workspace-id>
+REPORTING__POWERBI__WORKSPACES__0__REPORTS__0__REPORTID=<report-id>
+```
+
 ## Minimal smoke semantics
 
 - `GET /api/alerts` returning `401` validates routing/pipeline/auth boundary only.

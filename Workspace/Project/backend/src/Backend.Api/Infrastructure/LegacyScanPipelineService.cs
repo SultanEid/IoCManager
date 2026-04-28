@@ -1102,10 +1102,8 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             var reportDirectory = LegacyScanPipelineHelpers.EnsureDirectory(_pipelineOptions.CurrentValue.ReportsDirectory);
             var slug = LegacyScanPipelineHelpers.Slugify(title);
             var timestamp = generatedAtUtc.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-            var pdfPath = Path.Combine(reportDirectory, $"{slug}_{timestamp}.pdf");
-            var csvPath = Path.Combine(reportDirectory, $"{slug}_{timestamp}.csv");
-            LegacyScanPipelineFileWriters.WriteSimplePdf(pdfPath, title, reportTypeDisplayName, scope, generatedAtUtc, query, sections);
-            LegacyScanPipelineFileWriters.WriteSimpleCsv(csvPath, title, reportTypeDisplayName, scope, generatedAtUtc, query, sections);
+            var htmlPath = Path.Combine(reportDirectory, $"{slug}_{timestamp}.html");
+            LegacyScanPipelineFileWriters.WriteSimpleHtml(htmlPath, title, reportTypeDisplayName, scope, generatedAtUtc, query, sections);
 
             var entity = new LegacyPipelineReportEntity
             {
@@ -1117,8 +1115,8 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
                 JobId = LegacyScanPipelineHelpers.ParseOptionalIntId(request.JobId, nameof(request.JobId)),
                 TargetId = LegacyScanPipelineHelpers.ParseOptionalIntId(request.TargetId, nameof(request.TargetId)),
                 NetworkId = LegacyScanPipelineHelpers.ParseOptionalIntId(request.NetworkId, nameof(request.NetworkId)),
-                FileExtension = "pdf",
-                FilePath = pdfPath,
+                FileExtension = "html",
+                FilePath = htmlPath,
                 ContentJson = JsonSerializer.Serialize(sections, LegacyScanPipelineSerializer.JsonOptions),
             };
 
@@ -1140,27 +1138,19 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         }
 
         var normalizedFormat = LegacyScanPipelineHelpers.CleanOrNull(format)?.ToLowerInvariant();
-        if (normalizedFormat is not null && normalizedFormat is not "pdf" and not "csv")
+        if (normalizedFormat is not null && normalizedFormat is not "html")
         {
-            throw new ArgumentException("Report download format must be either 'pdf' or 'csv'.");
+            throw new ArgumentException("Report download format must be 'html'.");
         }
 
-        var requestedPath = normalizedFormat == "csv"
-            ? ResolveCsvArtifactPath(report)
-            : report.FilePath;
+        var requestedPath = report.FilePath;
 
         if (string.IsNullOrWhiteSpace(requestedPath) || !File.Exists(requestedPath))
         {
             return null;
         }
 
-        var extension = Path.GetExtension(requestedPath).TrimStart('.').ToLowerInvariant();
-        var contentType = extension switch
-        {
-            "csv" => "text/csv",
-            _ => "application/pdf",
-        };
-        return new LegacyPipelineDownloadResult(contentType, Path.GetFileName(requestedPath), requestedPath);
+        return new LegacyPipelineDownloadResult("text/html; charset=utf-8", Path.GetFileName(requestedPath), requestedPath);
     }
 
     public async Task<LegacyPipelineReportDeletionResponse?> DeleteReportAsync(string reportId, CancellationToken cancellationToken)
@@ -1174,7 +1164,6 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
 
         var deletedFiles = 0;
         deletedFiles += TryDeleteReportArtifact(report.FilePath) ? 1 : 0;
-        deletedFiles += TryDeleteReportArtifact(ResolveCsvArtifactPath(report)) ? 1 : 0;
 
         _dbContext.Reports.Remove(report);
         await _dbContext.SaveChangesAsync(cancellationToken);

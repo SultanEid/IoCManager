@@ -15,7 +15,7 @@ public sealed class AiDecisionRequestConfiguration : IEntityTypeConfiguration<Ai
         builder.Property(x => x.DetectionId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.DetectionRecordId);
         builder.Property(x => x.IocType).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.IocValue).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.IocValue).HasColumnType("nvarchar(max)").IsRequired();
         builder.Property(x => x.DetectionPackageJson).HasColumnType("nvarchar(max)").IsRequired();
         builder.Property(x => x.SubmittedByUserId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();

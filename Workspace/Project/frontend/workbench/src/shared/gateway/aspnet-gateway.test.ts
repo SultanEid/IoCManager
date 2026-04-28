@@ -13,6 +13,7 @@ import {
   managedServerInventoryResponseSchema,
   permissionResponseSchema,
   promoteDiscoveredHostResponseSchema,
+  reportResponseSchema,
   retentionPolicyResponseSchema,
   rolePermissionResponseSchema,
   roleResponseSchema,
@@ -499,6 +500,28 @@ describe("AspNetGateway", () => {
     expect(mockedRequestJson.mock.calls[0]?.[1]).toBe(scannerResponseSchema)
     expect(mockedRequestJson.mock.calls[1]?.[0]).toBe("/api/v2/infrastructure/scanners/85c86630-4876-4f03-bc30-1ec5f77d2d22/capabilities")
     expect(mockedRequestJson.mock.calls[1]?.[1]).toBe(scannerResponseSchema)
+  })
+
+  it("fetches saved reports by id through the v2 report detail endpoint", async () => {
+    const payload = {
+      id: "85c86630-4876-4f03-bc30-1ec5f77d2d22",
+      title: "Aegis mitigation: report",
+      reportType: "Operational",
+      summaryJson: "{\"aegisMitigationPlanVersion\":1}",
+      generatedAtUtc: "2026-04-20T00:00:00Z",
+      createdAtUtc: "2026-04-20T00:00:00Z",
+      updatedAtUtc: "2026-04-20T00:00:00Z",
+      alertIds: [],
+    }
+    mockedRequestJson.mockResolvedValue(payload)
+
+    const gateway = new AspNetGateway()
+    const result = await gateway.getReport("85c86630-4876-4f03-bc30-1ec5f77d2d22")
+
+    expect(result).toEqual(payload)
+    expect(mockedRequestJson).toHaveBeenCalledTimes(1)
+    expect(mockedRequestJson.mock.calls[0][0]).toBe("/api/v2/reports/85c86630-4876-4f03-bc30-1ec5f77d2d22")
+    expect(mockedRequestJson.mock.calls[0][1]).toBe(reportResponseSchema)
   })
 
   it("does not hide compatibility failures on core v2 operator reads", async () => {

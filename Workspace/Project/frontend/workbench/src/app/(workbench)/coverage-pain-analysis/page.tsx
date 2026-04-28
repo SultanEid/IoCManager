@@ -26,12 +26,12 @@ import { classifyUiError } from "@/shared/api/error-classification"
 import { getLegacyPainAnalysis, type LegacyPipelinePainAnalysis } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
-import { LoadingState } from "@/shared/ui/state-panels"
 
 const PAIN_LEVELS = ["Ttp", "Tool", "HostArtifact", "Domain", "IP", "Hash"] as const
-const RANGE_WINDOW_DAYS = 7
+const RANGE_WINDOWS = [7, 30, 90] as const
 
 type PainLevel = (typeof PAIN_LEVELS)[number]
+type RangeWindowDays = (typeof RANGE_WINDOWS)[number]
 
 const LEVEL_META: Record<PainLevel, {
   icon: LucideIcon
@@ -124,12 +124,22 @@ function formatPercent(share: number, count: number) {
   return `${Math.round(percent)}%`
 }
 
-function buildRange() {
-  const toUtc = new Date()
-  const fromUtc = new Date(toUtc.getTime() - RANGE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+function buildRange(windowDays: RangeWindowDays, anchor: Date) {
+  const toUtc = anchor
+  const fromUtc = new Date(toUtc.getTime() - windowDays * 24 * 60 * 60 * 1000)
   return {
     fromUtc: fromUtc.toISOString(),
     toUtc: toUtc.toISOString(),
+  }
+}
+
+function buildEmptyAnalysis(range: { fromUtc: string; toUtc: string }): LegacyPipelinePainAnalysis {
+  return {
+    fromUtc: range.fromUtc,
+    toUtc: range.toUtc,
+    totalCount: 0,
+    levels: [],
+    trend: [],
   }
 }
 
@@ -149,19 +159,22 @@ function buildPostureSummary(analysis: LegacyPipelinePainAnalysis) {
 
 export default function PyramidOfPainPage() {
   const router = useRouter()
-  const [range] = useState(buildRange)
+  const [rangeAnchor] = useState(() => new Date())
+  const [activeWindowDays, setActiveWindowDays] = useState<RangeWindowDays>(7)
+  const range = useMemo(() => buildRange(activeWindowDays, rangeAnchor), [activeWindowDays, rangeAnchor])
   const [activeLevel, setActiveLevel] = useState<PainLevel>("Ttp")
   const analysisQuery = useWorkbenchQuery(
-    ["legacy-pipeline", "pain-analysis", range],
+    ["legacy-pipeline", "pain-analysis", activeWindowDays, range],
     (signal) => getLegacyPainAnalysis(range, signal),
     {
-      staleTime: 60_000,
-      gcTime: 300_000,
+      staleTime: 5 * 60_000,
+      gcTime: 15 * 60_000,
       placeholderData: (previousData) => previousData,
+      refetchOnWindowFocus: false,
     },
   )
 
-  const analysis = analysisQuery.data
+  const analysis = analysisQuery.data ?? buildEmptyAnalysis(range)
   const orderedLevels = useMemo(() => {
     const byLevel = new Map(analysis?.levels.map((item) => [item.level, item]) ?? [])
     return PAIN_LEVELS.map((level) => byLevel.get(level) ?? {
@@ -175,15 +188,12 @@ export default function PyramidOfPainPage() {
 
   const activeLevelSummary = orderedLevels.find((level) => level.level === activeLevel) ?? orderedLevels[0]
   const maxCount = Math.max(...orderedLevels.map((level) => level.count), 1)
-  const postureSummary = analysis ? buildPostureSummary(analysis) : ""
+  const postureSummary = analysisQuery.data ? buildPostureSummary(analysis) : "Loading Pyramid of Pain data for the selected window."
   const activeMeta = LEVEL_META[activeLevelSummary.level as PainLevel]
   const ActiveIcon = activeMeta.icon
+  const isRefreshing = analysisQuery.isFetching && !analysisQuery.isLoading
 
-  if (analysisQuery.isLoading) {
-    return <LoadingState label="Loading Pyramid of Pain" />
-  }
-
-  if (analysisQuery.isError || !analysis) {
+  if (analysisQuery.isError && !analysisQuery.data) {
     return (
       <ClassifiedFailureState
         failure={classifyUiError(analysisQuery.error)}
@@ -195,7 +205,7 @@ export default function PyramidOfPainPage() {
   return (
     <section className="wb-page space-y-6">
       <header className="wb-page-header">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-primary/90">
               <Triangle className="h-3.5 w-3.5" />
@@ -208,11 +218,21 @@ export default function PyramidOfPainPage() {
             <p className="mt-4 max-w-2xl text-sm text-foreground/90">{postureSummary}</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" variant="outline" className="gap-2">
-              <Clock3 className="h-3.5 w-3.5" />
-              7 days
-            </Button>
+          <div className="flex max-w-full flex-wrap items-center gap-2" aria-label="Pyramid duration">
+            {RANGE_WINDOWS.map((windowDays) => (
+              <Button
+                key={windowDays}
+                type="button"
+                size="sm"
+                variant={activeWindowDays === windowDays ? "default" : "outline"}
+                className="gap-2"
+                onClick={() => setActiveWindowDays(windowDays)}
+                aria-pressed={activeWindowDays === windowDays}
+              >
+                <Clock3 className="h-3.5 w-3.5" />
+                {windowDays} days
+              </Button>
+            ))}
             <Button
               type="button"
               size="sm"
@@ -226,11 +246,12 @@ export default function PyramidOfPainPage() {
               Open IOC Explorer
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
+            {isRefreshing ? <span className="text-xs text-muted-foreground">Refreshing...</span> : null}
           </div>
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
         <div className="wb-metric-card">
           <p className="wb-kicker">Total Findings</p>
           <p className="mt-2 text-3xl font-semibold">{formatCount(analysis.totalCount)}</p>
@@ -238,7 +259,7 @@ export default function PyramidOfPainPage() {
         <div className="wb-metric-card">
           <p className="wb-kicker">Window</p>
           <div className="mt-2 flex items-center gap-2">
-            <StatusBadge value="7 days" />
+            <StatusBadge value={`${activeWindowDays} days`} />
             <span className="text-xs text-muted-foreground">
               {range.fromUtc.slice(0, 10)} to {range.toUtc.slice(0, 10)}
             </span>
@@ -253,7 +274,7 @@ export default function PyramidOfPainPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.7fr)]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.7fr)]">
         <article className="overflow-hidden rounded-2xl border border-border/70 bg-surface-1/88 p-4 shadow-[var(--shadow-reading-surface)] sm:p-6">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -285,7 +306,7 @@ export default function PyramidOfPainPage() {
                   transition={{ duration: 0.24, delay: index * 0.035 }}
                   onClick={() => setActiveLevel(key)}
                   className={cn(
-                    "group mx-auto grid min-h-[84px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden border px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition sm:w-[var(--band-width)]",
+                    "group mx-auto grid min-h-[84px] w-full grid-cols-[2.75rem_minmax(0,1fr)_5.75rem] items-center gap-4 overflow-hidden border py-3 pl-[calc(8%+1rem)] pr-[calc(8%+1rem)] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition sm:w-[var(--band-width)]",
                     `bg-gradient-to-r ${meta.surface}`,
                     meta.border,
                     isActive ? "scale-[1.01] shadow-[0_18px_46px_rgba(0,0,0,0.22)]" : "hover:scale-[1.005] hover:opacity-100",
@@ -296,23 +317,22 @@ export default function PyramidOfPainPage() {
                     opacity: level.count > 0 ? 0.82 + intensity * 0.18 : 0.54,
                   } as CSSProperties}
                   aria-pressed={isActive}
+                  aria-label={`${formatPainLevelLabel(level.level)} tier, ${formatCount(level.count)} findings`}
                 >
-                  <div className="flex min-w-0 items-center gap-3 px-4 sm:px-8">
-                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-black/18", meta.accent)}>
-                      <Icon className="h-5 w-5" />
+                  <span className={cn("grid h-10 w-10 shrink-0 place-items-center justify-self-center rounded-xl bg-black/18", meta.accent)}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className={cn("block truncate text-base font-semibold", meta.accent)}>
+                      {formatPainLevelLabel(level.level)}
                     </span>
-                    <span className="min-w-0">
-                      <span className={cn("block text-base font-semibold", meta.accent)}>
-                        {formatPainLevelLabel(level.level)}
-                      </span>
-                      <span className={cn("mt-1 block truncate text-xs", meta.accent)}>
-                        {newest ? `${meta.exampleLabel}: ${newest.indicatorValue}` : meta.description}
-                      </span>
+                    <span className={cn("mt-1 block truncate text-xs", meta.accent)}>
+                      {newest ? `${meta.exampleLabel}: ${newest.indicatorValue}` : meta.description}
                     </span>
-                  </div>
-                  <span className={cn("px-4 text-right sm:px-8", meta.accent)}>
-                    <span className="block text-3xl font-semibold">{formatCount(level.count)}</span>
-                    <span className="block text-[11px] uppercase tracking-[0.14em]">{formatPercent(level.share, level.count)}</span>
+                  </span>
+                  <span className={cn("w-[5.75rem] justify-self-end text-right tabular-nums", meta.accent)}>
+                    <span className="block text-3xl font-semibold leading-none">{formatCount(level.count)}</span>
+                    <span className="mt-1 block text-[11px] uppercase tracking-[0.14em]">{formatPercent(level.share, level.count)}</span>
                   </span>
                 </motion.button>
               )
@@ -347,7 +367,7 @@ export default function PyramidOfPainPage() {
           <div className="mt-5 flex items-center justify-between gap-3 border-t border-border/60 pt-5">
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
               <BarChart3 className="h-3.5 w-3.5" />
-              Current 7-day sample
+              Current {activeWindowDays}-day sample
             </div>
             <Link
               href={`/ioc-ingestion?painLevel=${encodeURIComponent(activeLevelSummary.level)}&fromUtc=${encodeURIComponent(range.fromUtc)}&toUtc=${encodeURIComponent(range.toUtc)}`}

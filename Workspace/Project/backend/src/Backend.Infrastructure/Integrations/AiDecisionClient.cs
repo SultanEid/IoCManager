@@ -30,6 +30,11 @@ public sealed class AiDecisionClient : IAiDecisionClient
         _logger = logger;
     }
 
+    public Task<AiModelStatisticsResult> GetModelStatisticsAsync(CancellationToken cancellationToken)
+    {
+        return GetForJsonAsync<AiModelStatisticsResult>("/model_statistics", cancellationToken);
+    }
+
     public async Task<AiScoreCaseResult> ScoreCaseAsync(AiScoreCaseRequest request, CancellationToken cancellationToken)
     {
         var payload = BuildScorePayload(request);
@@ -232,6 +237,42 @@ public sealed class AiDecisionClient : IAiDecisionClient
 
             using var document = JsonDocument.Parse(responseBody);
             return document.RootElement.Clone();
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "AI sidecar request timed out after {TimeoutSeconds}s for path {Path}.", _options.TimeoutSeconds, path);
+            throw CreateUnavailableException(ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "AI sidecar transport failure for path {Path}.", path);
+            throw CreateUnavailableException(ex);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "AI sidecar returned invalid JSON for path {Path}.", path);
+            throw CreateUnavailableException(ex);
+        }
+    }
+
+    private async Task<T> GetForJsonAsync<T>(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.GetAsync(path, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "AI sidecar endpoint {Path} returned status {StatusCode}. Payload: {Body}",
+                    path,
+                    (int)response.StatusCode,
+                    responseBody);
+                throw CreateUnavailableException();
+            }
+
+            return JsonSerializer.Deserialize<T>(responseBody, JsonOptions)
+                ?? throw new JsonException($"AI sidecar returned an empty JSON payload for path {path}.");
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {

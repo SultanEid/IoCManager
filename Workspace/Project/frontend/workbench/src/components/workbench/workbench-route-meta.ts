@@ -63,7 +63,7 @@ type ServersSubrouteMeta = {
 export type ResolvedWorkbenchRoute = {
   pathname: string
   canonicalPath: string
-  module: WorkbenchModule | "Alert"
+  module: WorkbenchModule | "Alert" | "Case"
   title: string
   subtitle: string
   breadcrumbs: WorkbenchBreadcrumbItem[]
@@ -92,10 +92,10 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     aliases: ["/queue", "/problematic-queue", "/cases", "/matches", "/investigations", "/graph-relationships"],
     module: "Core",
     label: "Alerts",
-    title: "Alert Registry",
-    subtitle: "Stored IOC-driven alerts with queue posture, evidence links, and target context.",
+    title: "Investigation Cases",
+    subtitle: "IOC-driven cases with evidence links, review progress, and target context.",
     icon: Activity,
-    commandAliases: ["Alerts", "Alert Registry", "Alert Queue", "Queue", "Triage Queue"],
+    commandAliases: ["Alerts", "Cases", "Investigation Cases", "Alert Search"],
   },
   {
     id: "servers",
@@ -117,7 +117,7 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     title: "Scans",
     subtitle: "Search scan results, detection history, and execution outcomes.",
     icon: Workflow,
-    commandAliases: ["Scans", "Result Ingestion", "Normalized Result Ingestion"],
+    commandAliases: ["Scans", "Scan Results", "Detection History"],
   },
   {
     id: "scan-plan",
@@ -150,7 +150,7 @@ export const WORKBENCH_ROUTES: WorkbenchRouteMeta[] = [
     title: "Rules Management",
     subtitle: "YARA, Sigma, Snort, and Suricata rule authoring, review, simulation, and release controls.",
     icon: SearchCode,
-    commandAliases: ["Rules Management", "Rule Repository", "Rules", "Rule Management", "Rule Distribution", "Distribution", "Deployments"],
+    commandAliases: ["Rules Management", "Rule Repository", "Rules", "Rule Management"],
   },
   {
     id: "ioc-ingestion",
@@ -202,11 +202,11 @@ export const WORKBENCH_CASE_ROUTES: WorkbenchCaseRouteMeta[] = [
   {
     id: "alert-detail",
     suffix: "",
-    label: "Alert Detail",
-    title: "Alert Detail",
-    subtitle: "IOC evidence, target context, scan linkage, and alert status controls.",
+    label: "Case Detail",
+    title: "Case Detail",
+    subtitle: "IOC evidence, target context, scan linkage, and case status controls.",
     icon: Activity,
-    commandAliases: ["Alert Detail"],
+    commandAliases: ["Alert Detail", "Case Detail"],
   },
 ]
 
@@ -426,7 +426,7 @@ function parseAgentsPath(pathname: string): boolean {
 }
 
 function toAlertLabel(caseId: string) {
-  return `Alert ${caseId.slice(0, 8)}`
+  return `Case ${caseId.slice(0, 8)}`
 }
 
 function buildRouteBreadcrumbs(route: WorkbenchRouteMeta): WorkbenchBreadcrumbItem[] {
@@ -439,7 +439,7 @@ function buildRouteBreadcrumbs(route: WorkbenchRouteMeta): WorkbenchBreadcrumbIt
 function buildAlertBreadcrumbs(caseId: string) {
   return [
     { label: "Core" },
-    { label: "Alerts", href: "/alerts" },
+    { label: "Cases", href: "/alerts" },
     { label: toAlertLabel(caseId), href: `/alerts/${caseId}` },
   ]
 }
@@ -499,9 +499,9 @@ export function resolveWorkbenchRoute(pathname: string): ResolvedWorkbenchRoute 
     return {
       pathname: normalized,
       canonicalPath: `/alerts/${alertMatch.caseId}`,
-      module: "Alert",
+      module: "Case",
       title: toAlertLabel(alertMatch.caseId),
-      subtitle: "Alert summary with evidence, decision, and rollout posture.",
+      subtitle: "Case summary with evidence, IOC progress, and target context.",
       breadcrumbs: buildAlertBreadcrumbs(alertMatch.caseId),
       route: ROUTE_BY_HREF.get("/alerts") ?? null,
       caseRoute: WORKBENCH_CASE_ROUTES[0] ?? null,

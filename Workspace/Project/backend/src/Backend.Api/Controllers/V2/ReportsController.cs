@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using System.Net;
+using System.Text;
 using System.Text.Json;
 
 namespace Backend.Api.Controllers.V2;
@@ -155,19 +157,11 @@ public sealed class ReportsController : ControllerBase
         return Ok(new ReportListResponse(items, totalCount, page, pageSize));
     }
 
-    [HttpGet("power-bi")]
+    [HttpGet("{reportId:guid}")]
     [EnableRateLimiting(RateLimitPolicies.Read)]
-    [ProducesResponseType<PowerBiVisualizationCatalogResponse>(StatusCodes.Status200OK)]
-    public ActionResult<PowerBiVisualizationCatalogResponse> GetPowerBiCatalog()
-    {
-        return Ok(_powerBiCatalogService.BuildCatalog(User));
-    }
-
-    [HttpGet("{reportId:guid}/pdf")]
-    [EnableRateLimiting(RateLimitPolicies.Read)]
-    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType<ReportResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> RenderSavedReportPdf(Guid reportId, CancellationToken cancellationToken)
+    public async Task<ActionResult<ReportResponse>> Get(Guid reportId, CancellationToken cancellationToken)
     {
         var report = await _dbContext.ReportsV2.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId, cancellationToken);
         if (report is null)
@@ -175,8 +169,37 @@ public sealed class ReportsController : ControllerBase
             return NotFound();
         }
 
-        var pdf = await BuildSavedReportPdfAsync(report, cancellationToken);
-        return File(pdf, "application/pdf", $"{SanitizeFileName(report.Title)}.pdf");
+        var alertIds = await _dbContext.ReportAlerts
+            .AsNoTracking()
+            .Where(x => x.ReportId == reportId)
+            .Select(x => x.AlertId)
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(report.ToReportResponse(alertIds));
+    }
+
+    [HttpGet("power-bi")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType<PowerBiVisualizationCatalogResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<PowerBiVisualizationCatalogResponse>> GetPowerBiCatalog(CancellationToken cancellationToken)
+    {
+        return Ok(await _powerBiCatalogService.BuildCatalogAsync(User, cancellationToken));
+    }
+
+    [HttpGet("{reportId:guid}/html")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ExportSavedReportHtml(Guid reportId, CancellationToken cancellationToken)
+    {
+        var report = await _dbContext.ReportsV2.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId, cancellationToken);
+        if (report is null)
+        {
+            return NotFound();
+        }
+
+        var html = BuildSavedReportHtml(report);
+        return File(Encoding.UTF8.GetBytes(html), "text/html; charset=utf-8", $"{SanitizeFileName(report.Title)}.html");
     }
 
     [HttpPost("generate")]
@@ -526,7 +549,7 @@ public sealed class ReportsController : ControllerBase
                 AlertCount = distinctAlertIds.Length,
             },
             cancellationToken);
-        return CreatedAtAction(nameof(List), new { id = report.Id }, report.ToReportResponse(distinctAlertIds));
+        return CreatedAtAction(nameof(Get), new { reportId = report.Id }, report.ToReportResponse(distinctAlertIds));
     }
 
     [HttpDelete("{reportId:guid}")]
@@ -577,33 +600,134 @@ public sealed class ReportsController : ControllerBase
         return $"{friendlyType} - {generatedAtUtc:yyyy-MM-dd HH:mm} UTC";
     }
 
-    private static async Task<byte[]> BuildSavedReportPdfAsync(Report report, CancellationToken cancellationToken)
+    private static string BuildSavedReportHtml(Report report)
     {
-        var (scope, query, sections) = BuildPdfSnapshot(report);
-        var tempPath = Path.Combine(Path.GetTempPath(), $"ioc-report-{report.Id:N}.pdf");
-        try
-        {
-            LegacyScanPipelineFileWriters.WriteSimplePdf(
-                tempPath,
-                report.Title,
-                FormatReportType(report.ReportType),
-                scope,
-                report.GeneratedAtUtc,
-                query,
-                sections);
+        var snapshot = BuildHtmlSnapshot(report);
+        var builder = new StringBuilder();
+        builder.AppendLine("<!doctype html>");
+        builder.AppendLine("<html lang=\"en\">");
+        builder.AppendLine("<head>");
+        builder.AppendLine("  <meta charset=\"utf-8\">");
+        builder.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+        builder.Append("  <title>").Append(Html(report.Title)).AppendLine("</title>");
+        builder.AppendLine("  <style>");
+        builder.AppendLine("    :root{color-scheme:light;--ink:#172033;--muted:#5e6878;--line:#d9e1ec;--panel:#f7f9fc;--accent:#0f6b8f;--accent-soft:#e5f3f8;--warn:#9a6700;}");
+        builder.AppendLine("    *{box-sizing:border-box}body{margin:0;background:#eef3f8;color:var(--ink);font:14px/1.55 Arial,Helvetica,sans-serif}main{max-width:1120px;margin:0 auto;padding:32px 24px 48px}");
+        builder.AppendLine("    header{border:1px solid var(--line);background:#fff;border-radius:18px;padding:28px;box-shadow:0 18px 48px rgba(23,32,51,.08)}.kicker{margin:0 0 10px;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}");
+        builder.AppendLine("    h1{margin:0;font-size:30px;line-height:1.15}h2{margin:0 0 8px;font-size:20px}p{margin:0}.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:22px}.meta div,.metric{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px}");
+        builder.AppendLine("    .label{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:4px;font-weight:700}.section{margin-top:22px;border:1px solid var(--line);border-radius:16px;background:#fff;padding:22px;break-inside:avoid}");
+        builder.AppendLine("    .summary{color:var(--muted)}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:16px}.metric strong{display:block;margin-top:4px;font-size:18px}.metric small{display:block;margin-top:4px;color:var(--muted)}");
+        builder.AppendLine("    .narrative{margin-top:16px;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:10px;padding:12px 14px}.highlights{margin:16px 0 0;padding:0;list-style:none}.highlights li{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px}");
+        builder.AppendLine("    .table-wrap{margin-top:16px;overflow:auto;border:1px solid var(--line);border-radius:12px}table{width:100%;border-collapse:collapse;min-width:640px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--panel);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}tr:last-child td{border-bottom:0}.empty{color:var(--muted);padding:12px}");
+        builder.AppendLine("    footer{margin-top:28px;color:var(--muted);font-size:12px}@media print{body{background:#fff}main{max-width:none;padding:0}header,.section{box-shadow:none;break-inside:avoid}a{color:inherit}}");
+        builder.AppendLine("  </style>");
+        builder.AppendLine("</head>");
+        builder.AppendLine("<body>");
+        builder.AppendLine("<main>");
+        builder.AppendLine("  <header>");
+        builder.AppendLine("    <p class=\"kicker\">IOC Manager Report</p>");
+        builder.Append("    <h1>").Append(Html(report.Title)).AppendLine("</h1>");
+        builder.Append("    <p class=\"summary\">").Append(Html(FormatReportType(report.ReportType))).Append(" | ").Append(Html(snapshot.Scope)).AppendLine("</p>");
+        builder.AppendLine("    <div class=\"meta\">");
+        AppendMeta(builder, "Generated UTC", report.GeneratedAtUtc.ToString("u", CultureInfo.InvariantCulture));
+        AppendMeta(builder, "Report type", FormatReportType(report.ReportType));
+        AppendMeta(builder, "Scope", snapshot.Scope);
+        AppendMeta(builder, "Scanner", snapshot.Query.ScannerFamily ?? "All");
+        AppendMeta(builder, "Severity", snapshot.Query.Severity ?? "All");
+        AppendMeta(builder, "Status", snapshot.Query.Status ?? "All");
+        AppendMeta(builder, "From UTC", snapshot.Query.FromUtc ?? "Not set");
+        AppendMeta(builder, "To UTC", snapshot.Query.ToUtc ?? "Not set");
+        builder.AppendLine("    </div>");
+        builder.AppendLine("  </header>");
 
-            return await System.IO.File.ReadAllBytesAsync(tempPath, cancellationToken);
-        }
-        finally
+        foreach (var section in snapshot.Sections)
         {
-            if (System.IO.File.Exists(tempPath))
+            builder.AppendLine("  <section class=\"section\">");
+            builder.Append("    <h2>").Append(Html(section.Title)).AppendLine("</h2>");
+            if (!string.IsNullOrWhiteSpace(section.Summary))
             {
-                System.IO.File.Delete(tempPath);
+                builder.Append("    <p class=\"summary\">").Append(Html(section.Summary)).AppendLine("</p>");
             }
+
+            if (!string.IsNullOrWhiteSpace(section.Narrative))
+            {
+                builder.Append("    <p class=\"narrative\">").Append(Html(section.Narrative)).AppendLine("</p>");
+            }
+
+            if (section.Metrics.Count > 0)
+            {
+                builder.AppendLine("    <div class=\"metrics\">");
+                foreach (var metric in section.Metrics)
+                {
+                    builder.AppendLine("      <div class=\"metric\">");
+                    builder.Append("        <span class=\"label\">").Append(Html(metric.Label)).AppendLine("</span>");
+                    builder.Append("        <strong>").Append(Html(metric.Value)).AppendLine("</strong>");
+                    if (!string.IsNullOrWhiteSpace(metric.Detail))
+                    {
+                        builder.Append("        <small>").Append(Html(metric.Detail)).AppendLine("</small>");
+                    }
+
+                    builder.AppendLine("      </div>");
+                }
+
+                builder.AppendLine("    </div>");
+            }
+
+            if (section.Highlights.Count > 0)
+            {
+                builder.AppendLine("    <ul class=\"highlights\">");
+                foreach (var highlight in section.Highlights)
+                {
+                    builder.Append("      <li>").Append(Html(highlight)).AppendLine("</li>");
+                }
+
+                builder.AppendLine("    </ul>");
+            }
+
+            foreach (var table in section.Tables)
+            {
+                builder.Append("    <h3>").Append(Html(table.Title)).AppendLine("</h3>");
+                if (table.Rows.Count == 0)
+                {
+                    builder.AppendLine("    <div class=\"table-wrap\"><p class=\"empty\">No rows matched this report scope.</p></div>");
+                    continue;
+                }
+
+                builder.AppendLine("    <div class=\"table-wrap\"><table><thead><tr>");
+                foreach (var column in table.Columns)
+                {
+                    builder.Append("      <th>").Append(Html(column.Label)).AppendLine("</th>");
+                }
+
+                builder.AppendLine("    </tr></thead><tbody>");
+                foreach (var row in table.Rows)
+                {
+                    builder.AppendLine("      <tr>");
+                    foreach (var column in table.Columns)
+                    {
+                        row.TryGetValue(column.Key, out var value);
+                        builder.Append("        <td>").Append(Html(value ?? "n/a")).AppendLine("</td>");
+                    }
+
+                    builder.AppendLine("      </tr>");
+                }
+
+                builder.AppendLine("    </tbody></table></div>");
+            }
+
+            builder.AppendLine("  </section>");
         }
+
+        builder.Append("  <footer>Exported from IOC Manager at ")
+            .Append(Html(DateTimeOffset.UtcNow.ToString("u", CultureInfo.InvariantCulture)))
+            .AppendLine(".</footer>");
+        builder.AppendLine("</main>");
+        builder.AppendLine("</body>");
+        builder.AppendLine("</html>");
+        return builder.ToString();
     }
 
-    private static (string Scope, LegacyPipelineReportQueryResponse Query, IReadOnlyList<LegacyPipelineReportSectionResponse> Sections) BuildPdfSnapshot(Report report)
+    private static HtmlReportSnapshot BuildHtmlSnapshot(Report report)
     {
         try
         {
@@ -624,24 +748,24 @@ public sealed class ReportsController : ControllerBase
                 Severity: ReadString(filters, "severity", "Severity"),
                 Status: ReadString(filters, "status", "Status"));
             var scope = ReadString(root, "scope") ?? SummarizeReportScope(query);
-            var sections = ReadLegacySections(root);
-            return (scope, query, sections.Count == 0 ? BuildFallbackPdfSections(report) : sections);
+            var sections = ReadHtmlSections(root);
+            return new HtmlReportSnapshot(scope, query, sections.Count == 0 ? BuildFallbackHtmlSections(report) : sections);
         }
         catch
         {
             var query = new LegacyPipelineReportQueryResponse(null, null, null, null, null, null, null, null);
-            return ("Stored snapshot", query, BuildFallbackPdfSections(report));
+            return new HtmlReportSnapshot("Stored snapshot", query, BuildFallbackHtmlSections(report));
         }
     }
 
-    private static IReadOnlyList<LegacyPipelineReportSectionResponse> ReadLegacySections(JsonElement root)
+    private static IReadOnlyList<HtmlReportSection> ReadHtmlSections(JsonElement root)
     {
         if (!TryGetProperty(root, out var sectionsElement, "sections") || sectionsElement.ValueKind != JsonValueKind.Array)
         {
             return [];
         }
 
-        var sections = new List<LegacyPipelineReportSectionResponse>();
+        var sections = new List<HtmlReportSection>();
         foreach (var sectionElement in sectionsElement.EnumerateArray())
         {
             if (sectionElement.ValueKind != JsonValueKind.Object)
@@ -673,48 +797,52 @@ public sealed class ReportsController : ControllerBase
                 highlights.AddRange(highlightsElement.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item))!);
             }
 
-            AddTableHighlights(sectionElement, highlights);
-
-            sections.Add(new LegacyPipelineReportSectionResponse(
+            sections.Add(new HtmlReportSection(
                 ReadString(sectionElement, "title") ?? "Report Section",
                 ReadString(sectionElement, "summary") ?? string.Empty,
                 metrics,
-                highlights));
+                highlights,
+                narrative,
+                ReadHtmlTables(sectionElement)));
         }
 
         return sections;
     }
 
-    private static void AddTableHighlights(JsonElement sectionElement, List<string> highlights)
+    private static IReadOnlyList<HtmlReportTable> ReadHtmlTables(JsonElement sectionElement)
     {
         if (!TryGetProperty(sectionElement, out var tablesElement, "tables") || tablesElement.ValueKind != JsonValueKind.Array)
         {
-            return;
+            return [];
         }
 
+        var tables = new List<HtmlReportTable>();
         foreach (var tableElement in tablesElement.EnumerateArray())
         {
             var title = ReadString(tableElement, "title") ?? "Table";
-            var columns = ReadTableColumns(tableElement);
-            highlights.Add($"{title}:");
+            var columns = ReadTableColumns(tableElement).Select(column => new HtmlReportColumn(column.Key, column.Label)).ToArray();
+            var rows = new List<IReadOnlyDictionary<string, string>>();
             if (!TryGetProperty(tableElement, out var rowsElement, "rows") || rowsElement.ValueKind != JsonValueKind.Array)
             {
+                tables.Add(new HtmlReportTable(title, columns, rows));
                 continue;
             }
 
-            foreach (var rowElement in rowsElement.EnumerateArray().Take(8))
+            foreach (var rowElement in rowsElement.EnumerateArray())
             {
                 if (!TryGetProperty(rowElement, out var valuesElement, "values") || valuesElement.ValueKind != JsonValueKind.Object)
                 {
                     continue;
                 }
 
-                var cells = columns
-                    .Select(column => $"{column.Label}: {ReadString(valuesElement, column.Key) ?? "n/a"}")
-                    .ToArray();
-                highlights.Add(string.Join(" | ", cells));
+                rows.Add(valuesElement.EnumerateObject()
+                    .ToDictionary(property => property.Name, property => JsonScalarToString(property.Value)));
             }
+
+            tables.Add(new HtmlReportTable(title, columns, rows));
         }
+
+        return tables;
     }
 
     private static IReadOnlyList<(string Key, string Label)> ReadTableColumns(JsonElement tableElement)
@@ -730,20 +858,60 @@ public sealed class ReportsController : ControllerBase
             .ToArray();
     }
 
-    private static IReadOnlyList<LegacyPipelineReportSectionResponse> BuildFallbackPdfSections(Report report)
+    private static IReadOnlyList<HtmlReportSection> BuildFallbackHtmlSections(Report report)
     {
         return
         [
-            new LegacyPipelineReportSectionResponse(
+            new HtmlReportSection(
                 "Stored Snapshot",
                 "This report was saved before structured report sections were available. The raw summary is preserved for review.",
                 [
                     new LegacyPipelineReportSectionMetricResponse("Report type", FormatReportType(report.ReportType), "Persisted report classification."),
                     new LegacyPipelineReportSectionMetricResponse("Generated", FormatUtc(report.GeneratedAtUtc), "Snapshot generation time."),
                 ],
-                [Truncate(report.SummaryJson, 1800)]),
+                [Truncate(report.SummaryJson, 1800)],
+                null,
+                []),
         ];
     }
+
+    private static void AppendMeta(StringBuilder builder, string label, string value)
+    {
+        builder.AppendLine("      <div>");
+        builder.Append("        <span class=\"label\">").Append(Html(label)).AppendLine("</span>");
+        builder.Append("        <span class=\"value\">").Append(Html(value)).AppendLine("</span>");
+        builder.AppendLine("      </div>");
+    }
+
+    private static string Html(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static string JsonScalarToString(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? string.Empty,
+        JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => value.ToString(),
+        JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+        _ => value.GetRawText(),
+    };
+
+    private sealed record HtmlReportSnapshot(
+        string Scope,
+        LegacyPipelineReportQueryResponse Query,
+        IReadOnlyList<HtmlReportSection> Sections);
+
+    private sealed record HtmlReportSection(
+        string Title,
+        string Summary,
+        IReadOnlyList<LegacyPipelineReportSectionMetricResponse> Metrics,
+        IReadOnlyList<string> Highlights,
+        string? Narrative,
+        IReadOnlyList<HtmlReportTable> Tables);
+
+    private sealed record HtmlReportTable(
+        string Title,
+        IReadOnlyList<HtmlReportColumn> Columns,
+        IReadOnlyList<IReadOnlyDictionary<string, string>> Rows);
+
+    private sealed record HtmlReportColumn(string Key, string Label);
 
     private static bool TryGetProperty(JsonElement source, out JsonElement value, params string[] names)
     {

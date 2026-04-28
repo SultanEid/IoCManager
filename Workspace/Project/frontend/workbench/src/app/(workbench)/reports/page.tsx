@@ -1,24 +1,23 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
   BarChart3,
   Clock3,
   Database,
+  Download,
   Eye,
   FileText,
-  Filter,
   FolderOpen,
-  Printer,
-  LayoutTemplate,
   ShieldCheck,
+  type LucideIcon,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { requestBlob } from "@/shared/api/client"
+import { reportTypeAccent } from "@/components/workbench/accent-tone"
 import { classifyUiError } from "@/shared/api/error-classification"
 import type { GeneratedReportResponse, GeneratedReportSectionResponse, ReportResponse, RuleFamily, TargetServerResponse } from "@/shared/api/schemas"
 import { useAuth } from "@/shared/auth/auth-provider"
@@ -33,21 +32,25 @@ const REPORT_TEMPLATES = [
     value: "ExecutiveSummary",
     label: "Executive Summary",
     description: "High-level reporting across jobs, results, and findings in the selected scope.",
+    icon: BarChart3,
   },
   {
     value: "DetailedIocReport",
     label: "Detailed IOC Report",
     description: "Scanner-heavy finding coverage grouped around rule hits and indicator counts.",
+    icon: Database,
   },
   {
     value: "TargetExposureSummary",
     label: "Target Exposure Summary",
     description: "Target inventory posture and finding linkage for selected hosts or subnets.",
+    icon: ShieldCheck,
   },
   {
     value: "ScanActivitySummary",
     label: "Scan Activity Summary",
     description: "Execution outcomes and recent result activity across the selected scope.",
+    icon: Clock3,
   },
 ] as const
 
@@ -84,6 +87,10 @@ function formatReportType(reportType: string | null | undefined) {
   }
 
   return REPORT_TYPE_LABELS[reportType] ?? reportType
+}
+
+function reportHtmlHref(reportId: string) {
+  return `/api/v2/reports/${encodeURIComponent(reportId)}/html`
 }
 
 function summarizeQuery(query: {
@@ -133,22 +140,6 @@ type ReportPreviewState =
   | { kind: "generated"; report: GeneratedReportResponse }
   | { kind: "saved"; report: ReportResponse; snapshot: ReportSnapshot }
 
-function isSectionArray(value: unknown): value is GeneratedReportSectionResponse[] {
-  return Array.isArray(value) && value.every((section) => {
-    if (typeof section !== "object" || section === null) {
-      return false
-    }
-
-    const candidate = section as Record<string, unknown>
-    return (
-      typeof candidate.title === "string"
-      && typeof candidate.summary === "string"
-      && Array.isArray(candidate.metrics)
-      && Array.isArray(candidate.highlights)
-    )
-  })
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
@@ -161,28 +152,37 @@ function normalizeReportSection(section: GeneratedReportSectionResponse): Genera
   }
 }
 
+function readValue(source: Record<string, unknown>, key: string) {
+  if (Object.prototype.hasOwnProperty.call(source, key)) {
+    return source[key]
+  }
+
+  const match = Object.keys(source).find((candidate) => candidate.toLowerCase() === key.toLowerCase())
+  return match ? source[match] : undefined
+}
+
 function readOptionalString(source: Record<string, unknown>, key: string) {
-  const value = source[key]
+  const value = readValue(source, key)
   return typeof value === "string" && value.trim().length > 0 ? value : null
 }
 
 function readOptionalBoolean(source: Record<string, unknown>, key: string) {
-  const value = source[key]
+  const value = readValue(source, key)
   return typeof value === "boolean" ? value : null
 }
 
 function readRecord(source: Record<string, unknown>, key: string) {
-  const value = source[key]
+  const value = readValue(source, key)
   return isRecord(value) ? value : null
 }
 
 function readRecords(source: Record<string, unknown>, key: string) {
-  const value = source[key]
+  const value = readValue(source, key)
   return Array.isArray(value) ? value.filter(isRecord) : []
 }
 
 function readStringList(source: Record<string, unknown>, key: string) {
-  const value = source[key]
+  const value = readValue(source, key)
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : []
 }
 
@@ -203,6 +203,38 @@ function summarizeMitigationActions(actions: Record<string, unknown>[]) {
 
 function buildScope(query: SnapshotQuery) {
   return summarizeQuery(query)
+}
+
+function readStoredSections(record: Record<string, unknown>): GeneratedReportSectionResponse[] {
+  return readRecords(record, "sections").map((section) => ({
+    title: readOptionalString(section, "title") ?? "Report Section",
+    summary: readOptionalString(section, "summary") ?? "",
+    metrics: readRecords(section, "metrics").map((metric) => ({
+      label: readOptionalString(metric, "label") ?? "Metric",
+      value: readOptionalString(metric, "value") ?? "n/a",
+      detail: readOptionalString(metric, "detail") ?? "",
+    })),
+    highlights: readStringList(section, "highlights"),
+    narrative: readOptionalString(section, "narrative"),
+    tables: readRecords(section, "tables").map((table) => ({
+      title: readOptionalString(table, "title") ?? "Table",
+      columns: readRecords(table, "columns").map((column) => ({
+        key: readOptionalString(column, "key") ?? "",
+        label: readOptionalString(column, "label") ?? readOptionalString(column, "key") ?? "Column",
+      })).filter((column) => column.key.length > 0),
+      rows: readRecords(table, "rows").map((row) => {
+        const values = readRecord(row, "values") ?? {}
+        return {
+          values: Object.fromEntries(
+            Object.entries(values).map(([key, value]) => [
+              key,
+              typeof value === "string" ? value : value == null ? "" : String(value),
+            ]),
+          ),
+        }
+      }),
+    })),
+  }))
 }
 
 function buildAegisSnapshot(report: ReportResponse, record: Record<string, unknown>): ReportSnapshot | null {
@@ -366,7 +398,7 @@ function parseReportSnapshot(report: ReportResponse, targets: TargetServerRespon
         query.targetLabel = target ? target.hostname || target.ipAddress : query.targetServerId
       }
 
-      const sections = isSectionArray(record.sections) ? record.sections.map(normalizeReportSection) : []
+      const sections = readStoredSections(record).map(normalizeReportSection)
       if (sections.length === 0) {
         return buildFallbackSnapshot(report)
       }
@@ -414,23 +446,24 @@ function BuilderMetric({
   value,
   description,
 }: {
-  icon: typeof LayoutTemplate
+  icon: LucideIcon
   label: string
   value: string
   description: string
 }) {
   return (
-    <div className="wb-metric-card">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="wb-kicker">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-        </div>
-        <span className="grid h-10 w-10 place-items-center rounded-xl border border-border/60 bg-surface-1/70 text-primary shadow-[var(--shadow-soft)]">
-          <Icon className="h-4.5 w-4.5" />
-        </span>
+    <div
+      className="inline-flex min-w-0 max-w-full items-center gap-2.5 rounded-full border border-border/55 bg-surface-1/60 px-3.5 py-2 text-sm shadow-[var(--shadow-soft)]"
+      aria-label={`${label}: ${value}. ${description}`}
+      title={description}
+    >
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border/60 bg-background/70 text-primary">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
+        <span className="ml-2 text-base font-semibold tracking-tight text-foreground">{value}</span>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
     </div>
   )
 }
@@ -445,11 +478,9 @@ export default function ReportsPage() {
   const [preview, setPreview] = useState<ReportPreviewState | null>(null)
   const [review, setReview] = useState<ReportPreviewState | null>(null)
   const [closedReviewId, setClosedReviewId] = useState<string | null>(null)
-  const [reviewPdfUrl, setReviewPdfUrl] = useState<string | null>(null)
-  const [reviewPdfLoading, setReviewPdfLoading] = useState(false)
-  const [reviewPdfError, setReviewPdfError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
+  const previewRef = useRef<HTMLElement | null>(null)
   const [form, setForm] = useState(() => {
     const range = defaultUtcRange()
     return {
@@ -464,6 +495,12 @@ export default function ReportsPage() {
       persist: true,
     }
   })
+
+  const focusPreview = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }, [])
 
   const targetsQuery = useWorkbenchQuery(["reports", "servers"], (signal) => gateway.listTargetServers(undefined, signal))
   const reportsQuery = useWorkbenchQuery(["reports", "library", refreshKey], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
@@ -489,6 +526,7 @@ export default function ReportsPage() {
       }
       const response = await gateway.generateReport(payload)
       setPreview({ kind: "generated", report: response })
+      focusPreview()
       setMessage(form.persist ? "Report generated and saved to the library." : "Preview generated without saving.")
       if (response.persistedReport) {
         setRefreshKey((value) => value + 1)
@@ -501,42 +539,21 @@ export default function ReportsPage() {
     }
   }
 
-  const clearReviewPdf = () => {
-    setReviewPdfUrl((current) => {
-      if (current) {
-        URL.revokeObjectURL(current)
-      }
-
-      return null
-    })
-    setReviewPdfLoading(false)
-    setReviewPdfError(null)
-  }
-
-  const openSavedReport = async (report: ReportResponse, targets: TargetServerResponse[]) => {
+  const openSavedReport = useCallback(async (report: ReportResponse, targets: TargetServerResponse[]) => {
     setErrorText(null)
     setMessage(null)
     setClosedReviewId(null)
     const nextReview = { kind: "saved", report, snapshot: parseReportSnapshot(report, targets) } as const
     setPreview(nextReview)
     setReview(nextReview)
-    clearReviewPdf()
+    focusPreview()
     if (isAegisMitigationReport(report)) {
       setMessage("Aegis mitigation plan opened in structured review mode.")
       return
     }
 
     setMessage("Saved report opened in review mode.")
-    setReviewPdfLoading(true)
-    try {
-      const pdf = await requestBlob(`/api/v2/reports/${report.id}/pdf`)
-      setReviewPdfUrl(URL.createObjectURL(pdf.blob))
-    } catch (error) {
-      setReviewPdfError(classifyUiError(error).message)
-    } finally {
-      setReviewPdfLoading(false)
-    }
-  }
+  }, [focusPreview])
 
   const closeReview = () => {
     if (review?.kind === "saved") {
@@ -545,7 +562,6 @@ export default function ReportsPage() {
 
     setReview(null)
     setPreview(null)
-    clearReviewPdf()
     if (requestedReviewId) {
       window.history.replaceState(null, "", "/reports")
     }
@@ -567,7 +583,6 @@ export default function ReportsPage() {
 
       if (review?.kind === "saved" && review.report.id === reportId) {
         setReview(null)
-        clearReviewPdf()
       }
 
       if (preview?.kind === "generated" && preview.report.persistedReport?.id === reportId) {
@@ -606,15 +621,26 @@ export default function ReportsPage() {
       return
     }
 
-    const report = reportsQuery.data?.items.find((item) => item.id === requestedReviewId)
-    if (!report) {
-      return
-    }
+    const controller = new AbortController()
+    void (async () => {
+      const report = reportsQuery.data?.items.find((item) => item.id === requestedReviewId)
+        ?? await gateway.getReport(requestedReviewId, controller.signal)
+      if (controller.signal.aborted) {
+        return
+      }
 
-    setClosedReviewId(null)
-    void openSavedReport(report, targetsQuery.data ?? [])
+      setClosedReviewId(null)
+      await openSavedReport(report, targetsQuery.data ?? [])
+    })().catch((error) => {
+      if (!controller.signal.aborted) {
+        setErrorText(classifyUiError(error).message)
+      }
+    })
+
+    return () => controller.abort()
   }, [
     closedReviewId,
+    openSavedReport,
     requestedReviewId,
     reportsQuery.data,
     reportsQuery.isError,
@@ -658,7 +684,8 @@ export default function ReportsPage() {
   const reviewQuery = review?.kind === "saved" ? review.snapshot.query : generatedQuery
   const reviewGeneratedAt = review?.kind === "saved" ? review.report.generatedAtUtc : review?.report.generatedAtUtc
   const reviewIsAegisPlan = review?.kind === "saved" ? isAegisMitigationReport(review.report) : false
-  const printReport = () => window.print()
+  const previewExportReportId = preview?.kind === "saved" ? preview.report.id : preview?.report.persistedReport?.id
+  const reviewExportReportId = review?.kind === "saved" ? review.report.id : review?.report.persistedReport?.id
 
   return (
     <section className="wb-page">
@@ -679,128 +706,173 @@ export default function ReportsPage() {
         </div>
       </header>
 
-      <article className="wb-hero space-y-5">
-        <div className="space-y-1">
-          <p className="wb-kicker">Report Builder</p>
-          <p className="text-sm text-muted-foreground">Choose a report type, set scope, generate a preview, then save the snapshot when it is ready.</p>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-3">
-          <BuilderMetric icon={LayoutTemplate} label="Templates" value={String(REPORT_TEMPLATES.length)} description="Executive, IOC, target, and scan-focused modes." />
-          <BuilderMetric icon={FolderOpen} label="Saved Reports" value={String(reports.length)} description="Stored snapshots in the library." />
-          <BuilderMetric icon={Clock3} label="Default Window" value="7 days" description="UTC scope before custom filtering." />
-        </div>
-
-        <div className="grid gap-3 xl:grid-cols-2">
-          {REPORT_TEMPLATES.map((template) => {
-            const active = form.reportType === template.value
-            return (
-              <button
-                key={template.value}
-                type="button"
-                onClick={() => setForm((current) => ({ ...current, reportType: template.value }))}
-                className={`rounded-2xl border px-4 py-4 text-left transition ${
-                  active
-                    ? "border-sky-300/60 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--primary)_18%,transparent),color-mix(in_srgb,var(--surface-2)_84%,transparent))] shadow-[var(--shadow-emphasis)]"
-                    : "border-border/70 bg-surface-2/45 hover:border-border hover:bg-surface-2/60"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{template.label}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{template.description}</p>
-                  </div>
-                  <span className="grid h-9 w-9 place-items-center rounded-xl border border-border/60 bg-surface-1/70 text-primary">
-                    <BarChart3 className="h-4 w-4" />
-                  </span>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="wb-filter-bar space-y-3">
+      <article className="wb-panel space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/55 pb-4">
+          <div className="space-y-1">
+            <p className="wb-kicker">Report Builder</p>
+            <p className="max-w-3xl text-sm text-muted-foreground">Choose a report type, scope the evidence, preview the report, then export saved snapshots as clean HTML.</p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="wb-chip">
-              <Filter className="h-3.5 w-3.5" />
-              Scope and Export Controls
-            </span>
-            <span className="wb-chip">
-              <Database className="h-3.5 w-3.5" />
-              Snapshot-backed Outputs
-            </span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_minmax(240px,1fr)_minmax(220px,0.9fr)]">
-          <Input
-            placeholder="Optional report title"
-            value={form.title}
-            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-          />
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.scannerFamily}
-            onChange={(event) => setForm((current) => ({ ...current, scannerFamily: event.target.value }))}
-          >
-            <option value="">All scanner families</option>
-            <option value="YARA">YARA</option>
-            <option value="SIGMA">SIGMA</option>
-            <option value="SNORT">SNORT</option>
-            <option value="SURICATA">SURICATA</option>
-          </select>
-          <label className="flex items-center gap-2 rounded-lg border border-border/70 bg-surface-1 px-3 text-sm">
-            <input
-              type="checkbox"
-              checked={form.persist}
-              onChange={(event) => setForm((current) => ({ ...current, persist: event.target.checked }))}
-            />
-            <span>{form.persist ? "Save snapshot in library" : "Preview only"}</span>
-          </label>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.targetId}
-            onChange={(event) => setForm((current) => ({ ...current, targetId: event.target.value }))}
-          >
-            <option value="">All targets</option>
-            {targets.map((target) => <option key={target.id} value={target.id}>{target.hostname || target.ipAddress}</option>)}
-          </select>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.severity}
-            onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value }))}
-          >
-            <option value="">All severities</option>
-            {SEVERITY_OPTIONS.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
-          </select>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,0.9fr)_minmax(220px,0.9fr)_minmax(220px,0.9fr)]">
-          <Input
-            placeholder="From UTC (ISO-8601)"
-            value={form.fromUtc}
-            onChange={(event) => setForm((current) => ({ ...current, fromUtc: event.target.value }))}
-          />
-          <Input
-            placeholder="To UTC (ISO-8601)"
-            value={form.toUtc}
-            onChange={(event) => setForm((current) => ({ ...current, toUtc: event.target.value }))}
-          />
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.status}
-            onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
-          >
-            <option value="">All alert statuses</option>
-            {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-          </select>
+            <BuilderMetric icon={FolderOpen} label="Saved" value={String(reports.length)} description="Stored snapshots in the library." />
+            <BuilderMetric icon={Clock3} label="Window" value="7d" description="UTC scope before custom filtering." />
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+          <section className="space-y-3" aria-labelledby="report-type-heading">
+            <div>
+              <h3 id="report-type-heading" className="text-sm font-semibold text-foreground">Report type</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Pick the structure analysts will review before export.</p>
+            </div>
+            <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-1">
+              {REPORT_TEMPLATES.map((template) => {
+                const active = form.reportType === template.value
+                const TemplateIcon = template.icon
+                const accent = reportTypeAccent(template.value)
+                return (
+                  <button
+                    key={template.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setForm((current) => ({ ...current, reportType: template.value }))}
+                    className={`group relative min-h-[128px] overflow-hidden rounded-2xl border px-5 py-4 text-left transition ${
+                      active
+                        ? "border-primary/55 bg-surface-2/72 shadow-[var(--shadow-emphasis)]"
+                        : "border-border/70 bg-surface-2/42 hover:border-primary/28 hover:bg-surface-2/60"
+                    }`}
+                  >
+                    <span className={`absolute inset-y-0 left-0 w-1 ${active ? accent.rail : "bg-border/45 group-hover:bg-primary/45"}`} aria-hidden="true" />
+                    <div className="flex h-full items-start gap-4">
+                      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition ${
+                        active ? accent.icon : "border-border/60 bg-surface-1/70 text-muted-foreground group-hover:border-primary/25 group-hover:text-primary"
+                      }`}>
+                        <TemplateIcon className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-lg font-semibold leading-tight text-foreground">{template.label}</p>
+                          {active ? <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${accent.chip}`}>Selected</span> : null}
+                        </div>
+                        <p className="mt-3 max-w-[42rem] text-sm leading-6 text-muted-foreground">{template.description}</p>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-border/65 bg-surface-2/40 p-4 shadow-[var(--shadow-soft)]" aria-labelledby="scope-output-heading">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 id="scope-output-heading" className="text-sm font-semibold text-foreground">Scope and output</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Constrain report evidence without leaving the builder.</p>
+              </div>
+              <span className="wb-chip">
+                <Database className="h-3.5 w-3.5" />
+                HTML snapshots
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Title</span>
+                <Input
+                  placeholder="Optional report title"
+                  value={form.title}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                />
+              </label>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Scanner</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.scannerFamily}
+                    onChange={(event) => setForm((current) => ({ ...current, scannerFamily: event.target.value }))}
+                  >
+                    <option value="">All scanner families</option>
+                    <option value="YARA">YARA</option>
+                    <option value="SIGMA">SIGMA</option>
+                    <option value="SNORT">SNORT</option>
+                    <option value="SURICATA">SURICATA</option>
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Target</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.targetId}
+                    onChange={(event) => setForm((current) => ({ ...current, targetId: event.target.value }))}
+                  >
+                    <option value="">All targets</option>
+                    {targets.map((target) => <option key={target.id} value={target.id}>{target.hostname || target.ipAddress}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Severity</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.severity}
+                    onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value }))}
+                  >
+                    <option value="">All severities</option>
+                    {SEVERITY_OPTIONS.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Alert status</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.status}
+                    onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+                  >
+                    <option value="">All alert statuses</option>
+                    {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">From UTC</span>
+                  <Input
+                    placeholder="ISO-8601"
+                    value={form.fromUtc}
+                    onChange={(event) => setForm((current) => ({ ...current, fromUtc: event.target.value }))}
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">To UTC</span>
+                  <Input
+                    placeholder="ISO-8601"
+                    value={form.toUtc}
+                    onChange={(event) => setForm((current) => ({ ...current, toUtc: event.target.value }))}
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-surface-1/60 px-3 py-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.persist}
+                    onChange={(event) => setForm((current) => ({ ...current, persist: event.target.checked }))}
+                  />
+                  <span>{form.persist ? "Save snapshot in library for HTML export" : "Preview only without saving"}</span>
+                </label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-t border-border/55 pt-4">
           <Button onClick={generate} disabled={generating}>
-            {generating ? "Generating..." : "Generate Report"}
+            {generating ? "Building preview..." : "Preview report"}
           </Button>
           <Button type="button" variant="outline" onClick={resetLastSevenDays}>
             Reset to last 7 days
@@ -810,22 +882,33 @@ export default function ReportsPage() {
         </div>
       </article>
 
-      <article className="wb-reading-surface space-y-5">
+      <article ref={previewRef} className="wb-reading-surface scroll-mt-28 space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="wb-kicker">Preview</p>
-            <p className="text-sm text-muted-foreground">Inspect the transient preview or reopen a persisted snapshot from the saved library.</p>
+            <p className="text-sm text-muted-foreground">Review the structured report in the workspace before exporting a saved HTML file.</p>
           </div>
           {preview ? (
-            <Button type="button" variant="outline" onClick={printReport}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print / Export
-            </Button>
+            previewExportReportId ? (
+              <a
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                href={reportHtmlHref(previewExportReportId)}
+                download
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export HTML
+              </a>
+            ) : (
+              <Button type="button" variant="outline" disabled>
+                <Download className="mr-2 h-4 w-4" />
+                Save snapshot to export HTML
+              </Button>
+            )
           ) : null}
         </div>
 
         {!preview ? (
-          <EmptyState title="No preview yet" description="Generate a report or open a saved snapshot to inspect the report sections." />
+          <EmptyState title="No preview yet" description="Preview a report or open a saved snapshot to inspect the report sections." />
         ) : (
           <div className="space-y-4">
             <div className="relative overflow-hidden rounded-[1.8rem] border border-border/70 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--primary)_10%,transparent),color-mix(in_srgb,var(--surface-2)_88%,transparent)_30%,color-mix(in_srgb,var(--surface-1)_86%,transparent))] p-5 shadow-[var(--shadow-panel)]">
@@ -862,7 +945,7 @@ export default function ReportsPage() {
                   </div>
                 ) : null}
 
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                   {section.metrics.map((metric) => (
                     <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
                       <p className="wb-kicker">{metric.label}</p>
@@ -929,7 +1012,7 @@ export default function ReportsPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="wb-kicker">Saved Library</p>
-            <p className="text-sm text-muted-foreground">Persisted report snapshots stay here until you delete them. Opening a saved report uses the stored snapshot instead of regenerating from live data.</p>
+            <p className="text-sm text-muted-foreground">Saved snapshots can be previewed in the workspace and exported as standalone HTML files.</p>
           </div>
           <span className="wb-chip">
             <FolderOpen className="h-3.5 w-3.5" />
@@ -938,10 +1021,11 @@ export default function ReportsPage() {
         </div>
 
         {reports.length === 0 ? (
-          <EmptyState title="No saved reports" description="Persisted report snapshots will appear here after generation." />
+          <EmptyState title="No saved reports" description="Saved report snapshots will appear here after preview generation with saving enabled." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-sm">
+          <>
+          <div className="hidden overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
               <thead className="text-left text-xs uppercase tracking-[0.18em] text-muted-foreground">
                 <tr>
                   <th className="pb-3">Title</th>
@@ -977,8 +1061,15 @@ export default function ReportsPage() {
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2">
                           <Button type="button" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
-                            Open
+                            Preview
                           </Button>
+                          <a
+                            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                            href={reportHtmlHref(report.id)}
+                            download
+                          >
+                            Export HTML
+                          </a>
                           {aegisPlan || isAegisPlan ? (
                             <Link
                               className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
@@ -998,6 +1089,60 @@ export default function ReportsPage() {
               </tbody>
             </table>
           </div>
+          <div className="grid gap-3">
+            {reports.map((report) => {
+              const snapshot = parseReportSnapshot(report, targets)
+              const deleting = deletingReportId === report.id
+              const aegisPlan = aegisPlanBySourceReportId.get(report.id)
+              const isAegisPlan = isAegisMitigationReport(report)
+              const accent = reportTypeAccent(report.reportType)
+              return (
+                <div key={report.id} className="relative overflow-hidden rounded-2xl border border-border/65 bg-surface-1/60 p-4 transition-colors hover:border-primary/25 hover:bg-surface-1/75">
+                  <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-foreground">{report.title}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className={`inline-flex rounded-md border px-2 py-0.5 ${accent.chip}`}>{formatReportType(report.reportType)}</span>
+                        <span>{formatUtc(report.createdAtUtc)}</span>
+                      </div>
+                    </div>
+                    {aegisPlan || isAegisPlan ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-2 py-1 text-[11px] font-medium text-emerald-200">
+                        <ShieldCheck className="h-3 w-3" />
+                        Aegis
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">{snapshot.scope}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
+                      Preview
+                    </Button>
+                    <a
+                      className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                      href={reportHtmlHref(report.id)}
+                      download
+                    >
+                      Export HTML
+                    </a>
+                    {aegisPlan || isAegisPlan ? (
+                      <Link
+                        className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                        href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
+                      >
+                        Aegis
+                      </Link>
+                    ) : null}
+                    <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={deleting}>
+                      {deleting ? "Deleting..." : "Delete"}
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          </>
         )}
       </article>
 
@@ -1012,10 +1157,16 @@ export default function ReportsPage() {
                 <p className="mt-1 text-xs text-muted-foreground">{formatUtc(reviewGeneratedAt)}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={printReport}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print / Export
-                </Button>
+                {reviewExportReportId ? (
+                  <a
+                    className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                    href={reportHtmlHref(reviewExportReportId)}
+                    download
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export HTML
+                  </a>
+                ) : null}
                 <Button type="button" variant="outline" onClick={closeReview} aria-label="Close report review">
                   <X className="mr-2 h-4 w-4" />
                   Close
@@ -1028,30 +1179,9 @@ export default function ReportsPage() {
                 {summarizeQuery(reviewQuery ?? {})}
               </div>
 
-              {review.kind === "saved" && !reviewIsAegisPlan ? (
-                <section className="mb-5 overflow-hidden rounded-2xl border border-border/65 bg-surface-2/45">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/55 px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold">PDF Preview</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Rendered from the stored report snapshot.</p>
-                    </div>
-                    {reviewPdfLoading ? <span className="text-xs text-muted-foreground">Rendering PDF...</span> : null}
-                  </div>
-                  {reviewPdfError ? (
-                    <div className="px-4 py-4 text-sm text-rose-700 dark:text-rose-300">{reviewPdfError}</div>
-                  ) : reviewPdfUrl ? (
-                    <iframe
-                      title={`${reviewTitle ?? "Report"} PDF preview`}
-                      src={reviewPdfUrl}
-                      className="h-[72vh] w-full bg-white"
-                    />
-                  ) : (
-                    <div className="px-4 py-4 text-sm text-muted-foreground">Preparing PDF preview.</div>
-                  )}
-                </section>
-              ) : review.kind === "saved" && reviewIsAegisPlan ? (
+              {review.kind === "saved" && reviewIsAegisPlan ? (
                 <section className="mb-5 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-                  Aegis mitigation plans are shown as structured recommendations below instead of a generic PDF iframe. Use Print / Export to export this view.
+                  Aegis mitigation plans are shown as structured recommendations below. Export HTML to preserve this report as a standalone file.
                 </section>
               ) : null}
 
@@ -1069,7 +1199,7 @@ export default function ReportsPage() {
                       </div>
                     ) : null}
 
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                       {section.metrics.map((metric) => (
                         <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
                           <p className="wb-kicker">{metric.label}</p>

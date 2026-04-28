@@ -10,7 +10,15 @@ public sealed record CreateAlertRequest(
     string ActorUserId);
 
 public sealed record UpdateAlertStatusRequest(string Status, string ActorUserId);
+public sealed record UpdateAlertIocStatusRequest(string Status, string ActorUserId);
 public sealed record LinkAlertScanResultRequest(Guid ScanResultId, string ActorUserId);
+
+public sealed record AlertProgressResponse(
+    int TotalIocs,
+    int OpenCount,
+    int InReviewCount,
+    int CompletedCount,
+    int PercentComplete);
 
 public sealed record AlertResponse(
     Guid Id,
@@ -25,6 +33,7 @@ public sealed record AlertResponse(
     string TargetDisplay,
     string RuleName,
     int LinkedIocCount,
+    AlertProgressResponse Progress,
     DateTimeOffset FirstDetectedAtUtc,
     DateTimeOffset LastDetectedAtUtc,
     DateTimeOffset CreatedAtUtc,
@@ -41,6 +50,9 @@ public sealed record AlertLinkedIocResponse(
     string IndicatorValue,
     string IndicatorKind,
     string Severity,
+    string Status,
+    DateTimeOffset StatusUpdatedAtUtc,
+    string StatusUpdatedByUserId,
     DateTimeOffset TimestampUtc,
     string? RawPayload,
     AlertLinkedIocYaraDetailResponse? YaraDetail,
@@ -76,6 +88,7 @@ public sealed record AlertDetailResponse(
     string TargetDisplay,
     string RuleName,
     int LinkedIocCount,
+    AlertProgressResponse Progress,
     DateTimeOffset FirstDetectedAtUtc,
     DateTimeOffset LastDetectedAtUtc,
     DateTimeOffset CreatedAtUtc,

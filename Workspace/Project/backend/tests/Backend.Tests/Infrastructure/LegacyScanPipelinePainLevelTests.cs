@@ -1,4 +1,5 @@
 using Backend.Api.Infrastructure;
+using Backend.Domain.IocManager;
 using Backend.Infrastructure.Compatibility.LegacyAzure;
 using FluentAssertions;
 
@@ -19,6 +20,18 @@ public sealed class LegacyScanPipelinePainLevelTests
             });
 
         ResolvePainLevel(ioc).Should().Be("Hash");
+    }
+
+    [Fact]
+    public void ExtractYaraFileHash_ReadsPayloadHash()
+    {
+        const string rawPayload = """
+            {"rule":"IOCManager_ZombieVM_Mixed_Indicators","file":"C:\\IOC\\ZombieVM\\configs\\bluefin.json","strings":[],"file_hash":"30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9"}
+            """;
+
+        LegacyScanPipelineService.ExtractYaraFileHash(rawPayload)
+            .Should()
+            .Be("30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9");
     }
 
     [Fact]
@@ -99,11 +112,166 @@ public sealed class LegacyScanPipelinePainLevelTests
         ResolvePainLevel(ioc).Should().Be("IP");
     }
 
+    [Fact]
+    public void BuildFindingAlertCandidates_IncludesEverySupportedFinding()
+    {
+        var target = new LegacyPipelineTargetEntity
+        {
+            TargetId = 159,
+            DisplayName = "Zombie",
+            IPAddress = "192.168.207.130",
+        };
+        var yaraFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            "YARA",
+            "Zombie",
+            "Windows",
+            "IOCManager_ZombieVM_Mixed_Indicators",
+            "{}",
+            new LegacyPipelinePersistedYaraDetail(@"C:\IOC\bluefin.json", "30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9"),
+            null,
+            null);
+        var lowNetworkFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            "SURICATA",
+            "Zombie",
+            "Windows",
+            "Low priority network match",
+            "{}",
+            null,
+            null,
+            new LegacyPipelinePersistedNetworkDetail("192.168.207.130", "203.0.113.25", "tcp", "Low", 42));
+
+        var candidates = LegacyScanPipelineService.BuildFindingAlertCandidates(target, [yaraFinding, lowNetworkFinding]);
+
+        candidates.Should().HaveCount(2);
+        candidates.Should().Contain(candidate => candidate.Ioc.Id == yaraFinding.Id && candidate.Severity == AlertSeverity.Medium);
+        candidates.Should().Contain(candidate => candidate.Ioc.Id == lowNetworkFinding.Id && candidate.Severity == AlertSeverity.Low);
+    }
+
+    [Fact]
+    public void CreateScanResultAlert_GroupsSupportedFindingsIntoOneCase()
+    {
+        var target = BuildAlertTarget();
+        var firstFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.Parse("2026-04-20T00:00:00Z"),
+            "SIGMA",
+            "Zombie",
+            "Windows",
+            "IOCManager_ZombieVM_Mixed_Indicators",
+            "{}",
+            null,
+            new LegacyPipelinePersistedSigmaDetail("process_creation", "Medium", "cmd.exe /c bluefin"),
+            null);
+        var highSigmaFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.Parse("2026-04-20T00:03:00Z"),
+            "SIGMA",
+            "Zombie",
+            "Windows",
+            "Suspicious PowerShell",
+            "{}",
+            null,
+            new LegacyPipelinePersistedSigmaDetail("process_creation", "High", "powershell -nop"),
+            null);
+        var lowSigmaFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.Parse("2026-04-20T00:01:00Z"),
+            "SIGMA",
+            "Zombie",
+            "Windows",
+            "Low priority process match",
+            "{}",
+            null,
+            new LegacyPipelinePersistedSigmaDetail("process_creation", "Low", "whoami.exe"),
+            null);
+        var candidates = LegacyScanPipelineService.BuildFindingAlertCandidates(
+            target,
+            [firstFinding, highSigmaFinding, lowSigmaFinding]);
+
+        var alert = LegacyScanPipelineService.CreateScanResultAlert(
+            target.TargetId,
+            jobId: 44,
+            resultId: 159,
+            candidates,
+            DateTimeOffset.Parse("2026-04-20T00:05:00Z"));
+
+        candidates.Should().HaveCount(3);
+        alert.Title.Should().Be("SIGMA findings on Zombie (192.168.207.130) (job 44, result 159)");
+        alert.Severity.Should().Be(AlertSeverity.High);
+        alert.RuleName.Should().Be("Multiple rules");
+        alert.Summary.Should().Contain("3 IOC finding(s)");
+        alert.Summary.Should().Contain("Highest severity: High");
+        alert.Summary.Should().Contain("Suspicious PowerShell");
+        alert.FirstDetectedAtUtc.Should().Be(DateTimeOffset.Parse("2026-04-20T00:00:00Z"));
+        alert.LastDetectedAtUtc.Should().Be(DateTimeOffset.Parse("2026-04-20T00:03:00Z"));
+    }
+
+    [Fact]
+    public void CreateScanResultAlert_OneFindingKeepsRuleName()
+    {
+        var target = BuildAlertTarget();
+        var finding = BuildPersistedYaraIoc("IOCManager_ZombieVM_Mixed_Indicators", DateTimeOffset.Parse("2026-04-20T00:00:00Z"));
+        var candidates = LegacyScanPipelineService.BuildFindingAlertCandidates(target, [finding]);
+
+        var alert = LegacyScanPipelineService.CreateScanResultAlert(
+            target.TargetId,
+            jobId: null,
+            resultId: 159,
+            candidates,
+            DateTimeOffset.Parse("2026-04-20T00:05:00Z"));
+
+        alert.Title.Should().Be("YARA findings on Zombie (192.168.207.130) (result 159)");
+        alert.RuleName.Should().Be("IOCManager_ZombieVM_Mixed_Indicators");
+        alert.Severity.Should().Be(AlertSeverity.Medium);
+    }
+
+    [Fact]
+    public void ExcludeLinkedCandidates_SkipsAlreadyLinkedIocs()
+    {
+        var target = BuildAlertTarget();
+        var firstFinding = BuildPersistedYaraIoc("First rule", DateTimeOffset.Parse("2026-04-20T00:00:00Z"));
+        var secondFinding = BuildPersistedYaraIoc("Second rule", DateTimeOffset.Parse("2026-04-20T00:01:00Z"));
+        var candidates = LegacyScanPipelineService.BuildFindingAlertCandidates(target, [firstFinding, secondFinding]);
+
+        var remaining = LegacyScanPipelineService.ExcludeLinkedCandidates(candidates, new HashSet<Guid> { firstFinding.Id });
+        var allLinked = LegacyScanPipelineService.ExcludeLinkedCandidates(
+            candidates,
+            new HashSet<Guid> { firstFinding.Id, secondFinding.Id });
+
+        remaining.Should().ContainSingle(candidate => candidate.Ioc.Id == secondFinding.Id);
+        allLinked.Should().BeEmpty();
+    }
+
     private static string ResolvePainLevel(LegacyPipelineIocEntity ioc)
     {
         var (indicatorValue, indicatorKind) = LegacyScanPipelineService.ResolveIndicator(ioc);
         return LegacyScanPipelineService.ResolvePainLevel(ioc, indicatorValue, indicatorKind);
     }
+
+    private static LegacyPipelineTargetEntity BuildAlertTarget()
+        => new()
+        {
+            TargetId = 159,
+            DisplayName = "Zombie",
+            IPAddress = "192.168.207.130",
+        };
+
+    private static LegacyPipelinePersistedIoc BuildPersistedYaraIoc(string ruleName, DateTimeOffset timestampUtc)
+        => new(
+            Guid.NewGuid(),
+            timestampUtc,
+            "YARA",
+            "Zombie",
+            "Windows",
+            ruleName,
+            "{}",
+            new LegacyPipelinePersistedYaraDetail(@"C:\IOC\bluefin.json", "30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9"),
+            null,
+            null);
 
     private static LegacyPipelineIocEntity BuildIoc(
         string scannerType,

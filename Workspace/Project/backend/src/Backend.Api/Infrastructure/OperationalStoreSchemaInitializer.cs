@@ -49,6 +49,19 @@ public sealed class OperationalStoreSchemaInitializer : IOperationalStoreSchemaI
             "IF COL_LENGTH('dbo.job_run_records', 'Details') IS NULL ALTER TABLE dbo.job_run_records ADD Details nvarchar(2000) NOT NULL CONSTRAINT DF_job_run_records_Details DEFAULT('');",
             "IF COL_LENGTH('dbo.job_run_records', 'RowVersion') IS NULL ALTER TABLE dbo.job_run_records ADD RowVersion rowversion NOT NULL;",
             """
+            IF OBJECT_ID('dbo.ai_decision_requests', 'U') IS NOT NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM sys.columns
+                    WHERE object_id = OBJECT_ID('dbo.ai_decision_requests')
+                        AND name = 'IocValue'
+                        AND max_length <> -1
+                )
+            BEGIN
+                ALTER TABLE dbo.ai_decision_requests ALTER COLUMN IocValue nvarchar(max) NOT NULL;
+            END;
+            """,
+            """
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_job_run_records_JobType_StartedAtUtc' AND object_id = OBJECT_ID('dbo.job_run_records'))
                 CREATE INDEX IX_job_run_records_JobType_StartedAtUtc ON dbo.job_run_records (JobType, StartedAtUtc);
             """,

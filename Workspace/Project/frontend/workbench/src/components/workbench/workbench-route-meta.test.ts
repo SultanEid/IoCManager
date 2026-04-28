@@ -5,21 +5,21 @@ describe("resolveWorkbenchRoute", () => {
   it("normalizes legacy investigation routes to alerts", () => {
     const resolved = resolveWorkbenchRoute("/graph-relationships")
     expect(resolved.canonicalPath).toBe("/alerts")
-    expect(resolved.title).toBe("Alert Registry")
+    expect(resolved.title).toBe("Investigation Cases")
     expect(resolved.module).toBe("Core")
   })
 
-  it("builds alert breadcrumbs for alert detail routes", () => {
+  it("builds case breadcrumbs for alert detail routes", () => {
     const alertId = "f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69"
     const resolved = resolveWorkbenchRoute(`/alerts/${alertId}`)
 
     expect(resolved.caseId).toBe(alertId)
     expect(resolved.breadcrumbs.map((item) => item.label)).toEqual([
       "Core",
-      "Alerts",
-      "Alert f13a8eba",
+      "Cases",
+      "Case f13a8eba",
     ])
-    expect(resolved.title).toContain("Alert f13a8eba")
+    expect(resolved.title).toContain("Case f13a8eba")
   })
 
   it("maps legacy case subroutes to canonical alert detail", () => {
@@ -27,7 +27,7 @@ describe("resolveWorkbenchRoute", () => {
     const resolved = resolveWorkbenchRoute(`/cases/${alertId}/decision-trace`)
 
     expect(resolved.canonicalPath).toBe(`/alerts/${alertId}`)
-    expect(resolved.module).toBe("Alert")
+    expect(resolved.module).toBe("Case")
   })
 
   it("resolves rules subroutes with operation breadcrumbs", () => {

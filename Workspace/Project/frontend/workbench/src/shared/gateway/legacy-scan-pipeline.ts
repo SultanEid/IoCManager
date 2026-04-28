@@ -263,8 +263,7 @@ const reportRecordSchema = z.object({
   reportType: z.string(),
   scope: z.string(),
   createdAtUtc: z.string(),
-  pdfDownloadPath: z.string().nullable(),
-  csvDownloadPath: z.string().nullable(),
+  htmlDownloadPath: z.string().nullable(),
   status: z.string(),
 })
 
@@ -297,8 +296,7 @@ const reportDetailSchema = z.object({
   createdAtUtc: z.string(),
   query: reportQuerySchema,
   sections: z.array(sectionSchema),
-  pdfDownloadPath: z.string().nullable(),
-  csvDownloadPath: z.string().nullable(),
+  htmlDownloadPath: z.string().nullable(),
   status: z.string(),
 })
 

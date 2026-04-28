@@ -72,6 +72,23 @@ describe("MockGateway Zira demo mode", () => {
     expect(runSummary.targetExecutions.length).toBeGreaterThan(0)
   })
 
+  it("returns persisted Aegis mitigation reports by id", async () => {
+    const localGateway = new MockGateway()
+    const generated = await localGateway.generateReportMitigation({
+      sourceName: "demo report",
+      sourceType: "bulletin",
+      documentText: "indicator: example.test",
+      includeWorkspaceContext: true,
+      actorUserId: "analyst-1",
+    })
+
+    const reportId = generated.persistedMitigationReport!.id
+    const report = await localGateway.getReport(reportId)
+
+    expect(report.id).toBe(reportId)
+    expect(report.summaryJson).toContain("aegisMitigationPlanVersion")
+  })
+
   it("returns distinct family-specific mock proposals and results", async () => {
     const families = [
       {

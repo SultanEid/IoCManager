@@ -2,26 +2,35 @@ using Backend.Contracts.V2;
 using Backend.Infrastructure.Configuration;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Backend.Api.Infrastructure;
 
 public interface IPowerBiVisualizationCatalogService
 {
     PowerBiVisualizationCatalogResponse BuildCatalog(ClaimsPrincipal user);
+    Task<PowerBiVisualizationCatalogResponse> BuildCatalogAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
 }
 
 public sealed class PowerBiVisualizationCatalogService : IPowerBiVisualizationCatalogService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IOptionsMonitor<PowerBiVisualizationOptions> _optionsMonitor;
     private readonly IWebHostEnvironment _environment;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     public PowerBiVisualizationCatalogService(
         IOptionsMonitor<PowerBiVisualizationOptions> optionsMonitor,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        IHttpClientFactory httpClientFactory)
     {
         _optionsMonitor = optionsMonitor;
         _environment = environment;
+        _httpClientFactory = httpClientFactory;
     }
 
     public PowerBiVisualizationCatalogResponse BuildCatalog(ClaimsPrincipal user)
@@ -83,6 +92,45 @@ public sealed class PowerBiVisualizationCatalogService : IPowerBiVisualizationCa
             visualizations);
     }
 
+    public async Task<PowerBiVisualizationCatalogResponse> BuildCatalogAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var options = _optionsMonitor.CurrentValue;
+        var catalog = BuildCatalog(user);
+        if (!CanGenerateEmbedTokens(options) || catalog.Visualizations.Count == 0)
+        {
+            return catalog;
+        }
+
+        var apiToken = await AcquirePowerBiApiTokenAsync(options, cancellationToken);
+        var tokenizedVisualizations = new List<PowerBiVisualizationResponse>(catalog.Visualizations.Count);
+        foreach (var visualization in catalog.Visualizations)
+        {
+            if (!visualization.IsConfigured)
+            {
+                tokenizedVisualizations.Add(visualization);
+                continue;
+            }
+
+            var embedToken = await GenerateReportEmbedTokenAsync(options, apiToken, visualization, cancellationToken);
+            tokenizedVisualizations.Add(visualization with
+            {
+                EmbedToken = embedToken.Token,
+                EmbedTokenExpiresAtUtc = embedToken.Expiration,
+                RequiresUserSignIn = false,
+                TokenType = "Embed",
+            });
+        }
+
+        return catalog with
+        {
+            Status = tokenizedVisualizations.Any(item => !string.IsNullOrWhiteSpace(item.EmbedToken))
+                ? "configured"
+                : catalog.Status,
+            Message = "Power BI embeds are served with app-owned embed tokens and will refresh before token expiry.",
+            Visualizations = tokenizedVisualizations,
+        };
+    }
+
     private static PowerBiVisualizationResponse CreateVisualization(
         PowerBiWorkspaceOptions workspace,
         PowerBiReportOptions report,
@@ -113,7 +161,80 @@ public sealed class PowerBiVisualizationCatalogService : IPowerBiVisualizationCa
             isConfigured,
             report.IsDefault,
             Math.Max(480, report.EmbedHeightPx),
-            report.Tags);
+            report.Tags,
+            EmbedToken: null,
+            EmbedTokenExpiresAtUtc: null,
+            TokenType: "Iframe");
+    }
+
+    private static bool CanGenerateEmbedTokens(PowerBiVisualizationOptions options)
+    {
+        return options.Enabled
+            && !string.IsNullOrWhiteSpace(options.TenantId)
+            && !string.IsNullOrWhiteSpace(options.ClientId)
+            && !string.IsNullOrWhiteSpace(options.ClientSecret);
+    }
+
+    private async Task<string> AcquirePowerBiApiTokenAsync(PowerBiVisualizationOptions options, CancellationToken cancellationToken)
+    {
+        var authorityHost = options.AuthorityHost.TrimEnd('/');
+        var tokenEndpoint = $"{authorityHost}/{Uri.EscapeDataString(options.TenantId.Trim())}/oauth2/v2.0/token";
+        using var request = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["client_id"] = options.ClientId,
+                ["client_secret"] = options.ClientSecret,
+                ["scope"] = options.PowerBiApiScope,
+                ["grant_type"] = "client_credentials",
+            }),
+        };
+
+        using var response = await _httpClientFactory.CreateClient().SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Power BI Microsoft Entra token request failed with HTTP {(int)response.StatusCode}.");
+        }
+
+        var token = JsonSerializer.Deserialize<EntraTokenResponse>(responseBody, JsonOptions);
+        if (string.IsNullOrWhiteSpace(token?.AccessToken))
+        {
+            throw new InvalidOperationException("Power BI Microsoft Entra token response did not include an access token.");
+        }
+
+        return token.AccessToken;
+    }
+
+    private async Task<PowerBiEmbedTokenResponse> GenerateReportEmbedTokenAsync(
+        PowerBiVisualizationOptions options,
+        string apiToken,
+        PowerBiVisualizationResponse visualization,
+        CancellationToken cancellationToken)
+    {
+        var apiBaseUrl = options.PowerBiApiBaseUrl.TrimEnd('/');
+        var endpoint =
+            $"{apiBaseUrl}/groups/{Uri.EscapeDataString(visualization.WorkspaceId)}/reports/{Uri.EscapeDataString(visualization.ReportId)}/GenerateToken";
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = JsonContent.Create(new { accessLevel = "View", allowSaveAs = false }),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiToken);
+
+        using var response = await _httpClientFactory.CreateClient().SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Power BI embed token request for '{visualization.Key}' failed with HTTP {(int)response.StatusCode}.");
+        }
+
+        var token = JsonSerializer.Deserialize<PowerBiEmbedTokenResponse>(responseBody, JsonOptions);
+        if (string.IsNullOrWhiteSpace(token?.Token))
+        {
+            throw new InvalidOperationException($"Power BI embed token response for '{visualization.Key}' did not include a token.");
+        }
+
+        return token;
     }
 
     private static string ResolveEmbedUrl(string workspaceId, string reportId, string? configuredEmbedUrl)
@@ -240,4 +361,12 @@ public sealed class PowerBiVisualizationCatalogService : IPowerBiVisualizationCa
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
+
+    private sealed record EntraTokenResponse(
+        [property: JsonPropertyName("access_token")] string AccessToken,
+        [property: JsonPropertyName("expires_in")] int ExpiresIn);
+
+    private sealed record PowerBiEmbedTokenResponse(
+        [property: JsonPropertyName("token")] string Token,
+        [property: JsonPropertyName("expiration")] DateTimeOffset Expiration);
 }

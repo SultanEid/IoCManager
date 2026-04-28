@@ -4,6 +4,7 @@ import { ApiError } from "@/shared/api/error"
 import {
   alertResponseSchema,
   alertListResponseSchema,
+  aiModelStatisticsSchema,
   v2AlertDetailResponseSchema,
   aiDecisionActionPlanOrPendingResponseSchema,
   aiDecisionExplanationOrPendingResponseSchema,
@@ -31,6 +32,7 @@ import {
   managedServerScannerAssignmentResponseSchema,
   powerBiVisualizationCatalogResponseSchema,
   generatedReportResponseSchema,
+  reportResponseSchema,
   reportMitigationListResponseSchema,
   reportMitigationResponseSchema,
   reportListResponseSchema,
@@ -73,6 +75,7 @@ import {
   userResponseSchema,
   type AlertListResponse,
   type AlertResponse,
+  type AiModelStatistics,
   type AiDecisionActionPlanOrPendingResponse,
   type AiDecisionExplanationOrPendingResponse,
   type AiDecisionResultResponse,
@@ -97,6 +100,7 @@ import {
   type IocListResponse,
   type PowerBiVisualizationCatalogResponse,
   type ReportListResponse,
+  type ReportResponse,
   type ReportMitigationListResponse,
   type ReportMitigationResponse,
   type ScanJobResponse,
@@ -328,6 +332,16 @@ export class AspNetGateway {
     })
   }
 
+  async updateAlertIocStatus(alertId: string, iocId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse> {
+    return requestJson(`/api/v2/alerts/${alertId}/iocs/${iocId}/status`, v2AlertDetailResponseSchema, {
+      method: "PATCH",
+      body: {
+        status,
+        actorUserId,
+      },
+    })
+  }
+
   // Legacy aliases retained for one release cycle.
   async listCases(signal?: AbortSignal): Promise<CaseResponse[]> {
     return this.listAlerts(signal)
@@ -373,6 +387,10 @@ export class AspNetGateway {
 
     const suffix = params.size > 0 ? `?${params.toString()}` : ""
     return requestJson(`/api/v2/reports${suffix}`, reportListResponseSchema, { signal })
+  }
+
+  async getReport(reportId: string, signal?: AbortSignal): Promise<ReportResponse> {
+    return requestJson(`/api/v2/reports/${encodeURIComponent(reportId)}`, reportResponseSchema, { signal })
   }
 
   async generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse> {
@@ -1006,6 +1024,10 @@ export class AspNetGateway {
 
   async getScanAnalystStatus(signal?: AbortSignal): Promise<ScanAnalystAgentStatusResponse> {
     return requestJson("/api/v2/ai/scan-analyst/status", scanAnalystAgentStatusResponseSchema, { signal })
+  }
+
+  async getAiModelStatistics(signal?: AbortSignal): Promise<AiModelStatistics> {
+    return requestJson("/api/v2/ai/model-statistics", aiModelStatisticsSchema, { signal })
   }
 
   async updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse> {

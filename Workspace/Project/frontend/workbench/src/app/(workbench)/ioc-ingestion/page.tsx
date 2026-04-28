@@ -1,8 +1,20 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ExternalLink, Eye, FileJson, FileSpreadsheet, Search } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ExternalLink,
+  Eye,
+  FileJson,
+  FileSpreadsheet,
+  Search,
+  X,
+} from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { ACCENT_TONES, severityAccent } from "@/components/workbench/accent-tone"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
@@ -27,6 +39,7 @@ import {
   listLegacyIocFindings,
   listLegacyTargets,
 } from "@/shared/gateway/legacy-scan-pipeline"
+import type { LegacyPipelineIocFinding } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { EmptyState, LoadingState, SearchEmptyState } from "@/shared/ui/state-panels"
@@ -43,8 +56,8 @@ type IocExplorerFilters = {
   pageSize: number
 }
 
-const DEFAULT_PAGE_SIZE = 100
-const PAGE_SIZE_OPTIONS = [50, 100, 250]
+const DEFAULT_PAGE_SIZE = 50
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 250]
 const IOC_DECISION_POLL_INTERVAL_MS = 2500
 const IOC_DECISION_POLL_MAX_ATTEMPTS = 12
 
@@ -82,6 +95,19 @@ function formatTimestamp(value: string) {
 function readErrorMessage(error: unknown) {
   const failure = classifyUiError(error)
   return failure.message || "Request failed."
+}
+
+function normalizeDecisionStatus(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? ""
+}
+
+function isPendingDecisionStatus(value: string | null | undefined) {
+  return normalizeDecisionStatus(value) === "queued" || normalizeDecisionStatus(value) === "running"
+}
+
+function isFailedDecisionStatus(value: string | null | undefined) {
+  const status = normalizeDecisionStatus(value)
+  return status === "failed" || status === "error" || status === "cancelled" || status === "canceled"
 }
 
 function InlineState({
@@ -158,7 +184,7 @@ function formatPercent(value: number) {
 }
 
 function isDecisionTelemetryReason(reason: string) {
-  return /(verdict=|calibrated_signal=|uncertainty=|conflict=)/i.test(reason)
+  return /(verdict=|calibrated_signal=|uncertainty=|conflict=|evidence bucket scores)/i.test(reason)
 }
 
 function formatDecisionSummary(verdict: string) {
@@ -184,6 +210,246 @@ function formatDecisionSummary(verdict: string) {
   }
 }
 
+function formatDecisionVerdictLabel(verdict: string) {
+  switch (verdict) {
+    case "malicious":
+      return "Malicious"
+    case "likely_malicious":
+      return "Likely malicious"
+    case "suspicious":
+      return "Suspicious"
+    case "benign":
+      return "Non-malicious"
+    case "likely_benign":
+      return "Likely non-malicious"
+    case "false_positive":
+      return "False positive"
+    case "stale_or_revoked":
+      return "Stale or revoked"
+    case "insufficient_evidence":
+      return "Insufficient evidence"
+    default:
+      return verdict.replace(/_/g, " ")
+  }
+}
+
+function decisionVerdictTone(verdict: string) {
+  switch (verdict) {
+    case "malicious":
+    case "likely_malicious":
+      return "border-red-300/50 bg-red-500/18 text-red-50 shadow-[0_0_24px_rgba(239,68,68,0.18)]"
+    case "suspicious":
+      return "border-orange-300/55 bg-orange-500/18 text-orange-50 shadow-[0_0_24px_rgba(249,115,22,0.16)]"
+    case "benign":
+    case "likely_benign":
+      return "border-blue-300/55 bg-blue-500/18 text-blue-50 shadow-[0_0_24px_rgba(59,130,246,0.16)]"
+    case "false_positive":
+      return "border-violet-300/55 bg-violet-500/18 text-violet-50 shadow-[0_0_24px_rgba(139,92,246,0.16)]"
+    case "insufficient_evidence":
+    case "stale_or_revoked":
+      return "border-slate-300/45 bg-slate-400/14 text-slate-50 shadow-[0_0_24px_rgba(148,163,184,0.12)]"
+    default:
+      return "border-border/80 bg-surface-2/80 text-foreground"
+  }
+}
+
+function DecisionVerdictBadge({ verdict }: { verdict: string }) {
+  return (
+    <span
+      className={`inline-flex min-h-10 items-center rounded-xl border px-4 py-2 text-sm font-bold uppercase tracking-[0.12em] ${decisionVerdictTone(verdict)}`}
+    >
+      {formatDecisionVerdictLabel(verdict)}
+    </span>
+  )
+}
+
+type ActiveFilterChip = {
+  key: keyof Pick<IocExplorerFilters, "q" | "scannerFamily" | "targetId" | "severity" | "painLevel" | "fromUtc" | "toUtc">
+  label: string
+  value: string
+}
+
+function clampPage(page: number, totalPages: number) {
+  return Math.min(Math.max(page, 1), Math.max(totalPages, 1))
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat().format(value)
+}
+
+function formatLocalInputLabel(value: string) {
+  return value ? value.replace("T", " ") : ""
+}
+
+function PaginationControls({
+  currentPage,
+  totalPages,
+  totalCount,
+  pageSize,
+  loading,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  currentPage: number
+  totalPages: number
+  totalCount: number
+  pageSize: number
+  loading: boolean
+  onPageChange: (page: number) => void
+  onPageSizeChange: (pageSize: number) => void
+}) {
+  const boundedPage = clampPage(currentPage, totalPages)
+  const rangeStart = totalCount === 0 ? 0 : (boundedPage - 1) * pageSize + 1
+  const rangeEnd = totalCount === 0 ? 0 : Math.min(boundedPage * pageSize, totalCount)
+  const atFirstPage = loading || boundedPage <= 1
+  const atLastPage = loading || boundedPage >= totalPages
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
+      <div className="min-w-0">
+        {loading ? (
+          <p>Loading findings for the current query.</p>
+        ) : (
+          <>
+            <p className="font-medium text-foreground">
+              Showing {formatCount(rangeStart)}-{formatCount(rangeEnd)} of {formatCount(totalCount)} findings
+            </p>
+            <p className="mt-0.5">
+              Page {formatCount(boundedPage)} of {formatCount(totalPages)}
+            </p>
+          </>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span>Page size</span>
+          <select
+            aria-label="Page size"
+            className="h-8 rounded-lg border border-border/70 bg-surface-1 px-2 text-xs"
+            value={pageSize}
+            disabled={loading}
+            onChange={(event) => {
+              const nextPageSize = Number.parseInt(event.target.value, 10) || DEFAULT_PAGE_SIZE
+              onPageSizeChange(nextPageSize)
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-1" aria-label="Pagination controls">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to first page"
+            title="Go to first page"
+            onClick={() => onPageChange(1)}
+            disabled={atFirstPage}
+          >
+            <ChevronsLeft className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to previous page"
+            title="Go to previous page"
+            onClick={() => onPageChange(boundedPage - 1)}
+            disabled={atFirstPage}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to next page"
+            title="Go to next page"
+            onClick={() => onPageChange(boundedPage + 1)}
+            disabled={atLastPage}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Go to last page"
+            title="Go to last page"
+            onClick={() => onPageChange(totalPages)}
+            disabled={atLastPage}
+          >
+            <ChevronsRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FindingMobileCard({
+  finding,
+  selected,
+  onToggleSelected,
+  onOpen,
+}: {
+  finding: LegacyPipelineIocFinding
+  selected: boolean
+  onToggleSelected: () => void
+  onOpen: () => void
+}) {
+  const accent = severityAccent(finding.severity)
+
+  return (
+    <article
+      className={`relative overflow-hidden rounded-xl border p-3 pl-4 transition-colors ${
+        selected ? "border-primary/45 bg-primary/10" : "border-border/70 bg-surface-2/55"
+      }`}
+    >
+      <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ScannerFamilyBadge family={finding.scannerFamily} size="sm" />
+            <StatusBadge value={finding.severity} />
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm font-semibold tracking-tight">{finding.ruleName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{finding.targetDisplay}</p>
+        </div>
+        <input
+          type="checkbox"
+          checked={selected}
+          aria-label={`Select finding ${finding.iocId}`}
+          onChange={onToggleSelected}
+          className="mt-1"
+        />
+      </div>
+
+      <div className="mt-3 rounded-lg border border-border/55 bg-surface-1/65 p-2">
+        <p
+          className="max-h-10 overflow-hidden break-words text-xs leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+          title={finding.indicatorValue}
+        >
+          {finding.indicatorValue}
+        </p>
+        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{finding.indicatorKind}</p>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>{formatTimestamp(finding.timestampUtc)}</span>
+        <Button type="button" size="sm" variant="outline" onClick={onOpen}>
+          <Eye className="h-3.5 w-3.5" />
+          Open
+        </Button>
+      </div>
+    </article>
+  )
+}
+
 export default function IocsExplorerPage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -201,7 +467,11 @@ export default function IocsExplorerPage() {
     setFilters(parsedFilters)
   }, [parsedFilters])
 
-  const targetsQuery = useWorkbenchQuery(["legacy-pipeline", "ioc-explorer-targets"], (signal) => listLegacyTargets(undefined, signal))
+  const targetsQuery = useWorkbenchQuery(
+    ["legacy-pipeline", "ioc-explorer-targets"],
+    (signal) => listLegacyTargets(undefined, signal),
+    { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false },
+  )
   const findingsQuery = useWorkbenchQuery(
     ["legacy-pipeline", "ioc-findings", parsedFilters],
     (signal) =>
@@ -258,21 +528,19 @@ export default function IocsExplorerPage() {
   const latestIocDecisionData = latestIocDecisionQuery.data ?? null
   const latestIocDecision = latestIocDecisionQuery.data?.result.decision ?? null
   const latestIocDecisionResult = latestIocDecisionQuery.data?.result ?? null
-  const latestIocTelemetryReason =
-    latestIocDecision?.reasons.find((reason) => isDecisionTelemetryReason(reason)) ?? null
+  const latestIocDecisionStatus = latestIocDecisionResult?.status ?? null
   const latestIocNarrativeReasons =
     latestIocDecision?.reasons.filter((reason) => !isDecisionTelemetryReason(reason)) ?? []
   const latestIocLeadReason = latestIocNarrativeReasons[0] ?? null
-  const latestIocSupportingReasons = latestIocNarrativeReasons.slice(1, 3)
   const latestIocConfidenceReasons = explainDecisionConfidence({
     result: latestIocDecisionResult,
     sourceLabel: latestRelatedDetection?.source ?? "IOC-native generation",
     hasDetectionContext: Boolean(latestIocDecisionData?.detectionId),
   })
 
-  const targets = targetsQuery.data ?? []
   const findingsPage = findingsQuery.data
-  const findings = findingsPage?.items ?? []
+  const targets = useMemo(() => targetsQuery.data ?? [], [targetsQuery.data])
+  const findings = useMemo(() => findingsPage?.items ?? [], [findingsPage?.items])
   const totalCount = findingsPage?.totalCount ?? 0
   const currentPage = findingsPage?.page ?? parsedFilters.page
   const pageSize = findingsPage?.pageSize ?? parsedFilters.pageSize
@@ -321,6 +589,40 @@ export default function IocsExplorerPage() {
       || parsedFilters.fromUtc
       || parsedFilters.toUtc,
   )
+  const canClearFilters = filteredOut || parsedFilters.pageSize !== DEFAULT_PAGE_SIZE
+  const targetLabelById = useMemo(() => {
+    return new Map(
+      targets.map((target) => [
+        target.id,
+        target.displayName ?? target.hostname ?? target.ipAddress,
+      ]),
+    )
+  }, [targets])
+  const activeFilterChips = useMemo<ActiveFilterChip[]>(() => {
+    const chips: ActiveFilterChip[] = []
+    if (parsedFilters.q) chips.push({ key: "q", label: "Search", value: parsedFilters.q })
+    if (parsedFilters.scannerFamily) {
+      chips.push({ key: "scannerFamily", label: "Scanner", value: parsedFilters.scannerFamily })
+    }
+    if (parsedFilters.targetId) {
+      chips.push({
+        key: "targetId",
+        label: "Target",
+        value: targetLabelById.get(parsedFilters.targetId) ?? parsedFilters.targetId,
+      })
+    }
+    if (parsedFilters.severity) chips.push({ key: "severity", label: "Severity", value: parsedFilters.severity })
+    if (parsedFilters.painLevel) {
+      chips.push({ key: "painLevel", label: "Pyramid", value: formatPainLevelLabel(parsedFilters.painLevel) })
+    }
+    if (parsedFilters.fromUtc) {
+      chips.push({ key: "fromUtc", label: "From", value: formatLocalInputLabel(parsedFilters.fromUtc) })
+    }
+    if (parsedFilters.toUtc) {
+      chips.push({ key: "toUtc", label: "To", value: formatLocalInputLabel(parsedFilters.toUtc) })
+    }
+    return chips
+  }, [parsedFilters, targetLabelById])
 
   const applyFilters = () => {
     const next = buildQuery({ ...filters, page: 1 })
@@ -344,13 +646,40 @@ export default function IocsExplorerPage() {
   }
 
   const updatePageState = (nextPage: number, nextPageSize = parsedFilters.pageSize) => {
+    const nextTotalPages = Math.max(1, Math.ceil(totalCount / nextPageSize))
     const next = buildQuery({
       ...parsedFilters,
-      page: Math.max(nextPage, 1),
+      page: clampPage(nextPage, nextTotalPages),
       pageSize: nextPageSize,
     })
     router.replace(next ? `${pathname}?${next}` : pathname)
   }
+
+  const updatePageSize = (nextPageSize: number) => {
+    setFilters((current) => ({ ...current, page: 1, pageSize: nextPageSize }))
+    updatePageState(1, nextPageSize)
+  }
+
+  const removeFilter = (key: ActiveFilterChip["key"]) => {
+    const nextFilters = { ...parsedFilters, [key]: "", page: 1 }
+    setFilters(nextFilters)
+    const next = buildQuery(nextFilters)
+    router.replace(next ? `${pathname}?${next}` : pathname)
+  }
+
+  useEffect(() => {
+    if (!findingsPage || findingsLoading) {
+      return
+    }
+
+    const effectivePage = clampPage(findingsPage.page, totalPages)
+    if (parsedFilters.page === effectivePage) {
+      return
+    }
+
+    const next = buildQuery({ ...parsedFilters, page: effectivePage, pageSize })
+    router.replace(next ? `${pathname}?${next}` : pathname)
+  }, [findingsLoading, findingsPage, pageSize, parsedFilters, pathname, router, totalPages])
 
   const toggleSelected = (iocId: string) => {
     setSelectedIds((current) =>
@@ -420,8 +749,18 @@ export default function IocsExplorerPage() {
         }
       }
 
-      await Promise.all([latestIocDecisionQuery.refetch(), relatedDetectionsQuery.refetch()])
-      setGenerateDecisionStatus("Latest AI decision loaded for this IOC.")
+      const [latestRefresh] = await Promise.all([latestIocDecisionQuery.refetch(), relatedDetectionsQuery.refetch()])
+      const latestResult = latestRefresh.data?.result
+      if (latestResult?.decision) {
+        setGenerateDecisionStatus("Latest AI decision loaded for this IOC.")
+      } else if (isPendingDecisionStatus(latestResult?.status)) {
+        setGenerateDecisionStatus("AI decision is still running. This drawer will show the verdict after refresh.")
+      } else if (isFailedDecisionStatus(latestResult?.status)) {
+        setGenerateDecisionError(latestResult?.failureMessage ?? "AI decision failed before producing a verdict.")
+        setGenerateDecisionStatus(null)
+      } else {
+        setGenerateDecisionStatus("AI decision request was accepted, but no verdict has been returned yet.")
+      }
     } catch (error) {
       setGenerateDecisionError(readErrorMessage(error))
       setGenerateDecisionStatus(null)
@@ -443,9 +782,9 @@ export default function IocsExplorerPage() {
     <section className="wb-page space-y-6">
       <header className="wb-page-header">
         <p className="wb-kicker">IOCs Explorer</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-tight">Investigate normalized findings across all scanners</h2>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight">Normalized findings explorer</h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Review normalized YARA, SIGMA, SNORT, and SURICATA detections with shared filters, raw payload access, and scanner-specific context.
+          Review scanner detections and evidence.
         </p>
         {parsedFilters.painLevel ? (
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs text-primary">
@@ -453,22 +792,25 @@ export default function IocsExplorerPage() {
             <span>{formatPainLevelLabel(parsedFilters.painLevel)}</span>
           </div>
         ) : null}
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+        <div className="mt-4 grid gap-2 xl:grid-cols-2 2xl:grid-cols-3">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.primary.rail}`} aria-hidden="true" />
             <p className="wb-kicker">Loaded Findings</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{findingsLoading ? "..." : findings.length}</p>
             {findingsLoading ? (
               <p className="mt-1 text-xs text-muted-foreground">Loading findings for the current query.</p>
             ) : null}
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.cyan.rail}`} aria-hidden="true" />
             <p className="wb-kicker">Total Matching</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{findingsLoading ? "..." : totalCount}</p>
             {findingsRefreshing ? (
               <p className="mt-1 text-xs text-muted-foreground">Refreshing totals for the current filter set.</p>
             ) : null}
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.violet.rail}`} aria-hidden="true" />
             <p className="wb-kicker">Selected Rows</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{selectedRows.length}</p>
           </div>
@@ -476,89 +818,135 @@ export default function IocsExplorerPage() {
       </header>
 
       <article className="wb-panel space-y-4">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(180px,0.6fr))]">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              value={filters.q}
-              onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))}
-              placeholder="Search rule name, value, payload, command line, or network indicators"
-            />
-          </div>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.scannerFamily}
-            onChange={(event) => setFilters((current) => ({ ...current, scannerFamily: event.target.value }))}
-          >
-            <option value="">All scanners</option>
-            <option value="YARA">YARA</option>
-            <option value="SIGMA">SIGMA</option>
-            <option value="SNORT">SNORT</option>
-            <option value="SURICATA">SURICATA</option>
-          </select>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.targetId}
-            onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value }))}
-            disabled={targetsLoading}
-          >
-            <option value="">{targetsLoading ? "Loading targets..." : "All targets"}</option>
-            {targets.map((target) => (
-              <option key={target.id} value={target.id}>
-                {target.displayName ?? target.hostname ?? target.ipAddress}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={filters.severity}
-            onChange={(event) => setFilters((current) => ({ ...current, severity: event.target.value }))}
-          >
-            <option value="">All severities</option>
-            {severityOptions.map((severity) => (
-              <option key={severity} value={severity}>
-                {severity}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid gap-3 xl:grid-cols-[minmax(220px,0.8fr)_minmax(220px,0.8fr)_auto]">
-          <Input
-            type="datetime-local"
-            value={filters.fromUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, fromUtc: event.target.value }))}
-          />
-          <Input
-            type="datetime-local"
-            value={filters.toUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value }))}
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" onClick={applyFilters}>
-              Apply
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={clearFilters}>
-              Clear
-            </Button>
-            {parsedFilters.painLevel ? (
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            applyFilters()
+          }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold tracking-tight">Investigation filters</h3>
+              <p className="text-xs text-muted-foreground">
+                Narrow the table by scanner, target, severity, time range, or indicator text.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" size="sm">
+                Apply filters
+              </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  const nextFilters = { ...filters, painLevel: "", page: 1 }
-                  setFilters(nextFilters)
-                  const next = buildQuery(nextFilters)
-                  router.replace(next ? `${pathname}?${next}` : pathname)
-                }}
+                onClick={clearFilters}
+                disabled={!canClearFilters}
               >
-                Clear pyramid filter
+                Reset
               </Button>
-            ) : null}
+            </div>
           </div>
-        </div>
+
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(180px,0.55fr))]">
+            <label className="block">
+              <span className="sr-only">Search findings</span>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  value={filters.q}
+                  onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))}
+                  placeholder="Search rule name, value, payload, command line, or network indicators"
+                />
+              </div>
+            </label>
+            <label className="block">
+              <span className="sr-only">Scanner family</span>
+              <select
+                className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                value={filters.scannerFamily}
+                onChange={(event) => setFilters((current) => ({ ...current, scannerFamily: event.target.value }))}
+              >
+                <option value="">All scanners</option>
+                <option value="YARA">YARA</option>
+                <option value="SIGMA">SIGMA</option>
+                <option value="SNORT">SNORT</option>
+                <option value="SURICATA">SURICATA</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="sr-only">Target</span>
+              <select
+                className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                value={filters.targetId}
+                onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value }))}
+                disabled={targetsLoading}
+              >
+                <option value="">{targetsLoading ? "Loading targets..." : "All targets"}</option>
+                {targets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.displayName ?? target.hostname ?? target.ipAddress}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="sr-only">Severity</span>
+              <select
+                className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                value={filters.severity}
+                onChange={(event) => setFilters((current) => ({ ...current, severity: event.target.value }))}
+              >
+                <option value="">All severities</option>
+                {severityOptions.map((severity) => (
+                  <option key={severity} value={severity}>
+                    {severity}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-[minmax(220px,0.8fr)_minmax(220px,0.8fr)]">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Observed after</span>
+              <Input
+                type="datetime-local"
+                value={filters.fromUtc}
+                onChange={(event) => setFilters((current) => ({ ...current, fromUtc: event.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Observed before</span>
+              <Input
+                type="datetime-local"
+                value={filters.toUtc}
+                onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value }))}
+              />
+            </label>
+          </div>
+        </form>
+
+        {activeFilterChips.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Active</span>
+            {activeFilterChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                className="inline-flex max-w-full items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary transition-colors hover:border-primary/55 hover:bg-primary/15"
+                onClick={() => removeFilter(chip.key)}
+                aria-label={`Remove ${chip.label.toLowerCase()} filter`}
+                title={`Remove ${chip.label.toLowerCase()} filter`}
+              >
+                <span className="font-semibold">{chip.label}</span>
+                <span className="max-w-64 truncate text-primary/90">{chip.value}</span>
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
+        ) : null}
       </article>
 
       <article className="wb-panel space-y-4">
@@ -569,7 +957,10 @@ export default function IocsExplorerPage() {
               One searchable table over persisted findings from host and network scanners.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2">
+            <span className="text-xs text-muted-foreground">
+              {selectedRows.length === 0 ? "No rows selected" : `${formatCount(selectedRows.length)} selected`}
+            </span>
             <Button
               type="button"
               size="sm"
@@ -593,52 +984,15 @@ export default function IocsExplorerPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
-          {findingsLoading ? <p>Loading findings for the current query.</p> : null}
-          <p className={findingsLoading ? "hidden" : undefined}>
-            Page {currentPage} of {totalPages} Â· {totalCount} matching findings
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2">
-              <span>Page size</span>
-              <select
-                className="h-8 rounded-lg border border-border/70 bg-surface-1 px-2 text-xs"
-                value={pageSize}
-                disabled={findingsLoading}
-                onChange={(event) => {
-                  const nextPageSize = Number.parseInt(event.target.value, 10) || DEFAULT_PAGE_SIZE
-                  setFilters((current) => ({ ...current, page: 1, pageSize: nextPageSize }))
-                  updatePageState(1, nextPageSize)
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => updatePageState(currentPage - 1)}
-              disabled={findingsLoading || currentPage <= 1}
-            >
-              Previous
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => updatePageState(currentPage + 1)}
-              disabled={findingsLoading || currentPage >= totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-
+        <PaginationControls
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          loading={findingsLoading}
+          onPageChange={updatePageState}
+          onPageSizeChange={updatePageSize}
+        />
         {findingsLoading ? (
           <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
             <div className="border-b border-border/70 bg-surface-2/70 px-4 py-3">
@@ -681,11 +1035,12 @@ export default function IocsExplorerPage() {
             />
           )
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
-            <Table>
+          <>
+            <div className="hidden overflow-hidden rounded-xl border border-border/75 bg-surface-1/90 2xl:block">
+              <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-surface-2/85 backdrop-blur supports-[backdrop-filter]:bg-surface-2/75">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-10">
+                  <TableHead className="w-10 px-2">
                     <input
                       type="checkbox"
                       checked={allVisibleSelected}
@@ -693,13 +1048,13 @@ export default function IocsExplorerPage() {
                       onChange={toggleSelectAllVisible}
                     />
                   </TableHead>
-                  <TableHead>Scanner</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Rule Name</TableHead>
-                  <TableHead>Indicator Value</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead className="w-12">Open</TableHead>
+                  <TableHead className="w-[7rem]">Scanner</TableHead>
+                  <TableHead className="w-[15%]">Target</TableHead>
+                  <TableHead className="w-[23%]">Rule Name</TableHead>
+                  <TableHead className="w-[27%]">Indicator Value</TableHead>
+                  <TableHead className="w-[7rem]">Severity</TableHead>
+                  <TableHead className="w-[10rem]">Timestamp</TableHead>
+                  <TableHead className="w-11 px-2">Open</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -709,10 +1064,10 @@ export default function IocsExplorerPage() {
                     <TableRow
                       key={finding.iocId}
                       data-state={selected ? "selected" : undefined}
-                      className="cursor-pointer"
+                      className="cursor-pointer transition-colors hover:bg-primary/5 data-[state=selected]:bg-primary/10 data-[state=selected]:shadow-[inset_3px_0_0_color-mix(in_srgb,var(--primary)_70%,transparent)]"
                       onClick={() => setSelectedIocId(finding.iocId)}
                     >
-                      <TableCell onClick={(event) => event.stopPropagation()}>
+                      <TableCell className="px-2" onClick={(event) => event.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selected}
@@ -723,33 +1078,49 @@ export default function IocsExplorerPage() {
                       <TableCell>
                         <ScannerFamilyBadge family={finding.scannerFamily} size="sm" />
                       </TableCell>
-                      <TableCell>
-                        <div className="min-w-[15rem]">
-                          <p className="font-medium">{finding.targetDisplay}</p>
-                          <p className="text-xs text-muted-foreground">{finding.targetIp ?? "Unresolved target"}</p>
+                      <TableCell className="whitespace-normal">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium" title={finding.targetDisplay}>{finding.targetDisplay}</p>
+                          <p className="truncate text-xs text-muted-foreground" title={finding.targetIp ?? "Unresolved target"}>
+                            {finding.targetIp ?? "Unresolved target"}
+                          </p>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="max-w-[18rem] whitespace-normal">
-                          <p className="font-medium">{finding.ruleName}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{finding.status}</p>
+                      <TableCell className="whitespace-normal">
+                        <div className="min-w-0">
+                          <p
+                            className="max-h-10 overflow-hidden break-words font-medium leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                            title={finding.ruleName}
+                          >
+                            {finding.ruleName}
+                          </p>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{finding.status}</p>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="max-w-[22rem] whitespace-normal">
-                          <p className="line-clamp-2">{finding.indicatorValue}</p>
+                      <TableCell className="whitespace-normal">
+                        <div className="min-w-0">
+                          <p
+                            className="max-h-10 overflow-hidden break-words leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                            title={finding.indicatorValue}
+                          >
+                            {finding.indicatorValue}
+                          </p>
                           <p className="mt-1 text-xs text-muted-foreground">{finding.indicatorKind}</p>
                         </div>
                       </TableCell>
                       <TableCell>
                         <StatusBadge value={finding.severity} />
                       </TableCell>
-                      <TableCell>{formatTimestamp(finding.timestampUtc)}</TableCell>
-                      <TableCell>
+                      <TableCell className="truncate" title={formatTimestamp(finding.timestampUtc)}>
+                        {formatTimestamp(finding.timestampUtc)}
+                      </TableCell>
+                      <TableCell className="px-2">
                         <Button
                           type="button"
                           size="icon-xs"
                           variant="ghost"
+                          aria-label={`Open finding ${finding.ruleName}`}
+                          title="Open finding detail"
                           onClick={(event) => {
                             event.stopPropagation()
                             setSelectedIocId(finding.iocId)
@@ -762,13 +1133,39 @@ export default function IocsExplorerPage() {
                   )
                 })}
               </TableBody>
-            </Table>
-          </div>
+              </Table>
+            </div>
+            <div className="grid gap-3 2xl:hidden">
+              {findings.map((finding) => {
+                const selected = selectedIds.includes(finding.iocId)
+                return (
+                  <FindingMobileCard
+                    key={finding.iocId}
+                    finding={finding}
+                    selected={selected}
+                    onToggleSelected={() => toggleSelected(finding.iocId)}
+                    onOpen={() => setSelectedIocId(finding.iocId)}
+                  />
+                )
+              })}
+            </div>
+          </>
         )}
+        {!findingsLoading && totalCount > 0 ? (
+          <PaginationControls
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={pageSize}
+            loading={false}
+            onPageChange={updatePageState}
+            onPageSizeChange={updatePageSize}
+          />
+        ) : null}
       </article>
 
       <Sheet open={selectedIocId !== null} onOpenChange={(open) => !open && setSelectedIocId(null)}>
-        <SheetContent side="right" className="w-full max-w-2xl overflow-y-auto border-border/70 bg-surface-1/96 px-6">
+        <SheetContent side="right" className="!w-[min(96vw,72rem)] !max-w-none overflow-y-auto border-border/70 bg-surface-1/96 px-8">
           <SheetHeader>
             <SheetTitle>IOC detail</SheetTitle>
             <SheetDescription>
@@ -903,6 +1300,28 @@ export default function IocsExplorerPage() {
                         failure={classifyUiError(latestIocDecisionQuery.error)}
                         fallbackTitle="AI decision unavailable"
                       />
+                    ) : !latestIocDecision && latestIocDecisionResult ? (
+                      <InlineState
+                        title={
+                          isPendingDecisionStatus(latestIocDecisionStatus)
+                            ? "AI decision in progress"
+                            : isFailedDecisionStatus(latestIocDecisionStatus)
+                              ? "AI decision failed"
+                              : "AI decision has no verdict yet"
+                        }
+                        description={
+                          isFailedDecisionStatus(latestIocDecisionStatus)
+                            ? latestIocDecisionResult.failureMessage ?? "The backend did not return a failure detail."
+                            : `Current status: ${latestIocDecisionResult.status}. Refresh or generate again after the sidecar finishes processing.`
+                        }
+                        tone={
+                          isFailedDecisionStatus(latestIocDecisionStatus)
+                            ? "danger"
+                            : isPendingDecisionStatus(latestIocDecisionStatus)
+                              ? "warning"
+                              : "default"
+                        }
+                      />
                     ) : !latestIocDecision ? (
                       <SearchEmptyState
                         title="No AI decision recorded yet"
@@ -921,35 +1340,35 @@ export default function IocsExplorerPage() {
                       />
                     ) : (
                       <div className="space-y-4">
-                        <div className="rounded-xl border border-border/70 bg-surface-1/70 p-4">
-                          <div className="flex flex-col gap-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="space-y-3">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <StatusBadge value={latestIocDecision.verdict} />
-                                  <StatusBadge value={latestIocDecisionResult?.status ?? "unknown"} />
-                                </div>
-                                <div className="space-y-1.5">
-                                  <p className="text-base font-semibold tracking-tight">
-                                    {formatDecisionSummary(latestIocDecision.verdict)}
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {latestIocLeadReason ?? "No operator-facing explanation was stored for this decision."}
-                                  </p>
-                                </div>
+                        <div className="rounded-xl border border-border/70 bg-surface-1/70 p-5">
+                          <div className="flex flex-col gap-5">
+                            <div className="space-y-4">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <DecisionVerdictBadge verdict={latestIocDecision.verdict} />
+                                <StatusBadge value={latestIocDecisionResult?.status ?? "unknown"} />
                               </div>
-
-                              <dl className="grid min-w-[16rem] gap-x-6 gap-y-3 sm:grid-cols-2">
-                                <div>
-                                  <dt className="wb-kicker">Confidence</dt>
-                                  <dd className="mt-1 text-lg font-semibold">{formatPercent(latestIocDecision.confidence)}</dd>
-                                </div>
-                                <div>
-                                  <dt className="wb-kicker">False Positive Risk</dt>
-                                  <dd className="mt-1 text-lg font-semibold">{formatPercent(latestIocDecision.falsePositiveRisk)}</dd>
-                                </div>
-                              </dl>
+                              <div className="space-y-2">
+                                <p className="text-2xl font-semibold leading-snug tracking-tight">
+                                  {formatDecisionSummary(latestIocDecision.verdict)}
+                                </p>
+                                {latestIocLeadReason ? (
+                                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                                    {latestIocLeadReason}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
+
+                            <dl className="grid gap-3 sm:grid-cols-2">
+                              <div className="rounded-lg border border-border/60 bg-surface-2/55 p-4">
+                                <dt className="wb-kicker">Confidence</dt>
+                                <dd className="mt-2 text-3xl font-semibold tracking-tight">{formatPercent(latestIocDecision.confidence)}</dd>
+                              </div>
+                              <div className="rounded-lg border border-border/60 bg-surface-2/55 p-4">
+                                <dt className="wb-kicker">False Positive Risk</dt>
+                                <dd className="mt-2 text-3xl font-semibold tracking-tight">{formatPercent(latestIocDecision.falsePositiveRisk)}</dd>
+                              </div>
+                            </dl>
 
                             <div className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
                               <p className="wb-kicker">Why this confidence</p>
@@ -963,14 +1382,6 @@ export default function IocsExplorerPage() {
                                   />
                                 ))}
                               </div>
-                            </div>
-
-                            <div className="rounded-lg border border-border/60 bg-surface-2/45 px-3 py-2.5 text-sm text-muted-foreground">
-                              {latestIocDecisionData?.detectionId
-                                ? latestRelatedDetection?.ruleName
-                                  ? `Linked to detection ${latestRelatedDetection.ruleName}. Open full decision to review the full detection context.`
-                                  : "A full detection view is available for this AI decision."
-                                : "This decision was generated directly from IOC context. No full detection page has been materialized for this IOC yet."}
                             </div>
 
                             <dl className="grid gap-x-4 gap-y-3 rounded-lg border border-border/60 bg-surface-2/35 px-3 py-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
@@ -1016,36 +1427,6 @@ export default function IocsExplorerPage() {
                           </div>
                         </div>
 
-                        {latestIocSupportingReasons.length > 0 || latestIocTelemetryReason ? (
-                          <div className="rounded-lg border border-border/70 bg-surface-1/70 p-4">
-                            <p className="wb-kicker">Decision notes</p>
-                            <div className="mt-3 space-y-3">
-                              {latestIocSupportingReasons.length > 0 ? (
-                                <ul className="space-y-2 text-sm text-muted-foreground">
-                                  {latestIocSupportingReasons.map((reason) => (
-                                    <li key={reason} className="flex gap-2">
-                                      <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
-                                      <span>{reason}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                              {latestIocTelemetryReason ? (
-                                <details className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
-                                  <summary className="cursor-pointer list-none text-xs font-semibold tracking-tight text-muted-foreground">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span>Technical details</span>
-                                      <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/80">Expand</span>
-                                    </div>
-                                  </summary>
-                                  <div className="mt-3 rounded-md border border-dashed border-border/60 bg-surface-2/35 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                                    <span className="font-medium text-foreground">Scoring note:</span> {latestIocTelemetryReason}
-                                  </div>
-                                </details>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : null}
                       </div>
                     )}
                   </div>
