@@ -241,7 +241,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const { mode: themeMode, toggleMode } = useThemeMode()
   const { closeInspector } = useWorkbenchInspector()
 
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
@@ -389,7 +389,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 data-testid="global-search-trigger"
                 onClick={() => setCommandOpen(true)}
-                className="hidden h-8 min-w-64 items-center gap-2 rounded-lg border border-border/70 bg-surface-2/70 px-2.5 text-left text-xs text-muted-foreground transition-colors hover:border-primary/35 hover:text-foreground lg:inline-flex"
+                className="hidden h-8 w-[clamp(13rem,22vw,24rem)] min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-surface-2/70 px-2.5 text-left text-xs text-muted-foreground transition-colors hover:border-primary/35 hover:text-foreground xl:inline-flex"
               >
                 <Search className="h-3.5 w-3.5" />
                 <span className="flex-1">Search workspace</span>
@@ -444,7 +444,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
               <Button
                 size="sm"
                 variant="outline"
-                className="hidden sm:inline-flex"
+                className="hidden xl:inline-flex"
                 onClick={() => {
                   signOut()
                   router.replace("/auth")

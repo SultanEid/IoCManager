@@ -110,12 +110,32 @@ describe("AlertDetailPage", () => {
     vi.clearAllMocks()
   })
 
-  it("deep-links linked scan results into decision detail", () => {
+  it("renders compact case source provenance", () => {
     render(<AlertDetailPage />)
 
-    const link = screen.getByText("Open decision").closest("a")
-    expect(link).not.toBeNull()
-    expect(link).toHaveAttribute("href", "/scans/f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69")
+    expect(screen.getByText("Case Source")).toBeInTheDocument()
+    expect(screen.getByText("95fef7ff-c894-4d2d-9f95-b6de6e68b2e0")).toBeInTheDocument()
+    expect(screen.getByText("f13a8eba-b80d-4a7e-a8b4-d4c7bb589b69")).toBeInTheDocument()
+    expect(screen.getByText("1 IOC(s)")).toBeInTheDocument()
+    expect(screen.queryByText("Related Scan Results")).not.toBeInTheDocument()
+    expect(screen.queryByText("Open decision")).not.toBeInTheDocument()
+  })
+
+  it("renders a muted fallback when source scan context is absent", () => {
+    mockedUseWorkbenchQuery.mockReturnValueOnce({
+      isLoading: false,
+      isError: false,
+      error: null,
+      data: {
+        ...baseDetail,
+        linkedScanResults: [],
+      },
+    })
+
+    render(<AlertDetailPage />)
+
+    expect(screen.getByText("Case Source")).toBeInTheDocument()
+    expect(screen.getByText("Source scan context was not retained for this case.")).toBeInTheDocument()
   })
 
   it("renders IOC progress and updates linked IOC status", async () => {

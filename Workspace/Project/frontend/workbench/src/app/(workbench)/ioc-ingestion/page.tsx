@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { ACCENT_TONES, severityAccent } from "@/components/workbench/accent-tone"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
@@ -401,12 +402,15 @@ function FindingMobileCard({
   onToggleSelected: () => void
   onOpen: () => void
 }) {
+  const accent = severityAccent(finding.severity)
+
   return (
     <article
-      className={`rounded-xl border p-3 transition-colors ${
+      className={`relative overflow-hidden rounded-xl border p-3 pl-4 transition-colors ${
         selected ? "border-primary/45 bg-primary/10" : "border-border/70 bg-surface-2/55"
       }`}
     >
+      <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -788,22 +792,25 @@ export default function IocsExplorerPage() {
             <span>{formatPainLevelLabel(parsedFilters.painLevel)}</span>
           </div>
         ) : null}
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+        <div className="mt-4 grid gap-2 xl:grid-cols-2 2xl:grid-cols-3">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.primary.rail}`} aria-hidden="true" />
             <p className="wb-kicker">Loaded Findings</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{findingsLoading ? "..." : findings.length}</p>
             {findingsLoading ? (
               <p className="mt-1 text-xs text-muted-foreground">Loading findings for the current query.</p>
             ) : null}
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.cyan.rail}`} aria-hidden="true" />
             <p className="wb-kicker">Total Matching</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{findingsLoading ? "..." : totalCount}</p>
             {findingsRefreshing ? (
               <p className="mt-1 text-xs text-muted-foreground">Refreshing totals for the current filter set.</p>
             ) : null}
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.violet.rail}`} aria-hidden="true" />
             <p className="wb-kicker">Selected Rows</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{selectedRows.length}</p>
           </div>
@@ -1029,7 +1036,7 @@ export default function IocsExplorerPage() {
           )
         ) : (
           <>
-            <div className="hidden overflow-hidden rounded-xl border border-border/75 bg-surface-1/90 lg:block">
+            <div className="hidden overflow-hidden rounded-xl border border-border/75 bg-surface-1/90 2xl:block">
               <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-surface-2/85 backdrop-blur supports-[backdrop-filter]:bg-surface-2/75">
                 <TableRow className="hover:bg-transparent">
@@ -1041,12 +1048,12 @@ export default function IocsExplorerPage() {
                       onChange={toggleSelectAllVisible}
                     />
                   </TableHead>
-                  <TableHead className="w-[8rem]">Scanner</TableHead>
-                  <TableHead className="w-[18%]">Target</TableHead>
-                  <TableHead className="w-[24%]">Rule Name</TableHead>
-                  <TableHead className="w-[28%]">Indicator Value</TableHead>
-                  <TableHead className="w-[8rem]">Severity</TableHead>
-                  <TableHead className="w-[12rem]">Timestamp</TableHead>
+                  <TableHead className="w-[7rem]">Scanner</TableHead>
+                  <TableHead className="w-[15%]">Target</TableHead>
+                  <TableHead className="w-[23%]">Rule Name</TableHead>
+                  <TableHead className="w-[27%]">Indicator Value</TableHead>
+                  <TableHead className="w-[7rem]">Severity</TableHead>
+                  <TableHead className="w-[10rem]">Timestamp</TableHead>
                   <TableHead className="w-11 px-2">Open</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1128,7 +1135,7 @@ export default function IocsExplorerPage() {
               </TableBody>
               </Table>
             </div>
-            <div className="grid gap-3 lg:hidden">
+            <div className="grid gap-3 2xl:hidden">
               {findings.map((finding) => {
                 const selected = selectedIds.includes(finding.iocId)
                 return (

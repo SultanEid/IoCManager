@@ -25,6 +25,7 @@ public sealed partial class LegacyScanPipelineService
 
     private async Task PromoteIocsToAlertsAsync(
         LegacyPipelineTargetEntity target,
+        int? jobId,
         int resultId,
         IReadOnlyList<LegacyPipelinePersistedIoc> iocs,
         CancellationToken cancellationToken)
@@ -48,43 +49,67 @@ public sealed partial class LegacyScanPipelineService
             .Select(link => link.IocId)
             .ToListAsync(cancellationToken);
         var linkedIocIdSet = linkedIocIds.ToHashSet();
+        var unlinkedCandidates = ExcludeLinkedCandidates(candidates, linkedIocIdSet);
 
-        foreach (var candidate in candidates.OrderBy(item => item.DetectedAtUtc))
+        if (unlinkedCandidates.Count == 0)
         {
-            if (linkedIocIdSet.Contains(candidate.Ioc.Id))
-            {
-                continue;
-            }
+            return;
+        }
 
-            var alert = CreateFindingAlert(target.TargetId, resultId, candidate, nowUtc);
-            _ctiDbContext.AlertsV2.Add(alert);
-
+        var alert = CreateScanResultAlert(target.TargetId, jobId, resultId, unlinkedCandidates, nowUtc);
+        _ctiDbContext.AlertsV2.Add(alert);
+        foreach (var candidate in unlinkedCandidates.OrderBy(item => item.DetectedAtUtc))
+        {
             _ctiDbContext.AlertIocs.Add(AlertIoc.Create(alert.Id, candidate.Ioc.Id, nowUtc));
-            linkedIocIdSet.Add(candidate.Ioc.Id);
         }
 
         await _ctiDbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static Alert CreateFindingAlert(
-        int targetId,
+    internal static IReadOnlyList<FindingAlertCandidate> ExcludeLinkedCandidates(
+        IReadOnlyList<FindingAlertCandidate> candidates,
+        ISet<Guid> linkedIocIds)
+        => candidates
+            .Where(candidate => !linkedIocIds.Contains(candidate.Ioc.Id))
+            .OrderBy(candidate => candidate.DetectedAtUtc)
+            .ToArray();
+
+    internal static Alert CreateScanResultAlert(
+        int? targetId,
+        int? jobId,
         int resultId,
-        FindingAlertCandidate candidate,
+        IReadOnlyList<FindingAlertCandidate> candidates,
         DateTimeOffset nowUtc)
     {
-        return Alert.Create(
-            BuildFindingAlertTitle(candidate, resultId),
-            BuildFindingAlertSummary(candidate, resultId),
-            candidate.Severity,
+        if (candidates.Count == 0)
+        {
+            throw new ArgumentException("At least one IOC candidate is required.", nameof(candidates));
+        }
+
+        var title = BuildScanResultAlertTitle(candidates, jobId, resultId);
+        var summary = BuildScanResultAlertSummary(candidates, jobId, resultId);
+        var severity = ResolveGroupedAlertSeverity(candidates);
+        var firstCandidate = candidates.OrderBy(candidate => candidate.DetectedAtUtc).First();
+        var lastCandidate = candidates.OrderByDescending(candidate => candidate.DetectedAtUtc).First();
+        var alert = Alert.Create(
+            title,
+            summary,
+            severity,
             AlertQueueOwnerUserId,
             "Analyst",
-            candidate.ScannerFamily,
+            firstCandidate.ScannerFamily,
             targetId,
-            candidate.TargetDisplay,
-            candidate.RuleName,
-            candidate.DetectedAtUtc,
+            firstCandidate.TargetDisplay,
+            ResolveGroupedAlertRuleName(candidates),
+            firstCandidate.DetectedAtUtc,
             AlertPromotionActorUserId,
             nowUtc);
+        if (lastCandidate.DetectedAtUtc > firstCandidate.DetectedAtUtc)
+        {
+            alert.RefreshDetection(title, summary, severity, lastCandidate.DetectedAtUtc, AlertPromotionActorUserId, nowUtc);
+        }
+
+        return alert;
     }
 
     internal static IReadOnlyList<FindingAlertCandidate> BuildFindingAlertCandidates(
@@ -179,16 +204,65 @@ public sealed partial class LegacyScanPipelineService
         };
     }
 
-    private static string BuildFindingAlertTitle(FindingAlertCandidate candidate, int resultId)
-        => Truncate(
-            $"Case alert: {candidate.ScannerFamily.ToUpperInvariant()} {candidate.RuleName} on {candidate.TargetDisplay} (scan {resultId})",
-            AlertTitleMaxLength);
+    internal static AlertSeverity ResolveGroupedAlertSeverity(IReadOnlyList<FindingAlertCandidate> candidates)
+        => candidates.Max(candidate => candidate.Severity);
 
-    private static string BuildFindingAlertSummary(FindingAlertCandidate candidate, int resultId)
-        => Truncate(
-            $"{candidate.Severity} severity {candidate.ScannerFamily.ToUpperInvariant()} finding from scan result {resultId}. "
-            + $"Rule '{candidate.RuleName}' matched {candidate.IndicatorKind} '{candidate.IndicatorValue}' on {candidate.TargetDisplay}.",
+    internal static string ResolveGroupedAlertRuleName(IReadOnlyList<FindingAlertCandidate> candidates)
+    {
+        var ruleNames = candidates
+            .Select(candidate => candidate.RuleName)
+            .Where(ruleName => !string.IsNullOrWhiteSpace(ruleName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return ruleNames.Length == 1 ? Truncate(ruleNames[0], AlertRuleNameMaxLength) : "Multiple rules";
+    }
+
+    private static string BuildScanResultAlertTitle(
+        IReadOnlyList<FindingAlertCandidate> candidates,
+        int? jobId,
+        int resultId)
+    {
+        var firstCandidate = candidates[0];
+        var jobFragment = jobId.HasValue ? $"job {jobId.Value}, " : string.Empty;
+        return Truncate(
+            $"{firstCandidate.ScannerFamily.ToUpperInvariant()} findings on {firstCandidate.TargetDisplay} ({jobFragment}result {resultId})",
+            AlertTitleMaxLength);
+    }
+
+    private static string BuildScanResultAlertSummary(
+        IReadOnlyList<FindingAlertCandidate> candidates,
+        int? jobId,
+        int resultId)
+    {
+        var firstCandidate = candidates[0];
+        var severity = ResolveGroupedAlertSeverity(candidates);
+        var jobFragment = jobId.HasValue ? $" for job {jobId.Value}" : string.Empty;
+        return Truncate(
+            $"{candidates.Count} IOC finding(s) from {firstCandidate.ScannerFamily.ToUpperInvariant()} scan result {resultId}{jobFragment} on {firstCandidate.TargetDisplay}. "
+            + $"Highest severity: {severity}. Matched rules: {BuildGroupedRuleSummary(candidates)}.",
             AlertSummaryMaxLength);
+    }
+
+    private static string BuildGroupedRuleSummary(IReadOnlyList<FindingAlertCandidate> candidates)
+    {
+        const int maxRules = 5;
+        var ruleNames = candidates
+            .Select(candidate => candidate.RuleName)
+            .Where(ruleName => !string.IsNullOrWhiteSpace(ruleName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(ruleName => ruleName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (ruleNames.Length == 0)
+        {
+            return "unknown";
+        }
+
+        var visibleRules = ruleNames.Take(maxRules);
+        var suffix = ruleNames.Length > maxRules ? $"; +{ruleNames.Length - maxRules} more" : string.Empty;
+        return string.Join("; ", visibleRules) + suffix;
+    }
 
     private static string FirstNonEmpty(params string?[] values)
     {

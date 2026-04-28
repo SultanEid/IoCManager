@@ -205,7 +205,7 @@ export default function PyramidOfPainPage() {
   return (
     <section className="wb-page space-y-6">
       <header className="wb-page-header">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-primary/90">
               <Triangle className="h-3.5 w-3.5" />
@@ -218,7 +218,7 @@ export default function PyramidOfPainPage() {
             <p className="mt-4 max-w-2xl text-sm text-foreground/90">{postureSummary}</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2" aria-label="Pyramid duration">
+          <div className="flex max-w-full flex-wrap items-center gap-2" aria-label="Pyramid duration">
             {RANGE_WINDOWS.map((windowDays) => (
               <Button
                 key={windowDays}
@@ -251,7 +251,7 @@ export default function PyramidOfPainPage() {
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
         <div className="wb-metric-card">
           <p className="wb-kicker">Total Findings</p>
           <p className="mt-2 text-3xl font-semibold">{formatCount(analysis.totalCount)}</p>
@@ -274,7 +274,7 @@ export default function PyramidOfPainPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.7fr)]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.7fr)]">
         <article className="overflow-hidden rounded-2xl border border-border/70 bg-surface-1/88 p-4 shadow-[var(--shadow-reading-surface)] sm:p-6">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -306,7 +306,7 @@ export default function PyramidOfPainPage() {
                   transition={{ duration: 0.24, delay: index * 0.035 }}
                   onClick={() => setActiveLevel(key)}
                   className={cn(
-                    "group mx-auto grid min-h-[84px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden border px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition sm:w-[var(--band-width)]",
+                    "group mx-auto grid min-h-[84px] w-full grid-cols-[2.75rem_minmax(0,1fr)_5.75rem] items-center gap-4 overflow-hidden border py-3 pl-[calc(8%+1rem)] pr-[calc(8%+1rem)] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition sm:w-[var(--band-width)]",
                     `bg-gradient-to-r ${meta.surface}`,
                     meta.border,
                     isActive ? "scale-[1.01] shadow-[0_18px_46px_rgba(0,0,0,0.22)]" : "hover:scale-[1.005] hover:opacity-100",
@@ -319,22 +319,20 @@ export default function PyramidOfPainPage() {
                   aria-pressed={isActive}
                   aria-label={`${formatPainLevelLabel(level.level)} tier, ${formatCount(level.count)} findings`}
                 >
-                  <div className="flex min-w-0 items-center gap-3 px-4 sm:px-8">
-                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-black/18", meta.accent)}>
-                      <Icon className="h-5 w-5" />
+                  <span className={cn("grid h-10 w-10 shrink-0 place-items-center justify-self-center rounded-xl bg-black/18", meta.accent)}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className={cn("block truncate text-base font-semibold", meta.accent)}>
+                      {formatPainLevelLabel(level.level)}
                     </span>
-                    <span className="min-w-0">
-                      <span className={cn("block text-base font-semibold", meta.accent)}>
-                        {formatPainLevelLabel(level.level)}
-                      </span>
-                      <span className={cn("mt-1 block truncate text-xs", meta.accent)}>
-                        {newest ? `${meta.exampleLabel}: ${newest.indicatorValue}` : meta.description}
-                      </span>
+                    <span className={cn("mt-1 block truncate text-xs", meta.accent)}>
+                      {newest ? `${meta.exampleLabel}: ${newest.indicatorValue}` : meta.description}
                     </span>
-                  </div>
-                  <span className={cn("px-4 text-right sm:px-8", meta.accent)}>
-                    <span className="block text-3xl font-semibold">{formatCount(level.count)}</span>
-                    <span className="block text-[11px] uppercase tracking-[0.14em]">{formatPercent(level.share, level.count)}</span>
+                  </span>
+                  <span className={cn("w-[5.75rem] justify-self-end text-right tabular-nums", meta.accent)}>
+                    <span className="block text-3xl font-semibold leading-none">{formatCount(level.count)}</span>
+                    <span className="mt-1 block text-[11px] uppercase tracking-[0.14em]">{formatPercent(level.share, level.count)}</span>
                   </span>
                 </motion.button>
               )

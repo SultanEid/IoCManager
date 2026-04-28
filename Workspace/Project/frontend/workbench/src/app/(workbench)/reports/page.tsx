@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -10,7 +10,6 @@ import {
   Download,
   Eye,
   FileText,
-  Filter,
   FolderOpen,
   ShieldCheck,
   type LucideIcon,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { reportTypeAccent } from "@/components/workbench/accent-tone"
 import { classifyUiError } from "@/shared/api/error-classification"
 import type { GeneratedReportResponse, GeneratedReportSectionResponse, ReportResponse, RuleFamily, TargetServerResponse } from "@/shared/api/schemas"
 import { useAuth } from "@/shared/auth/auth-provider"
@@ -32,21 +32,25 @@ const REPORT_TEMPLATES = [
     value: "ExecutiveSummary",
     label: "Executive Summary",
     description: "High-level reporting across jobs, results, and findings in the selected scope.",
+    icon: BarChart3,
   },
   {
     value: "DetailedIocReport",
     label: "Detailed IOC Report",
     description: "Scanner-heavy finding coverage grouped around rule hits and indicator counts.",
+    icon: Database,
   },
   {
     value: "TargetExposureSummary",
     label: "Target Exposure Summary",
     description: "Target inventory posture and finding linkage for selected hosts or subnets.",
+    icon: ShieldCheck,
   },
   {
     value: "ScanActivitySummary",
     label: "Scan Activity Summary",
     description: "Execution outcomes and recent result activity across the selected scope.",
+    icon: Clock3,
   },
 ] as const
 
@@ -449,7 +453,7 @@ function BuilderMetric({
 }) {
   return (
     <div
-      className="inline-flex min-w-0 items-center gap-2.5 rounded-full border border-border/55 bg-surface-1/60 px-3.5 py-2 text-sm shadow-[var(--shadow-soft)]"
+      className="inline-flex min-w-0 max-w-full items-center gap-2.5 rounded-full border border-border/55 bg-surface-1/60 px-3.5 py-2 text-sm shadow-[var(--shadow-soft)]"
       aria-label={`${label}: ${value}. ${description}`}
       title={description}
     >
@@ -476,6 +480,7 @@ export default function ReportsPage() {
   const [closedReviewId, setClosedReviewId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
+  const previewRef = useRef<HTMLElement | null>(null)
   const [form, setForm] = useState(() => {
     const range = defaultUtcRange()
     return {
@@ -490,6 +495,12 @@ export default function ReportsPage() {
       persist: true,
     }
   })
+
+  const focusPreview = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }, [])
 
   const targetsQuery = useWorkbenchQuery(["reports", "servers"], (signal) => gateway.listTargetServers(undefined, signal))
   const reportsQuery = useWorkbenchQuery(["reports", "library", refreshKey], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
@@ -515,6 +526,7 @@ export default function ReportsPage() {
       }
       const response = await gateway.generateReport(payload)
       setPreview({ kind: "generated", report: response })
+      focusPreview()
       setMessage(form.persist ? "Report generated and saved to the library." : "Preview generated without saving.")
       if (response.persistedReport) {
         setRefreshKey((value) => value + 1)
@@ -534,13 +546,14 @@ export default function ReportsPage() {
     const nextReview = { kind: "saved", report, snapshot: parseReportSnapshot(report, targets) } as const
     setPreview(nextReview)
     setReview(nextReview)
+    focusPreview()
     if (isAegisMitigationReport(report)) {
       setMessage("Aegis mitigation plan opened in structured review mode.")
       return
     }
 
     setMessage("Saved report opened in review mode.")
-  }, [])
+  }, [focusPreview])
 
   const closeReview = () => {
     if (review?.kind === "saved") {
@@ -694,124 +707,170 @@ export default function ReportsPage() {
       </header>
 
       <article className="wb-panel space-y-5">
-        <div className="space-y-1">
-          <p className="wb-kicker">Report Builder</p>
-          <p className="text-sm text-muted-foreground">Choose a template, scope the evidence, preview the report, then export saved snapshots as clean HTML.</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 border-y border-border/55 py-3">
-          <BuilderMetric icon={FolderOpen} label="Saved Reports" value={String(reports.length)} description="Stored snapshots in the library." />
-          <BuilderMetric icon={Clock3} label="Default Window" value="7 days" description="UTC scope before custom filtering." />
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          {REPORT_TEMPLATES.map((template) => {
-            const active = form.reportType === template.value
-            return (
-              <button
-                key={template.value}
-                type="button"
-                onClick={() => setForm((current) => ({ ...current, reportType: template.value }))}
-                className={`min-h-[142px] rounded-2xl border px-5 py-5 text-left transition ${
-                  active
-                    ? "border-sky-300/60 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--primary)_18%,transparent),color-mix(in_srgb,var(--surface-2)_84%,transparent))] shadow-[var(--shadow-emphasis)]"
-                    : "border-border/70 bg-surface-2/45 hover:border-border hover:bg-surface-2/60"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="max-w-[34rem]">
-                    <p className="text-lg font-semibold leading-tight text-foreground md:text-xl">{template.label}</p>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{template.description}</p>
-                  </div>
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-border/60 bg-surface-1/70 text-primary">
-                    <BarChart3 className="h-5 w-5" />
-                  </span>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="wb-filter-bar space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/55 pb-4">
+          <div className="space-y-1">
+            <p className="wb-kicker">Report Builder</p>
+            <p className="max-w-3xl text-sm text-muted-foreground">Choose a report type, scope the evidence, preview the report, then export saved snapshots as clean HTML.</p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="wb-chip">
-              <Filter className="h-3.5 w-3.5" />
-              Scope controls
-            </span>
-            <span className="wb-chip">
-              <Database className="h-3.5 w-3.5" />
-              HTML snapshots
-            </span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_minmax(240px,1fr)_minmax(220px,0.9fr)]">
-          <Input
-            placeholder="Optional report title"
-            value={form.title}
-            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-          />
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.scannerFamily}
-            onChange={(event) => setForm((current) => ({ ...current, scannerFamily: event.target.value }))}
-          >
-            <option value="">All scanner families</option>
-            <option value="YARA">YARA</option>
-            <option value="SIGMA">SIGMA</option>
-            <option value="SNORT">SNORT</option>
-            <option value="SURICATA">SURICATA</option>
-          </select>
-          <label className="flex items-center gap-2 rounded-lg border border-border/70 bg-surface-1 px-3 text-sm">
-            <input
-              type="checkbox"
-              checked={form.persist}
-              onChange={(event) => setForm((current) => ({ ...current, persist: event.target.checked }))}
-            />
-            <span>{form.persist ? "Save snapshot in library" : "Preview only"}</span>
-          </label>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.targetId}
-            onChange={(event) => setForm((current) => ({ ...current, targetId: event.target.value }))}
-          >
-            <option value="">All targets</option>
-            {targets.map((target) => <option key={target.id} value={target.id}>{target.hostname || target.ipAddress}</option>)}
-          </select>
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.severity}
-            onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value }))}
-          >
-            <option value="">All severities</option>
-            {SEVERITY_OPTIONS.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
-          </select>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,0.9fr)_minmax(220px,0.9fr)_minmax(220px,0.9fr)]">
-          <Input
-            placeholder="From UTC (ISO-8601)"
-            value={form.fromUtc}
-            onChange={(event) => setForm((current) => ({ ...current, fromUtc: event.target.value }))}
-          />
-          <Input
-            placeholder="To UTC (ISO-8601)"
-            value={form.toUtc}
-            onChange={(event) => setForm((current) => ({ ...current, toUtc: event.target.value }))}
-          />
-          <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
-            value={form.status}
-            onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
-          >
-            <option value="">All alert statuses</option>
-            {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-          </select>
+            <BuilderMetric icon={FolderOpen} label="Saved" value={String(reports.length)} description="Stored snapshots in the library." />
+            <BuilderMetric icon={Clock3} label="Window" value="7d" description="UTC scope before custom filtering." />
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+          <section className="space-y-3" aria-labelledby="report-type-heading">
+            <div>
+              <h3 id="report-type-heading" className="text-sm font-semibold text-foreground">Report type</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Pick the structure analysts will review before export.</p>
+            </div>
+            <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-1">
+              {REPORT_TEMPLATES.map((template) => {
+                const active = form.reportType === template.value
+                const TemplateIcon = template.icon
+                const accent = reportTypeAccent(template.value)
+                return (
+                  <button
+                    key={template.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setForm((current) => ({ ...current, reportType: template.value }))}
+                    className={`group relative min-h-[128px] overflow-hidden rounded-2xl border px-5 py-4 text-left transition ${
+                      active
+                        ? "border-primary/55 bg-surface-2/72 shadow-[var(--shadow-emphasis)]"
+                        : "border-border/70 bg-surface-2/42 hover:border-primary/28 hover:bg-surface-2/60"
+                    }`}
+                  >
+                    <span className={`absolute inset-y-0 left-0 w-1 ${active ? accent.rail : "bg-border/45 group-hover:bg-primary/45"}`} aria-hidden="true" />
+                    <div className="flex h-full items-start gap-4">
+                      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition ${
+                        active ? accent.icon : "border-border/60 bg-surface-1/70 text-muted-foreground group-hover:border-primary/25 group-hover:text-primary"
+                      }`}>
+                        <TemplateIcon className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-lg font-semibold leading-tight text-foreground">{template.label}</p>
+                          {active ? <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${accent.chip}`}>Selected</span> : null}
+                        </div>
+                        <p className="mt-3 max-w-[42rem] text-sm leading-6 text-muted-foreground">{template.description}</p>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-border/65 bg-surface-2/40 p-4 shadow-[var(--shadow-soft)]" aria-labelledby="scope-output-heading">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 id="scope-output-heading" className="text-sm font-semibold text-foreground">Scope and output</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Constrain report evidence without leaving the builder.</p>
+              </div>
+              <span className="wb-chip">
+                <Database className="h-3.5 w-3.5" />
+                HTML snapshots
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Title</span>
+                <Input
+                  placeholder="Optional report title"
+                  value={form.title}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                />
+              </label>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Scanner</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.scannerFamily}
+                    onChange={(event) => setForm((current) => ({ ...current, scannerFamily: event.target.value }))}
+                  >
+                    <option value="">All scanner families</option>
+                    <option value="YARA">YARA</option>
+                    <option value="SIGMA">SIGMA</option>
+                    <option value="SNORT">SNORT</option>
+                    <option value="SURICATA">SURICATA</option>
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Target</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.targetId}
+                    onChange={(event) => setForm((current) => ({ ...current, targetId: event.target.value }))}
+                  >
+                    <option value="">All targets</option>
+                    {targets.map((target) => <option key={target.id} value={target.id}>{target.hostname || target.ipAddress}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Severity</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.severity}
+                    onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value }))}
+                  >
+                    <option value="">All severities</option>
+                    {SEVERITY_OPTIONS.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Alert status</span>
+                  <select
+                    className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+                    value={form.status}
+                    onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+                  >
+                    <option value="">All alert statuses</option>
+                    {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">From UTC</span>
+                  <Input
+                    placeholder="ISO-8601"
+                    value={form.fromUtc}
+                    onChange={(event) => setForm((current) => ({ ...current, fromUtc: event.target.value }))}
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">To UTC</span>
+                  <Input
+                    placeholder="ISO-8601"
+                    value={form.toUtc}
+                    onChange={(event) => setForm((current) => ({ ...current, toUtc: event.target.value }))}
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-surface-1/60 px-3 py-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.persist}
+                    onChange={(event) => setForm((current) => ({ ...current, persist: event.target.checked }))}
+                  />
+                  <span>{form.persist ? "Save snapshot in library for HTML export" : "Preview only without saving"}</span>
+                </label>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-t border-border/55 pt-4">
           <Button onClick={generate} disabled={generating}>
             {generating ? "Building preview..." : "Preview report"}
           </Button>
@@ -823,7 +882,7 @@ export default function ReportsPage() {
         </div>
       </article>
 
-      <article className="wb-reading-surface space-y-5">
+      <article ref={previewRef} className="wb-reading-surface scroll-mt-28 space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="wb-kicker">Preview</p>
@@ -886,7 +945,7 @@ export default function ReportsPage() {
                   </div>
                 ) : null}
 
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                   {section.metrics.map((metric) => (
                     <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
                       <p className="wb-kicker">{metric.label}</p>
@@ -965,7 +1024,7 @@ export default function ReportsPage() {
           <EmptyState title="No saved reports" description="Saved report snapshots will appear here after preview generation with saving enabled." />
         ) : (
           <>
-          <div className="hidden overflow-x-auto lg:block">
+          <div className="hidden overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
               <thead className="text-left text-xs uppercase tracking-[0.18em] text-muted-foreground">
                 <tr>
@@ -1030,18 +1089,23 @@ export default function ReportsPage() {
               </tbody>
             </table>
           </div>
-          <div className="grid gap-3 lg:hidden">
+          <div className="grid gap-3">
             {reports.map((report) => {
               const snapshot = parseReportSnapshot(report, targets)
               const deleting = deletingReportId === report.id
               const aegisPlan = aegisPlanBySourceReportId.get(report.id)
               const isAegisPlan = isAegisMitigationReport(report)
+              const accent = reportTypeAccent(report.reportType)
               return (
-                <div key={report.id} className="rounded-2xl border border-border/65 bg-surface-1/60 p-4">
+                <div key={report.id} className="relative overflow-hidden rounded-2xl border border-border/65 bg-surface-1/60 p-4 transition-colors hover:border-primary/25 hover:bg-surface-1/75">
+                  <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-semibold text-foreground">{report.title}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{formatReportType(report.reportType)} | {formatUtc(report.createdAtUtc)}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className={`inline-flex rounded-md border px-2 py-0.5 ${accent.chip}`}>{formatReportType(report.reportType)}</span>
+                        <span>{formatUtc(report.createdAtUtc)}</span>
+                      </div>
                     </div>
                     {aegisPlan || isAegisPlan ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-2 py-1 text-[11px] font-medium text-emerald-200">
@@ -1135,7 +1199,7 @@ export default function ReportsPage() {
                       </div>
                     ) : null}
 
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                       {section.metrics.map((metric) => (
                         <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
                           <p className="wb-kicker">{metric.label}</p>

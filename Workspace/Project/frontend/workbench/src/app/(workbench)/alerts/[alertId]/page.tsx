@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { motion } from "framer-motion"
+import { alertCaseContext, alertCaseTitle, formatAlertOwner, formatAlertTimestamp } from "@/components/workbench/alert-case-format"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/workbench/status-badge"
@@ -66,10 +67,6 @@ function ProgressMeter({
       </div>
     </div>
   )
-}
-
-function ownerLabel(ownerUserId: string) {
-  return ownerUserId === "unassigned" ? "Unassigned" : ownerUserId
 }
 
 function SectionHeader({ title, description }: { title: string; description: string }) {
@@ -138,6 +135,64 @@ function ScannerSpecificFields({ detail }: { detail: V2AlertDetailResponse["link
   return null
 }
 
+function CaseSource({ detail }: { detail: V2AlertDetailResponse }) {
+  const sources = [...detail.linkedScanResults].sort((left, right) => {
+    const leftTime = new Date(left.finishedAtUtc ?? left.startedAtUtc ?? 0).getTime()
+    const rightTime = new Date(right.finishedAtUtc ?? right.startedAtUtc ?? 0).getTime()
+    return rightTime - leftTime
+  })
+  const primary = sources[0]
+
+  return (
+    <section>
+      <SectionHeader
+        title="Case Source"
+        description="Scanner run context that produced the linked IOC evidence."
+      />
+      {primary ? (
+        <div className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <ScannerFamilyBadge family={detail.scannerFamily} size="sm" />
+              <StatusBadge value={primary.status} />
+            </div>
+            {sources.length > 1 ? (
+              <span className="text-xs text-muted-foreground">+{sources.length - 1} more source(s)</span>
+            ) : null}
+          </div>
+
+          <dl className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+            <div>
+              <dt className="wb-kicker">Job</dt>
+              <dd className="mt-1 break-all text-foreground">{primary.jobId ?? "Unknown"}</dd>
+            </div>
+            <div>
+              <dt className="wb-kicker">Result</dt>
+              <dd className="mt-1 break-all text-foreground">{primary.resultId}</dd>
+            </div>
+            <div>
+              <dt className="wb-kicker">Findings</dt>
+              <dd className="mt-1 text-foreground">{primary.findingsCount} IOC(s)</dd>
+            </div>
+            <div>
+              <dt className="wb-kicker">Window</dt>
+              <dd className="mt-1 text-foreground">
+                {primary.startedAtUtc ? formatAlertTimestamp(primary.startedAtUtc) : "Unknown start"}
+                {" - "}
+                {primary.finishedAtUtc ? formatAlertTimestamp(primary.finishedAtUtc) : "Unknown finish"}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border/65 bg-surface-2/35 p-3">
+          <p className="text-sm text-muted-foreground">Source scan context was not retained for this case.</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function AlertDetailPage() {
   const params = useParams<{ alertId: string }>()
   const { session } = useAuth()
@@ -189,16 +244,16 @@ export default function AlertDetailPage() {
 
   if (!isModeConfigured) {
     const failure = classifyUiError(null, { modeMisconfigured: true })
-    return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
+    return <ClassifiedFailureState failure={failure} fallbackTitle="Case detail unavailable" />
   }
 
   if (alertQuery.isLoading) {
-    return <LoadingState label="Loading alert detail" />
+    return <LoadingState label="Loading case detail" />
   }
 
   if (alertQuery.isError || !detail) {
     const failure = classifyUiError(alertQuery.error)
-    return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
+    return <ClassifiedFailureState failure={failure} fallbackTitle="Case detail unavailable" />
   }
 
   return (
@@ -206,9 +261,9 @@ export default function AlertDetailPage() {
       <motion.header className="wb-page-header" variants={panelMotion}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="wb-kicker">Alert Detail</p>
-            <h1 className="mt-1 max-w-5xl text-xl font-semibold tracking-tight break-words">{detail.title}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{detail.summary}</p>
+            <p className="wb-kicker">Case Detail</p>
+            <h1 className="mt-1 max-w-5xl text-xl font-semibold tracking-tight break-words">{alertCaseTitle(detail)}</h1>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{alertCaseContext(detail)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <StatusBadge value={detail.severity} />
@@ -220,7 +275,7 @@ export default function AlertDetailPage() {
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <p className="wb-kicker">Owner</p>
-            <p className="mt-1 text-sm font-semibold">{ownerLabel(detail.ownerUserId)}</p>
+            <p className="mt-1 text-sm font-semibold">{formatAlertOwner(detail.ownerUserId)}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <p className="wb-kicker">Target</p>
@@ -243,7 +298,7 @@ export default function AlertDetailPage() {
           </div>
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <p className="wb-kicker">Last Seen</p>
-            <p className="mt-1 text-sm font-semibold">{new Date(detail.lastDetectedAtUtc).toLocaleString()}</p>
+            <p className="mt-1 text-sm font-semibold">{formatAlertTimestamp(detail.lastDetectedAtUtc)}</p>
           </div>
         </div>
       </motion.header>
@@ -251,7 +306,7 @@ export default function AlertDetailPage() {
       <motion.article className="wb-panel space-y-4" variants={panelMotion}>
         <SectionHeader
           title="Status Controls"
-          description="Update the stored alert state without leaving the IOC evidence view."
+          description="Update the stored case state without leaving the IOC evidence view."
         />
         <div className="flex flex-wrap gap-2">
           {STATUS_OPTIONS.map((option) => (
@@ -294,36 +349,7 @@ export default function AlertDetailPage() {
           )}
         </section>
 
-        <section>
-          <SectionHeader
-            title="Related Scan Results"
-            description="Legacy scan runs derived from the linked IOC evidence for this alert."
-          />
-          {detail.linkedScanResults.length === 0 ? (
-            <EmptyState title="No linked scan results" description="This alert has not retained any related scan-result references yet." />
-          ) : (
-            <div className="space-y-2">
-              {detail.linkedScanResults.map((result) => (
-                <div key={result.resultId} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium">Result {result.resultId}</p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge value={result.status} />
-                      {canShowNonAlertPivots ? (
-                        <Link href={`/scans/${encodeURIComponent(result.resultId)}`} className="inline-flex">
-                          <Button type="button" size="sm" variant="outline">Open decision</Button>
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Job {result.jobId ?? "Unknown"} | {result.findingsCount} finding(s)
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        <CaseSource detail={detail} />
       </motion.article>
 
       <motion.article className="wb-panel" variants={panelMotion}>
