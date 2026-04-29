@@ -21,6 +21,7 @@ import type {
   PowerBiVisualizationCatalogResponse,
   GeneratedReportResponse,
   ReportListResponse,
+  ReportResponse,
   ReportMitigationListResponse,
   ReportMitigationResponse,
   ScanJobResponse,
@@ -512,6 +513,13 @@ export class MockGateway implements Gateway {
         targetDisplay: "Demo target",
         ruleName: item.title,
         linkedIocCount: 0,
+        progress: {
+          totalIocs: 0,
+          openCount: 0,
+          inReviewCount: 0,
+          completedCount: 0,
+          percentComplete: 0,
+        },
         firstDetectedAtUtc: item.createdAtUtc,
         lastDetectedAtUtc: item.updatedAtUtc,
         createdAtUtc: item.createdAtUtc,
@@ -549,6 +557,13 @@ export class MockGateway implements Gateway {
       targetDisplay: "Demo target",
       ruleName: item.title,
       linkedIocCount: 0,
+      progress: {
+        totalIocs: 0,
+        openCount: 0,
+        inReviewCount: 0,
+        completedCount: 0,
+        percentComplete: 0,
+      },
       firstDetectedAtUtc: item.createdAtUtc,
       lastDetectedAtUtc: item.updatedAtUtc,
       createdAtUtc: item.createdAtUtc,
@@ -562,6 +577,11 @@ export class MockGateway implements Gateway {
   async updateAlertStatus(alertId: string, status: string, _actorUserId: string): Promise<V2AlertDetailResponse> {
     consume(_actorUserId)
     return this.getAlertDetail(alertId).then((detail) => ({ ...detail, status }))
+  }
+
+  async updateAlertIocStatus(alertId: string, iocId: string, status: string, _actorUserId: string): Promise<V2AlertDetailResponse> {
+    consume(iocId, status, _actorUserId)
+    return this.getAlertDetail(alertId)
   }
 
   async listCases(_signal?: AbortSignal) {
@@ -671,6 +691,16 @@ export class MockGateway implements Gateway {
       page: page.page,
       pageSize: page.pageSize,
     }
+  }
+
+  async getReport(reportId: string, _signal?: AbortSignal): Promise<ReportResponse> {
+    consume(_signal)
+    const report = this.generatedReports.find((item) => item.id === reportId)
+    if (!report) {
+      throw new Error("Report not found.")
+    }
+
+    return copy(report)
   }
 
   async generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse> {
@@ -890,6 +920,9 @@ export class MockGateway implements Gateway {
           isDefault: true,
           embedHeightPx: 760,
           tags: ["Executive", "Threat", "Operations"],
+          embedToken: null,
+          embedTokenExpiresAtUtc: null,
+          tokenType: "Iframe",
         },
       ],
     }
@@ -1185,6 +1218,48 @@ export class MockGateway implements Gateway {
     }
   }
 
+  async getAiModelStatistics(_signal?: AbortSignal) {
+    consume(_signal)
+    return {
+      modelId: "cti-v1-baseline",
+      modelVersion: "mock-v1",
+      status: "active",
+      datasetVersion: "mock-dataset-v1",
+      scoringProfileVersion: "heuristic-v1",
+      featureSchemaVersion: "cti-feature-schema-v1",
+      createdAtUtc: "2026-04-26T06:02:15.209852Z",
+      publishedAtUtc: "2026-04-26T06:02:44.547760Z",
+      trainingWindowStartUtc: "2025-12-08T16:58:48Z",
+      trainingWindowEndUtc: "2026-04-26T06:01:19.498829Z",
+      evaluationWindowStartUtc: "2025-12-13T01:16:25Z",
+      evaluationWindowEndUtc: "2026-04-26T06:01:19.498829Z",
+      datasetManifestHash: "mock-manifest-hash",
+      metrics: {
+        precision: 1,
+        recall: 0.996,
+        prAuc: 0.999,
+        calibrationError: 0.001,
+        abstainRate: 0.483,
+        coverage: 0.517,
+        validationSampleSize: 518,
+      },
+      thresholds: {
+        recommend: 0.8,
+        escalate: 0.95,
+        abstain: 0.55,
+      },
+      datasetCounts: {
+        observables: 5178,
+        detections: 5178,
+        outcomes: 5178,
+        sourceTrust: 13,
+      },
+      runtimeWarnings: [],
+      readinessStatus: "ready",
+      notes: "Mock baseline model statistics.",
+    }
+  }
+
   async updateScanAnalystPosture(input: UpdateScanAnalystPostureInput): Promise<ScanAnalystAgentStatusResponse> {
     this.scanAnalystPosture = {
       ...this.scanAnalystPosture,
@@ -1473,41 +1548,44 @@ export class MockGateway implements Gateway {
       completedAtUtc: now,
       failureCode: null,
       failureMessage: null,
-      modelVersion: "mock-model",
-      datasetVersion: "mock-dataset",
+      modelVersion: "v1-unified-supervised-v1-cv5-20260426060214",
+      datasetVersion: "unified-supervised-v1",
       decision: {
         verdict: "likely_malicious",
         action: "monitor",
-        confidence: 0.71,
-        falsePositiveRisk: 0.22,
+        confidence: 0.32,
+        falsePositiveRisk: 0.38,
         reviewPriority: "high",
         shouldPromoteToIndicator: true,
         shouldSuppress: false,
         shouldAllowlist: false,
-        shouldEscalate: true,
-        reasons: ["Mock reasoning for UI scaffolding."],
+        shouldEscalate: false,
+        reasons: [
+          "The IOC has suspicious scanner evidence, but the model cannot corroborate it strongly enough for automatic escalation.",
+          "verdict=likely_malicious calibrated_signal=0.32 uncertainty=0.68 conflict=0.26",
+        ],
         provenance: [],
-        nextBestEvidence: ["collect_host_telemetry"],
+        nextBestEvidence: ["collect_host_telemetry", "run_reputation_enrichment", "review_prior_analyst_outcomes"],
         abstainReason: null,
         scoredAtUtc: now,
         safetyDiagnostics: {
           autoRemediationAllowed: false,
-          weakEvidence: false,
-          contradictoryEvidence: false,
-          contradictionScore: 0,
-          missingCriticalFields: [],
-          partialEvidence: false,
-          enrichmentStatus: "available",
-          falsePositiveRisk: 0.22,
+          weakEvidence: true,
+          contradictoryEvidence: true,
+          contradictionScore: 0.26,
+          missingCriticalFields: ["source_reputation", "analyst_history", "enrichment_summary"],
+          partialEvidence: true,
+          enrichmentStatus: "degraded",
+          falsePositiveRisk: 0.38,
           severityCapApplied: false,
           maxRecommendationSeverity: "containment_allowed",
-          degradationReasons: [],
+          degradationReasons: ["weak_enrichment", "missing_scan_evidence", "conflicting_evidence"],
         },
         raw: {},
       },
       explanationAvailable: true,
       actionPlanAvailable: true,
-      similarDetectionsAvailable: true,
+      similarDetectionsAvailable: false,
       evidenceSourcesAvailable: true,
     }
   }

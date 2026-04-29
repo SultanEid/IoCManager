@@ -120,8 +120,7 @@ type DemoReportRecord = {
   reportType: string
   scope: string
   createdAtUtc: string
-  pdfDownloadPath: string | null
-  csvDownloadPath: string | null
+  htmlDownloadPath: string | null
   status: string
 }
 
@@ -142,8 +141,7 @@ type DemoReportDetail = {
     status: string | null
   }
   sections: DemoSection[]
-  pdfDownloadPath: string | null
-  csvDownloadPath: string | null
+  htmlDownloadPath: string | null
   status: string
 }
 
@@ -174,8 +172,8 @@ function shiftMinutes(base: string, minutes: number) {
   return new Date(new Date(base).getTime() + minutes * 60_000).toISOString()
 }
 
-function makeArtifactPath(reportId: string, format: "pdf" | "csv") {
-  return `/demo/legacy-pipeline/reports/${reportId}.${format}`
+function makeArtifactPath(reportId: string) {
+  return `/demo/legacy-pipeline/reports/${reportId}.html`
 }
 
 function recalculateNetworkStats(state: DemoState) {
@@ -532,8 +530,7 @@ function createInitialState(): DemoState {
       reportType: "ExecutiveSummary",
       scope: "Global scope",
       createdAtUtc: shiftMinutes(baseTime, -180),
-      pdfDownloadPath: makeArtifactPath(reportId, "pdf"),
-      csvDownloadPath: makeArtifactPath(reportId, "csv"),
+      htmlDownloadPath: makeArtifactPath(reportId),
       status: "Ready",
     },
   ]
@@ -570,8 +567,7 @@ function createInitialState(): DemoState {
           ],
         },
       ],
-      pdfDownloadPath: makeArtifactPath(reportId, "pdf"),
-      csvDownloadPath: makeArtifactPath(reportId, "csv"),
+      htmlDownloadPath: makeArtifactPath(reportId),
       status: "Ready",
     },
   }
@@ -1340,8 +1336,7 @@ export const legacyPipelineDemo = {
         reportType,
         scope,
         createdAtUtc: now,
-        pdfDownloadPath: makeArtifactPath(reportId, "pdf"),
-        csvDownloadPath: makeArtifactPath(reportId, "csv"),
+        htmlDownloadPath: makeArtifactPath(reportId),
         status: "Ready",
       }
       getState().reports.unshift(persistedReport)
@@ -1353,8 +1348,7 @@ export const legacyPipelineDemo = {
         createdAtUtc: now,
         query,
         sections,
-        pdfDownloadPath: persistedReport.pdfDownloadPath,
-        csvDownloadPath: persistedReport.csvDownloadPath,
+        htmlDownloadPath: persistedReport.htmlDownloadPath,
         status: persistedReport.status,
       }
     }
@@ -1381,17 +1375,12 @@ export const legacyPipelineDemo = {
     return {
       id: report.id,
       title: report.title,
-      deletedFiles: 2,
+      deletedFiles: 1,
     }
   },
 
   downloadReportArtifact(path: string, fallbackFileName: string) {
     const reportId = path.split("/").pop()?.split(".")[0] ?? fallbackFileName
-    const format = path.toLowerCase().endsWith(".csv") ? "csv" : "pdf"
-    if (format === "csv") {
-      downloadContent(`${reportId}.csv`, "title,status\nFrontend Demo,Ready\n", "text/csv;charset=utf-8")
-      return
-    }
-    downloadContent(`${reportId}.pdf`, `Demo report artifact for ${reportId}`, "application/pdf")
+    downloadContent(`${reportId}.html`, `<!doctype html><html><body><h1>Demo report artifact for ${reportId}</h1></body></html>`, "text/html;charset=utf-8")
   },
 }

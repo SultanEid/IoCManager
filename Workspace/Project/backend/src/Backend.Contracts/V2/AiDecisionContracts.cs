@@ -49,6 +49,27 @@ public sealed record IocLatestDecisionDto(
     Guid? DetectionId,
     DecisionResultDto Result);
 
+public sealed record AiModelStatisticsDto(
+    string ModelId,
+    string ModelVersion,
+    string Status,
+    string DatasetVersion,
+    string ScoringProfileVersion,
+    string FeatureSchemaVersion,
+    DateTimeOffset? CreatedAtUtc,
+    DateTimeOffset? PublishedAtUtc,
+    DateTimeOffset? TrainingWindowStartUtc,
+    DateTimeOffset? TrainingWindowEndUtc,
+    DateTimeOffset? EvaluationWindowStartUtc,
+    DateTimeOffset? EvaluationWindowEndUtc,
+    string? DatasetManifestHash,
+    IReadOnlyDictionary<string, decimal> Metrics,
+    IReadOnlyDictionary<string, decimal> Thresholds,
+    IReadOnlyDictionary<string, int> DatasetCounts,
+    IReadOnlyList<string> RuntimeWarnings,
+    string ReadinessStatus,
+    string? Notes);
+
 public sealed record DecisionDecisionDto(
     string Verdict,
     string Action,

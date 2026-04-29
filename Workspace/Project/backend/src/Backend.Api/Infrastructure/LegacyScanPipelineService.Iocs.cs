@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Backend.Contracts.V2;
 using Backend.Infrastructure.Compatibility.LegacyAzure;
@@ -18,6 +19,7 @@ public sealed partial class LegacyScanPipelineService
     private static readonly Regex WindowsPathRegex = new(@"(?:^|[\s""'])(?:[A-Za-z]:\\|\\\\)[^\s""']+", RegexOptions.Compiled);
     private static readonly Regex UnixPathRegex = new(@"(?:^|[\s""'])/(?:bin|boot|dev|etc|home|lib|opt|proc|root|sbin|tmp|usr|var)/[^\s""']+", RegexOptions.Compiled);
     private static readonly Regex RegistryPathRegex = new(@"\b(?:HKLM|HKCU|HKCR|HKU|HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER)\\[^\s""']+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private const int ClassificationTextLimit = 8192;
     private static readonly string[] ToolKeywords =
     [
         "mimikatz",
@@ -370,9 +372,7 @@ public sealed partial class LegacyScanPipelineService
                     row.ScanResult is not null
                         ? LegacyScanPipelineHelpers.ToDateTimeOffset(row.ScanResult.FinishedAt)
                         : LegacyScanPipelineHelpers.ToDateTimeOffset(row.ScanJob.FinishedAt)),
-            row.Ioc.YaraDetail is null
-                ? null
-                : new LegacyPipelineIocFindingYaraDetailResponse(row.Ioc.YaraDetail.FilePath, row.Ioc.YaraDetail.FileHash),
+            ToYaraDetailResponse(row.Ioc),
             row.Ioc.SigmaDetail is null
                 ? null
                 : new LegacyPipelineIocFindingSigmaDetailResponse(
@@ -387,6 +387,44 @@ public sealed partial class LegacyScanPipelineService
                     row.Ioc.NetworkDetail.Protocol,
                     NormalizeFindingSeverity(row.Ioc.NetworkDetail.Severity),
                     row.Ioc.NetworkDetail.FlowId));
+    }
+
+    private static LegacyPipelineIocFindingYaraDetailResponse? ToYaraDetailResponse(LegacyPipelineIocEntity ioc)
+    {
+        if (ioc.YaraDetail is null)
+        {
+            return null;
+        }
+
+        var fileHash = LegacyScanPipelineHelpers.CleanOrNull(ioc.YaraDetail.FileHash)
+            ?? ExtractYaraFileHash(ioc.RawPayload);
+
+        return new LegacyPipelineIocFindingYaraDetailResponse(ioc.YaraDetail.FilePath, fileHash);
+    }
+
+    internal static string? ExtractYaraFileHash(string? rawPayload)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            var root = document.RootElement;
+            return LegacyScanPipelineHelpers.CleanOrNull(
+                LegacyScanPipelineHelpers.ReadJsonString(root, "file_hash")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "fileHash")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "sha256")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "sha1")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "md5")
+                ?? LegacyScanPipelineHelpers.ReadJsonString(root, "hash"));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     internal static (string Value, string Kind) ResolveIndicator(LegacyPipelineIocEntity ioc)
@@ -737,16 +775,16 @@ public sealed partial class LegacyScanPipelineService
             "\n",
             new[]
             {
-                ioc.RuleName,
-                indicatorValue,
-                ioc.RawPayload,
-                ioc.YaraDetail?.FilePath,
-                ioc.YaraDetail?.FileHash,
-                ioc.SigmaDetail?.CommandLine,
-                ioc.SigmaDetail?.LogSource,
-                ioc.NetworkDetail?.SourceIP,
-                ioc.NetworkDetail?.DestIP,
-                ioc.NetworkDetail?.Protocol,
+                LimitClassificationText(ioc.RuleName),
+                LimitClassificationText(indicatorValue),
+                LimitClassificationText(ioc.RawPayload),
+                LimitClassificationText(ioc.YaraDetail?.FilePath),
+                LimitClassificationText(ioc.YaraDetail?.FileHash),
+                LimitClassificationText(ioc.SigmaDetail?.CommandLine),
+                LimitClassificationText(ioc.SigmaDetail?.LogSource),
+                LimitClassificationText(ioc.NetworkDetail?.SourceIP),
+                LimitClassificationText(ioc.NetworkDetail?.DestIP),
+                LimitClassificationText(ioc.NetworkDetail?.Protocol),
             }.Where(value => !string.IsNullOrWhiteSpace(value)))
             .ToLowerInvariant();
 
@@ -770,16 +808,21 @@ public sealed partial class LegacyScanPipelineService
     private static bool HasExplicitHashIndicator(LegacyPipelineIocEntity ioc, string indicatorValue)
         => ContainsHash(ioc.YaraDetail?.FileHash)
             || IsStandaloneHash(indicatorValue)
-            || IsStandaloneHash(ioc.RawPayload);
+            || IsStandaloneHash(LimitClassificationText(ioc.RawPayload));
 
     private static bool HasExplicitIpIndicator(LegacyPipelineIocEntity ioc, string indicatorValue)
         => HasIpAddress(ioc.NetworkDetail?.SourceIP)
             || HasIpAddress(ioc.NetworkDetail?.DestIP)
             || IsStandaloneIp(indicatorValue)
-            || IsStandaloneIp(ioc.RawPayload);
+            || IsStandaloneIp(LimitClassificationText(ioc.RawPayload));
 
     private static bool HasBareDomainIndicator(LegacyPipelineIocEntity ioc, string indicatorValue)
-        => ContainsBareDomain(indicatorValue) || ContainsBareDomain(ioc.RawPayload);
+        => ContainsBareDomain(indicatorValue) || ContainsBareDomain(LimitClassificationText(ioc.RawPayload));
+
+    private static string? LimitClassificationText(string? value)
+        => string.IsNullOrEmpty(value) || value.Length <= ClassificationTextLimit
+            ? value
+            : value[..ClassificationTextLimit];
 
     private static bool ContainsHash(string? value)
         => !string.IsNullOrWhiteSpace(value) && HashRegex.IsMatch(value);

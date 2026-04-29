@@ -92,6 +92,10 @@ export class AugmentedGateway implements Gateway {
     return this.source.updateAlertStatus(alertId, status, actorUserId)
   }
 
+  updateAlertIocStatus(alertId: string, iocId: string, status: string, actorUserId: string) {
+    return this.source.updateAlertIocStatus(alertId, iocId, status, actorUserId)
+  }
+
   listAlerts(signal?: AbortSignal) {
     return this.source.listAlerts(signal)
   }
@@ -170,6 +174,10 @@ export class AugmentedGateway implements Gateway {
 
   listReports(query?: ReportListQuery, signal?: AbortSignal) {
     return this.source.listReports(query, signal)
+  }
+
+  getReport(reportId: string, signal?: AbortSignal) {
+    return this.source.getReport(reportId, signal)
   }
 
   generateReport(input: GenerateReportInput) {
@@ -342,6 +350,10 @@ export class AugmentedGateway implements Gateway {
 
   getScanAnalystStatus(signal?: AbortSignal) {
     return this.source.getScanAnalystStatus(signal)
+  }
+
+  getAiModelStatistics(signal?: AbortSignal) {
+    return this.source.getAiModelStatistics(signal)
   }
 
   updateScanAnalystPosture(input: UpdateScanAnalystPostureInput) {

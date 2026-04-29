@@ -23,6 +23,7 @@ const expectedPrimaryNav = [
   { href: "/servers", label: "Servers" },
   { href: "/scans", label: "Scans" },
   { href: "/scan-plan", label: "Scan Plan" },
+  { href: "/agents", label: "Agents" },
   { href: "/rules", label: "Rules Management" },
   { href: "/ioc-ingestion", label: "IOCs Explorer" },
   { href: "/coverage-pain-analysis", label: "Pyramid of Pain" },

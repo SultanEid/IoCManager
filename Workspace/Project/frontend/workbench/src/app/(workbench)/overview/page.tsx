@@ -4,6 +4,7 @@ import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 import { motion } from "framer-motion"
 import { Activity, AlertOctagon, FileText, Radar, ServerCog } from "lucide-react"
+import { alertCaseContext, alertCaseTitle, formatAlertOwner, formatAlertTimestamp } from "@/components/workbench/alert-case-format"
 import { PowerBiVisualAnalyticsPanel } from "@/components/workbench/dashboard/power-bi-visual-analytics-panel"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import type { V2AlertResponse } from "@/shared/api/schemas"
@@ -19,11 +20,14 @@ import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
 const columns: ColumnDef<V2AlertResponse>[] = [
   {
     accessorKey: "title",
-    header: "Alert",
+    header: "Case",
     cell: ({ row }) => (
-      <Link href={`/alerts/${row.original.id}`} className="text-xs font-medium text-foreground hover:underline">
-        {row.original.title}
-      </Link>
+      <div>
+        <Link href={`/alerts/${row.original.id}`} className="text-xs font-medium text-foreground hover:underline">
+          {alertCaseTitle(row.original)}
+        </Link>
+        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{alertCaseContext(row.original)}</p>
+      </div>
     ),
   },
   {
@@ -39,11 +43,12 @@ const columns: ColumnDef<V2AlertResponse>[] = [
   {
     accessorKey: "ownerUserId",
     header: "Owner",
+    cell: ({ row }) => formatAlertOwner(row.original.ownerUserId),
   },
   {
     accessorKey: "updatedAtUtc",
     header: "Updated",
-    cell: ({ row }) => new Date(row.original.updatedAtUtc).toLocaleString(),
+    cell: ({ row }) => formatAlertTimestamp(row.original.updatedAtUtc),
   },
 ]
 
@@ -118,7 +123,7 @@ export default function OverviewPage() {
         </div>
       </motion.header>
 
-      <motion.article className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-4" variants={panelMotion}>
+      <motion.article className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4" variants={panelMotion}>
         <MetricCard
           icon={AlertOctagon}
           label="Indexed Alerts"
@@ -149,14 +154,14 @@ export default function OverviewPage() {
 
       <motion.article className="wb-panel" variants={panelMotion}>
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold tracking-tight">Recent Alerts</h3>
+          <h3 className="text-sm font-semibold tracking-tight">Recent investigation cases</h3>
           <Link href="/alerts" className="text-xs text-primary hover:underline">
-            Open alert registry
+            Open cases
           </Link>
         </div>
 
         {alerts.length === 0 ? (
-          <EmptyState title="No alerts available" description="Alerts will appear once telemetry intake produces persisted detections." />
+          <EmptyState title="No cases available" description="Investigation cases will appear once telemetry intake produces persisted detections." />
         ) : (
           <DataGrid data={alerts} columns={columns} />
         )}

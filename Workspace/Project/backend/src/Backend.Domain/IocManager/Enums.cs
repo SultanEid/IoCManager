@@ -134,6 +134,15 @@ public enum AlertStatus
     Closed = 4,
 }
 
+public enum AlertIocStatus
+{
+    Open = 1,
+    InReview = 2,
+    Contained = 3,
+    FalsePositive = 4,
+    AcceptedRisk = 5,
+}
+
 public enum RuleRevisionStatus
 {
     Draft = 1,

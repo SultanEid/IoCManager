@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
 import { motion } from "framer-motion"
-import { AlertQueuePanel } from "@/components/workbench/alerts/alert-queue-panel"
+import { alertCaseContext, alertCaseTitle, formatAlertOwner, formatAlertTimestamp } from "@/components/workbench/alert-case-format"
+import { ACCENT_TONES, severityAccent } from "@/components/workbench/accent-tone"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
@@ -34,49 +35,126 @@ type AlertFiltersState = {
   page: number
 }
 
+function AlertProgressCell({ alert }: { alert: V2AlertResponse }) {
+  if (alert.progress.totalIocs === 0) {
+    return (
+      <div className="min-w-28 rounded-lg border border-border/65 bg-surface-2/55 px-2 py-1.5 text-xs text-muted-foreground">
+        No linked IOCs
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-w-32">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-semibold text-foreground">{alert.progress.percentComplete}%</span>
+        <span className="text-muted-foreground">
+          {alert.progress.completedCount}/{alert.progress.totalIocs}
+        </span>
+      </div>
+      <div
+        className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-1"
+        role="progressbar"
+        aria-label={`IOC progress for ${alert.title}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={alert.progress.percentComplete}
+      >
+        <div className="h-full rounded-full bg-cyan-300" style={{ width: `${alert.progress.percentComplete}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function AlertMobileCard({ alert, onOpen }: { alert: V2AlertResponse; onOpen: () => void }) {
+  const accent = severityAccent(alert.severity)
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="relative block w-full overflow-hidden rounded-xl border border-border/70 bg-surface-2/55 p-3 pl-4 text-left transition-colors hover:border-primary/40 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm font-semibold tracking-tight">{alertCaseTitle(alert)}</p>
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{alertCaseContext(alert)}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <StatusBadge value={alert.severity} />
+          <StatusBadge value={alert.status} />
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+        <div>
+          <p className="wb-kicker">Scanner</p>
+          <div className="mt-1"><ScannerFamilyBadge family={alert.scannerFamily} size="sm" /></div>
+        </div>
+        <div>
+          <p className="wb-kicker">Target</p>
+          <p className="mt-1 break-words text-foreground">{alert.targetDisplay}</p>
+        </div>
+        <div>
+          <p className="wb-kicker">Owner</p>
+          <p className="mt-1 text-foreground">{formatAlertOwner(alert.ownerUserId)}</p>
+        </div>
+      </div>
+      <div className="mt-3">
+        <AlertProgressCell alert={alert} />
+      </div>
+    </button>
+  )
+}
+
 const columns: ColumnDef<V2AlertResponse>[] = [
   {
     accessorKey: "title",
-    header: "Alert",
+    header: "Case",
     cell: ({ row }) => (
-      <div>
-        <p className="font-medium">{row.original.title}</p>
-        <p className="line-clamp-1 text-xs text-muted-foreground">{row.original.summary}</p>
+      <div className="min-w-[18rem] max-w-[28rem]">
+        <p className="line-clamp-1 font-medium">{alertCaseTitle(row.original)}</p>
+        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{alertCaseContext(row.original)}</p>
       </div>
     ),
   },
   {
     accessorKey: "severity",
-    header: "Severity",
-    cell: ({ row }) => <StatusBadge value={row.original.severity} />,
+    header: "Priority",
+    cell: ({ row }) => (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <StatusBadge value={row.original.severity} />
+        <StatusBadge value={row.original.status} />
+      </div>
+    ),
   },
   {
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => <StatusBadge value={row.original.status} />,
+    accessorKey: "ruleName",
+    header: "Evidence",
+    cell: ({ row }) => (
+      <div className="min-w-[14rem] max-w-[22rem]">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ScannerFamilyBadge family={row.original.scannerFamily} size="sm" />
+          <span className="text-xs text-muted-foreground">{row.original.linkedIocCount} IOC(s)</span>
+        </div>
+        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{row.original.summary}</p>
+      </div>
+    ),
   },
   {
-    accessorKey: "scannerFamily",
-    header: "Scanner",
-    cell: ({ row }) => <ScannerFamilyBadge family={row.original.scannerFamily} size="sm" />,
-  },
-  {
-    accessorKey: "targetDisplay",
-    header: "Target",
-  },
-  {
-    accessorKey: "linkedIocCount",
-    header: "Linked IOCs",
+    accessorKey: "progress",
+    header: "Progress",
+    cell: ({ row }) => <AlertProgressCell alert={row.original} />,
   },
   {
     accessorKey: "lastDetectedAtUtc",
     header: "Last Seen",
-    cell: ({ row }) => new Date(row.original.lastDetectedAtUtc).toLocaleString(),
+    cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatAlertTimestamp(row.original.lastDetectedAtUtc)}</span>,
   },
   {
     accessorKey: "ownerUserId",
     header: "Owner",
-    cell: ({ row }) => (row.original.ownerUserId === "unassigned" ? "Unassigned" : row.original.ownerUserId),
+    cell: ({ row }) => <span className="text-sm">{formatAlertOwner(row.original.ownerUserId)}</span>,
   },
 ]
 
@@ -185,37 +263,41 @@ export default function AlertsPage() {
   return (
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
       <motion.header className="wb-page-header" variants={panelMotion}>
-        <p className="wb-kicker">Alert Posture</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-tight">Stored alerts promoted from fresh IOC findings</h2>
+        <p className="wb-kicker">Case Posture</p>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight">IOC investigation cases</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review IOC-driven alerts, search the queue, and pivot into exact evidence, target context, and related scan runs.
+          Each case represents a scanner finding with linked IOC review progress.
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Stored Alerts</p>
+        <div className="mt-4 grid gap-2 xl:grid-cols-2 2xl:grid-cols-4">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.primary.rail}`} aria-hidden="true" />
+            <p className="wb-kicker">Total Cases</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{total}</p>
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Open In Page</p>
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.cyan.rail}`} aria-hidden="true" />
+            <p className="wb-kicker">Active On Page</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{openAlerts}</p>
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Critical In Page</p>
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.rose.rail}`} aria-hidden="true" />
+            <p className="wb-kicker">Critical On Page</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{criticalAlerts}</p>
           </div>
-          <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-            <p className="wb-kicker">Unassigned In Page</p>
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
+            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.slate.rail}`} aria-hidden="true" />
+            <p className="wb-kicker">Unassigned On Page</p>
             <p className="mt-1 text-lg font-semibold tracking-tight">{unassignedAlerts}</p>
           </div>
         </div>
       </motion.header>
 
       <motion.article className="wb-panel space-y-4" variants={panelMotion}>
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
           <Input
             value={filters.q}
             onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value, page: 1 }))}
-            placeholder="Search title, summary, target, rule"
+            placeholder="Search case, target, rule, owner"
           />
           <select
             className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
@@ -255,7 +337,7 @@ export default function AlertsPage() {
           </select>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
           <Input
             value={filters.targetId}
             onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value.trim(), page: 1 }))}
@@ -271,7 +353,7 @@ export default function AlertsPage() {
             value={filters.toUtc}
             onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value, page: 1 }))}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button type="button" size="sm" onClick={applyFilters}>
               Apply
             </Button>
@@ -285,7 +367,7 @@ export default function AlertsPage() {
       <motion.article className="wb-panel space-y-3" variants={panelMotion}>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold tracking-tight">Stored alert registry</h3>
+            <h3 className="text-sm font-semibold tracking-tight">Investigation cases</h3>
             <p className="text-xs text-muted-foreground">
               Page {page} | {rows.length} row(s) returned
             </p>
@@ -295,26 +377,35 @@ export default function AlertsPage() {
         {rows.length === 0 ? (
           filteredOut ? (
             <SearchEmptyState
-              title="No alerts matched the current search"
-              description="Broaden the time window, remove the family or target filter, or clear the query to reopen the alert queue."
+              title="No cases matched the current search"
+              description="Broaden the time window, remove the scanner or target filter, or clear the query to reopen the case list."
               action={
                 <Button type="button" size="sm" variant="outline" onClick={clearFilters}>
-                  Reset alert filters
+                  Reset case filters
                 </Button>
               }
             />
           ) : (
             <EmptyState
-              title="No alerts available"
-              description="High and critical fresh findings will appear here once they are promoted during result ingestion."
+              title="No cases available"
+              description="Scanner findings will appear here as investigation cases after result ingestion."
             />
           )
         ) : (
-          <DataGrid data={rows} columns={columns} onRowClick={(row) => router.push(`/alerts/${row.id}`)} />
+          <>
+            <div className="grid gap-3 2xl:hidden">
+              {rows.map((row) => (
+                <AlertMobileCard key={row.id} alert={row} onOpen={() => router.push(`/alerts/${row.id}`)} />
+              ))}
+            </div>
+            <div className="hidden 2xl:block">
+              <DataGrid data={rows} columns={columns} onRowClick={(row) => router.push(`/alerts/${row.id}`)} />
+            </div>
+          </>
         )}
 
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">Showing {rows.length} of {total} matching alerts</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="text-muted-foreground">Showing {rows.length} of {total} matching cases</p>
           <div className="flex items-center gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => movePage(page - 1)} disabled={page <= 1}>
               Previous
@@ -326,9 +417,6 @@ export default function AlertsPage() {
         </div>
       </motion.article>
 
-      <motion.div variants={panelMotion}>
-        <AlertQueuePanel />
-      </motion.div>
     </motion.section>
   )
 }

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Backend.Api.Infrastructure;
+using Backend.Application.Abstractions.Integrations;
 using Backend.Application.Abstractions.Services;
 using Backend.Contracts.V2;
 using Backend.Infrastructure.Persistence;
@@ -20,20 +21,51 @@ public sealed class AiDecisionsController : ControllerBase
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IAiDecisionService _service;
+    private readonly IAiDecisionClient _aiDecisionClient;
     private readonly IAuthSensitiveAuditService _auditService;
     private readonly ILegacyScanPipelineService _legacyScanPipelineService;
     private readonly CtiDbContext _dbContext;
 
     public AiDecisionsController(
         IAiDecisionService service,
+        IAiDecisionClient aiDecisionClient,
         IAuthSensitiveAuditService auditService,
         ILegacyScanPipelineService legacyScanPipelineService,
         CtiDbContext dbContext)
     {
         _service = service;
+        _aiDecisionClient = aiDecisionClient;
         _auditService = auditService;
         _legacyScanPipelineService = legacyScanPipelineService;
         _dbContext = dbContext;
+    }
+
+    [HttpGet("/api/v2/ai/model-statistics")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType<AiModelStatisticsDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<AiModelStatisticsDto>> GetModelStatistics(CancellationToken cancellationToken)
+    {
+        var stats = await _aiDecisionClient.GetModelStatisticsAsync(cancellationToken);
+        return Ok(new AiModelStatisticsDto(
+            stats.ModelId,
+            stats.ModelVersion,
+            stats.Status,
+            stats.DatasetVersion,
+            stats.ScoringProfileVersion,
+            stats.FeatureSchemaVersion,
+            stats.CreatedAtUtc,
+            stats.PublishedAtUtc,
+            stats.TrainingWindowStartUtc,
+            stats.TrainingWindowEndUtc,
+            stats.EvaluationWindowStartUtc,
+            stats.EvaluationWindowEndUtc,
+            stats.DatasetManifestHash,
+            stats.Metrics,
+            stats.Thresholds,
+            stats.DatasetCounts,
+            stats.RuntimeWarnings,
+            stats.ReadinessStatus,
+            stats.Notes));
     }
 
     [HttpPost]

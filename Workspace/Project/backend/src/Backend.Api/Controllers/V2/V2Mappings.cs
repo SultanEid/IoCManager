@@ -49,6 +49,24 @@ internal static class V2Mappings
         };
     }
 
+    public static AlertIocStatus ParseAlertIocStatus(string rawValue)
+    {
+        if (Enum.TryParse<AlertIocStatus>(rawValue, true, out var direct))
+        {
+            return direct;
+        }
+
+        return rawValue.Trim().ToLowerInvariant().Replace("-", string.Empty).Replace("_", string.Empty) switch
+        {
+            "open" => AlertIocStatus.Open,
+            "inreview" or "investigating" => AlertIocStatus.InReview,
+            "contained" => AlertIocStatus.Contained,
+            "falsepositive" => AlertIocStatus.FalsePositive,
+            "acceptedrisk" => AlertIocStatus.AcceptedRisk,
+            _ => throw new ArgumentException($"Invalid alert IOC status '{rawValue}'.", nameof(rawValue)),
+        };
+    }
+
     public static CaseResponse ToLegacyCaseResponse(this Alert source)
     {
         var legacyStatus = source.Status switch
@@ -72,8 +90,10 @@ internal static class V2Mappings
             source.UpdatedAtUtc);
     }
 
-    public static AlertResponse ToAlertResponse(this Alert source, int linkedIocCount = 0)
+    public static AlertResponse ToAlertResponse(this Alert source, int linkedIocCount = 0, AlertProgressResponse? progress = null)
     {
+        progress ??= new AlertProgressResponse(linkedIocCount, linkedIocCount, 0, 0, 0);
+
         return new AlertResponse(
             source.Id,
             source.Title,
@@ -87,6 +107,7 @@ internal static class V2Mappings
             source.TargetDisplay,
             source.RuleName,
             linkedIocCount,
+            progress,
             source.FirstDetectedAtUtc,
             source.LastDetectedAtUtc,
             source.CreatedAtUtc,

@@ -23,6 +23,7 @@ import {
   type AiSimilarDetectionsResponse,
   type DetectionLinkedAlertCaseResponse,
 } from "@/shared/api/schemas"
+import { explainDecisionConfidence } from "@/shared/ai/confidence-explanation"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
@@ -811,6 +812,15 @@ export default function DetectionDecisionPage() {
   ].filter(Boolean) as string[]
   const canSubmitOverride = Boolean(decisionId) && !isSubmittingOverride && overrideRequirements.length === 0
   const safetyDiagnostics = decisionResult?.decision?.safetyDiagnostics ?? null
+  const confidenceReasons = explainDecisionConfidence({
+    result: decisionResult,
+    explanation,
+    actionPlan,
+    evidenceSources,
+    similarDetections,
+    sourceLabel: detection.source,
+    hasDetectionContext: true,
+  })
   const actionExecutionSummary = summarizeActionPlanExecution(actionPlan)
   const actionApprovalSummary = summarizeActionPlanApproval(actionPlan)
   const progressLabel = summarizeProgressLabel({
@@ -1056,6 +1066,22 @@ export default function DetectionDecisionPage() {
                   value={decisionResult.decision.abstainReason ? humanizeToken(decisionResult.decision.abstainReason) : "Not abstained"}
                 />
                 <CompactMetric label="Scored At" value={formatTimestamp(decisionResult.decision.scoredAtUtc)} />
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-surface-1/70 p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Why this confidence
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {confidenceReasons.map((reason) => (
+                    <InlineState
+                      key={reason.title}
+                      title={reason.title}
+                      description={reason.detail}
+                      tone={reason.tone}
+                    />
+                  ))}
+                </div>
               </div>
 
               <p className="text-sm text-muted-foreground">{summarizeDecisionNarrative(decisionResult)}</p>

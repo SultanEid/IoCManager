@@ -192,6 +192,7 @@ public static class ServiceCollectionExtensions
             var sidecarOptions = sp.GetRequiredService<IOptions<AiSidecarOptions>>().Value;
             client.BaseAddress = new Uri(sidecarOptions.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(sidecarOptions.TimeoutSeconds);
+            ApplyAiSidecarHeaders(client, sidecarOptions);
         });
 
         return services;

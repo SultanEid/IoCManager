@@ -90,10 +90,32 @@ describe("PyramidOfPainPage", () => {
       expect.any(Array),
       expect.any(Function),
       expect.objectContaining({
-        staleTime: 60_000,
-        gcTime: 300_000,
+        staleTime: 5 * 60_000,
+        gcTime: 15 * 60_000,
         placeholderData: expect.any(Function),
+        refetchOnWindowFocus: false,
       }),
+    )
+  })
+
+  it("offers 7, 30, and 90 day duration controls", () => {
+    render(<PyramidOfPainPage />)
+
+    expect(screen.getByRole("button", { name: /7 days/i })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: /30 days/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /90 days/i })).toBeInTheDocument()
+  })
+
+  it("updates the analysis query when a duration changes", () => {
+    render(<PyramidOfPainPage />)
+
+    fireEvent.click(screen.getByRole("button", { name: /30 days/i }))
+
+    expect(screen.getByRole("button", { name: /30 days/i })).toHaveAttribute("aria-pressed", "true")
+    expect(useWorkbenchQueryMock).toHaveBeenLastCalledWith(
+      expect.arrayContaining(["legacy-pipeline", "pain-analysis", 30]),
+      expect.any(Function),
+      expect.any(Object),
     )
   })
 

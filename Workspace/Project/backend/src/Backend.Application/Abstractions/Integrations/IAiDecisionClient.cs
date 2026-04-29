@@ -8,6 +8,7 @@ public interface IAiDecisionClient
     Task<AiExplainCaseResult> ExplainCaseAsync(AiExplainCaseRequest request, CancellationToken cancellationToken);
     Task<AiRecommendActionResult> RecommendActionAsync(AiScoreCaseRequest request, CancellationToken cancellationToken);
     Task<AiHistoricalLearningResult> QueryHistoricalAsync(AiHistoricalLearningRequest request, CancellationToken cancellationToken);
+    Task<AiModelStatisticsResult> GetModelStatisticsAsync(CancellationToken cancellationToken);
 }
 
 public sealed record AiScoreCaseRequest(
@@ -142,4 +143,25 @@ public sealed record AiSimilarDetectionItem(
     IReadOnlyList<string> PriorVerdicts,
     IReadOnlyList<string> PriorAcceptedActions,
     IReadOnlyList<string> PriorOutcomes);
+
+public sealed record AiModelStatisticsResult(
+    string ModelId,
+    string ModelVersion,
+    string Status,
+    string DatasetVersion,
+    string ScoringProfileVersion,
+    string FeatureSchemaVersion,
+    DateTimeOffset? CreatedAtUtc,
+    DateTimeOffset? PublishedAtUtc,
+    DateTimeOffset? TrainingWindowStartUtc,
+    DateTimeOffset? TrainingWindowEndUtc,
+    DateTimeOffset? EvaluationWindowStartUtc,
+    DateTimeOffset? EvaluationWindowEndUtc,
+    string? DatasetManifestHash,
+    IReadOnlyDictionary<string, decimal> Metrics,
+    IReadOnlyDictionary<string, decimal> Thresholds,
+    IReadOnlyDictionary<string, int> DatasetCounts,
+    IReadOnlyList<string> RuntimeWarnings,
+    string ReadinessStatus,
+    string? Notes);
 

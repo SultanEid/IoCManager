@@ -317,8 +317,7 @@ public sealed record LegacyPipelineReportRecordResponse(
     string ReportType,
     string Scope,
     DateTimeOffset CreatedAtUtc,
-    string? PdfDownloadPath,
-    string? CsvDownloadPath,
+    string? HtmlDownloadPath,
     string Status);
 
 public sealed record LegacyPipelineReportDetailResponse(
@@ -329,8 +328,7 @@ public sealed record LegacyPipelineReportDetailResponse(
     DateTimeOffset CreatedAtUtc,
     LegacyPipelineReportQueryResponse Query,
     IReadOnlyList<LegacyPipelineReportSectionResponse> Sections,
-    string? PdfDownloadPath,
-    string? CsvDownloadPath,
+    string? HtmlDownloadPath,
     string Status);
 
 public sealed record LegacyPipelineReportDeletionResponse(

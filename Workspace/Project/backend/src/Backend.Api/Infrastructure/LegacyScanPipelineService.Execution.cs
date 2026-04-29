@@ -99,18 +99,15 @@ public sealed partial class LegacyScanPipelineService
             report.JobId?.ToString(CultureInfo.InvariantCulture) ?? parameters?.JobId,
             report.TargetId?.ToString(CultureInfo.InvariantCulture) ?? parameters?.TargetId,
             report.NetworkId?.ToString(CultureInfo.InvariantCulture) ?? parameters?.NetworkId);
-        var pdfExists = !string.IsNullOrWhiteSpace(report.FilePath) && File.Exists(report.FilePath);
-        var csvPath = ResolveCsvArtifactPath(report);
-        var csvExists = !string.IsNullOrWhiteSpace(csvPath) && File.Exists(csvPath);
+        var htmlExists = !string.IsNullOrWhiteSpace(report.FilePath) && File.Exists(report.FilePath);
         return new LegacyPipelineReportRecordResponse(
             report.ReportId.ToString(CultureInfo.InvariantCulture),
             NormalizeReportTitle(report.Title, normalizedReportType, reportTypeDisplayName),
             normalizedReportType,
             scope,
             LegacyScanPipelineHelpers.ToDateTimeOffset(report.CreatedAt) ?? DateTimeOffset.UtcNow,
-            pdfExists ? $"/api/v2/legacy-pipeline/reports/{report.ReportId}/download" : null,
-            csvExists ? $"/api/v2/legacy-pipeline/reports/{report.ReportId}/download?format=csv" : null,
-            pdfExists || csvExists ? "Ready" : "Missing");
+            htmlExists ? $"/api/v2/legacy-pipeline/reports/{report.ReportId}/download?format=html" : null,
+            htmlExists ? "Ready" : "Missing");
     }
 
     private LegacyPipelineReportDetailResponse ToReportDetailResponse(LegacyPipelineReportEntity report)
@@ -128,8 +125,7 @@ public sealed partial class LegacyScanPipelineService
             record.CreatedAtUtc,
             query,
             sections,
-            record.PdfDownloadPath,
-            record.CsvDownloadPath,
+            record.HtmlDownloadPath,
             record.Status);
     }
 
@@ -163,16 +159,6 @@ public sealed partial class LegacyScanPipelineService
             LegacyScanPipelineHelpers.ParseOptionalDateTimeOffset(request?.ToUtc)?.ToString("O", CultureInfo.InvariantCulture),
             LegacyScanPipelineHelpers.CleanOrNull(request?.Severity),
             LegacyScanPipelineHelpers.CleanOrNull(request?.Status));
-
-    private static string? ResolveCsvArtifactPath(LegacyPipelineReportEntity report)
-    {
-        if (string.IsNullOrWhiteSpace(report.FilePath))
-        {
-            return null;
-        }
-
-        return Path.ChangeExtension(report.FilePath, ".csv");
-    }
 
     private static string NormalizeReportTitle(string? title, string normalizedReportType, string reportTypeDisplayName)
     {

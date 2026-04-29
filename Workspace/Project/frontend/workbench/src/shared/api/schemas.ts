@@ -40,8 +40,18 @@ export const v2AlertResponseSchema = z.object({
   createdAtUtc: z.string(),
   updatedAtUtc: z.string(),
 })
+export const alertProgressResponseSchema = z.object({
+  totalIocs: z.number().int(),
+  openCount: z.number().int(),
+  inReviewCount: z.number().int(),
+  completedCount: z.number().int(),
+  percentComplete: z.number().int(),
+})
+export const v2AlertResponseWithProgressSchema = v2AlertResponseSchema.extend({
+  progress: alertProgressResponseSchema,
+})
 export const alertListResponseSchema = z.object({
-  items: z.array(v2AlertResponseSchema),
+  items: z.array(v2AlertResponseWithProgressSchema),
   totalCount: z.number().int(),
   page: z.number().int(),
   pageSize: z.number().int(),
@@ -77,6 +87,9 @@ export const v2AlertLinkedIocSchema = z.object({
   indicatorValue: safeString,
   indicatorKind: safeString,
   severity: safeString,
+  status: safeString,
+  statusUpdatedAtUtc: z.string(),
+  statusUpdatedByUserId: safeString,
   timestampUtc: z.string(),
   rawPayload: z.string().nullable(),
   yaraDetail: v2AlertLinkedIocYaraDetailSchema.nullable(),
@@ -91,7 +104,7 @@ export const v2AlertLinkedScanResultSchema = z.object({
   startedAtUtc: z.string().nullable(),
   finishedAtUtc: z.string().nullable(),
 })
-export const v2AlertDetailResponseSchema = v2AlertResponseSchema.extend({
+export const v2AlertDetailResponseSchema = v2AlertResponseWithProgressSchema.extend({
   target: v2AlertTargetSummarySchema.nullable(),
   linkedIocs: z.array(v2AlertLinkedIocSchema),
   linkedScanResults: z.array(v2AlertLinkedScanResultSchema),
@@ -398,6 +411,28 @@ export const healthReadyComponentSchema = z.object({
 export const healthReadySchema = z.object({
   status: z.enum(["ready", "not_ready"]),
   components: z.array(healthReadyComponentSchema),
+})
+
+export const aiModelStatisticsSchema = z.object({
+  modelId: z.string(),
+  modelVersion: z.string(),
+  status: z.string(),
+  datasetVersion: z.string(),
+  scoringProfileVersion: z.string(),
+  featureSchemaVersion: z.string(),
+  createdAtUtc: z.string().nullable(),
+  publishedAtUtc: z.string().nullable(),
+  trainingWindowStartUtc: z.string().nullable(),
+  trainingWindowEndUtc: z.string().nullable(),
+  evaluationWindowStartUtc: z.string().nullable(),
+  evaluationWindowEndUtc: z.string().nullable(),
+  datasetManifestHash: z.string().nullable(),
+  metrics: z.record(z.string(), z.number()),
+  thresholds: z.record(z.string(), z.number()),
+  datasetCounts: z.record(z.string(), z.number()),
+  runtimeWarnings: z.array(z.string()),
+  readinessStatus: z.string(),
+  notes: z.string().nullable(),
 })
 
 export const userResponseSchema = z.object({
@@ -1098,6 +1133,9 @@ export const powerBiVisualizationResponseSchema = z.object({
   isDefault: z.boolean(),
   embedHeightPx: z.number().int(),
   tags: z.array(z.string()),
+  embedToken: z.string().nullable().optional(),
+  embedTokenExpiresAtUtc: z.string().nullable().optional(),
+  tokenType: z.string().optional(),
 })
 
 export const powerBiVisualizationCatalogResponseSchema = z.object({
@@ -1545,7 +1583,8 @@ export const jobRunResponseSchema = z.object({
 
 export type TokenResponse = z.infer<typeof tokenResponseSchema>
 export type AlertResponse = z.infer<typeof alertResponseSchema>
-export type V2AlertResponse = z.infer<typeof v2AlertResponseSchema>
+export type AlertProgressResponse = z.infer<typeof alertProgressResponseSchema>
+export type V2AlertResponse = z.infer<typeof v2AlertResponseWithProgressSchema>
 export type AlertListResponse = z.infer<typeof alertListResponseSchema>
 export type V2AlertTargetSummary = z.infer<typeof v2AlertTargetSummarySchema>
 export type V2AlertLinkedIocYaraDetail = z.infer<typeof v2AlertLinkedIocYaraDetailSchema>
@@ -1583,6 +1622,7 @@ export type FeedbackResponse = z.infer<typeof feedbackResponseSchema>
 export type HealthInfo = z.infer<typeof healthInfoSchema>
 export type HealthAdmin = z.infer<typeof healthAdminSchema>
 export type HealthReady = z.infer<typeof healthReadySchema>
+export type AiModelStatistics = z.infer<typeof aiModelStatisticsSchema>
 export type UserResponse = z.infer<typeof userResponseSchema>
 export type RoleResponse = z.infer<typeof roleResponseSchema>
 export type PermissionResponse = z.infer<typeof permissionResponseSchema>

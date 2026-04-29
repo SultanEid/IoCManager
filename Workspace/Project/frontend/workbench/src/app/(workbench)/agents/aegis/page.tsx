@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
@@ -128,11 +128,9 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
               {result.sourceReportId ? (
                 <Link
                   className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                  href={`/api/v2/reports/${encodeURIComponent(result.sourceReportId)}/pdf`}
-                  target="_blank"
-                  rel="noreferrer"
+                  href={`/reports?review=${encodeURIComponent(result.sourceReportId)}`}
                 >
-                  Source PDF
+                  Source report
                 </Link>
               ) : null}
             </div>
@@ -289,10 +287,20 @@ export default function AegisPage() {
   }
 
   const canGenerate = Boolean(selectedReport || documentText.trim() || documentBytesBase64)
-  const reports = reportsQuery.data?.items ?? []
-  const plans = plansQuery.data?.items ?? []
+  const reports = useMemo(() => reportsQuery.data?.items ?? [], [reportsQuery.data?.items])
+  const plans = useMemo(() => plansQuery.data?.items ?? [], [plansQuery.data?.items])
   const requestedPlanId = searchParams.get("plan")
-  const openPlanDetails = (planId: string) => {
+  const loadPlanDetails = useCallback(async (planId: string, signal?: AbortSignal) => {
+    const matchingReport = reports.find((report) => report.id === planId) ?? await gateway.getReport(planId, signal)
+    const nextResult = readAegisResultFromReport(matchingReport)
+    if (!nextResult) {
+      throw new Error("Aegis could not reopen the saved plan details from this report snapshot.")
+    }
+
+    return nextResult
+  }, [reports])
+
+  const openPlanDetails = async (planId: string) => {
     if (result?.persistedMitigationReport?.id === planId) {
       setResult(null)
       setClosedPlanId(planId)
@@ -302,41 +310,45 @@ export default function AegisPage() {
       return
     }
 
-    const matchingReport = reports.find((report) => report.id === planId)
-    const nextResult = matchingReport ? readAegisResultFromReport(matchingReport) : null
-    if (!nextResult) {
-      setErrorText("Aegis could not reopen the saved plan details from this report snapshot.")
-      return
+    try {
+      const nextResult = await loadPlanDetails(planId)
+      setResult(nextResult)
+      setClosedPlanId(null)
+      setShouldFocusResult(true)
+      window.history.replaceState(null, "", `/agents/aegis?plan=${encodeURIComponent(planId)}`)
+      setMessage("Opened saved Aegis mitigation plan details.")
+      setErrorText(null)
+    } catch (error) {
+      setErrorText(classifyUiError(error).message)
     }
-
-    setResult(nextResult)
-    setClosedPlanId(null)
-    setShouldFocusResult(true)
-    window.history.replaceState(null, "", `/agents/aegis?plan=${encodeURIComponent(planId)}`)
-    setMessage("Opened saved Aegis mitigation plan details.")
-    setErrorText(null)
   }
 
   useEffect(() => {
     if (
       !requestedPlanId
-      || reports.length === 0
       || closedPlanId === requestedPlanId
       || result?.persistedMitigationReport?.id === requestedPlanId
     ) {
       return
     }
 
-    const matchingReport = reports.find((report) => report.id === requestedPlanId)
-    const nextResult = matchingReport ? readAegisResultFromReport(matchingReport) : null
-    if (nextResult) {
-      setResult(nextResult)
-      setClosedPlanId(null)
-      setShouldFocusResult(true)
-      setMessage("Opened saved Aegis mitigation plan details.")
-      setErrorText(null)
-    }
-  }, [closedPlanId, reports, requestedPlanId, result?.persistedMitigationReport?.id])
+    const controller = new AbortController()
+    void loadPlanDetails(requestedPlanId, controller.signal)
+      .then((nextResult) => {
+        setResult(nextResult)
+        setClosedPlanId(null)
+        setShouldFocusResult(true)
+        setMessage("Opened saved Aegis mitigation plan details.")
+        setErrorText(null)
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setErrorText(classifyUiError(error).message)
+        }
+      })
+
+    return () => controller.abort()
+  }, [closedPlanId, loadPlanDetails, requestedPlanId, result?.persistedMitigationReport?.id])
 
   useEffect(() => {
     if (!shouldFocusResult || !result) {
@@ -497,13 +509,13 @@ export default function AegisPage() {
                   <div className="flex flex-wrap gap-2">
                     <span className="wb-chip"><AlertTriangle className="h-3.5 w-3.5" /> {plan.severity}</span>
                     <span className="wb-chip">{plan.confidence} confidence</span>
-                    <Button type="button" variant="outline" onClick={() => openPlanDetails(plan.id)}>
+                    <Button type="button" variant="outline" onClick={() => { void openPlanDetails(plan.id) }}>
                       {result?.persistedMitigationReport?.id === plan.id ? "Close details" : "Open details"}
                     </Button>
                     {plan.sourceReportId ? (
                       <Link
                         className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                        href={`/reports?q=${encodeURIComponent(plan.sourceReportId)}`}
+                        href={`/reports?review=${encodeURIComponent(plan.sourceReportId)}`}
                       >
                         Source report
                       </Link>

@@ -1060,6 +1060,28 @@ class EvaluateModelResponse(ApiModel):
     slices: list[EvaluationSliceMetrics] = Field(default_factory=list)
 
 
+class ModelStatisticsResponse(ApiModel):
+    model_id: str
+    model_version: str
+    status: str
+    dataset_version: str
+    scoring_profile_version: str
+    feature_schema_version: str
+    created_at_utc: datetime | None = None
+    published_at_utc: datetime | None = None
+    training_window_start_utc: datetime | None = None
+    training_window_end_utc: datetime | None = None
+    evaluation_window_start_utc: datetime | None = None
+    evaluation_window_end_utc: datetime | None = None
+    dataset_manifest_hash: str | None = None
+    metrics: dict[str, float] = Field(default_factory=dict)
+    thresholds: dict[str, float] = Field(default_factory=dict)
+    dataset_counts: dict[str, int] = Field(default_factory=dict)
+    runtime_warnings: list[str] = Field(default_factory=list)
+    readiness_status: str
+    notes: str | None = None
+
+
 ScanAnalystAction = Literal["RecommendOnly", "CreatePlan", "CreateAndRun"]
 ScanAnalystScannerCapability = Literal["Yara", "Sigma", "Snort", "Suricata"]
 ScanAnalystRuleSelectionMode = Literal["RuleSet", "RuleScope"]

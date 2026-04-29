@@ -63,8 +63,27 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
                     Id uniqueidentifier NOT NULL CONSTRAINT PK_alert_iocs PRIMARY KEY,
                     AlertId uniqueidentifier NOT NULL,
                     IocId uniqueidentifier NOT NULL,
-                    LinkedAtUtc datetimeoffset NOT NULL
+                    LinkedAtUtc datetimeoffset NOT NULL,
+                    Status nvarchar(64) NOT NULL CONSTRAINT DF_alert_iocs_Status DEFAULT('Open'),
+                    StatusUpdatedAtUtc datetimeoffset NOT NULL CONSTRAINT DF_alert_iocs_StatusUpdatedAtUtc DEFAULT(SYSUTCDATETIME()),
+                    StatusUpdatedByUserId nvarchar(128) NOT NULL CONSTRAINT DF_alert_iocs_StatusUpdatedByUserId DEFAULT('system')
                 );
+            END;
+            """,
+            "IF COL_LENGTH('dbo.alert_iocs', 'Status') IS NULL ALTER TABLE dbo.alert_iocs ADD Status nvarchar(64) NOT NULL CONSTRAINT DF_alert_iocs_Status_Alter DEFAULT('Open');",
+            "IF COL_LENGTH('dbo.alert_iocs', 'StatusUpdatedAtUtc') IS NULL ALTER TABLE dbo.alert_iocs ADD StatusUpdatedAtUtc datetimeoffset NULL;",
+            "IF COL_LENGTH('dbo.alert_iocs', 'StatusUpdatedByUserId') IS NULL ALTER TABLE dbo.alert_iocs ADD StatusUpdatedByUserId nvarchar(128) NOT NULL CONSTRAINT DF_alert_iocs_StatusUpdatedByUserId_Alter DEFAULT('system');",
+            "UPDATE dbo.alert_iocs SET StatusUpdatedAtUtc = LinkedAtUtc WHERE StatusUpdatedAtUtc IS NULL;",
+            """
+            IF EXISTS (
+                SELECT 1
+                FROM sys.columns
+                WHERE object_id = OBJECT_ID('dbo.alert_iocs')
+                    AND name = 'StatusUpdatedAtUtc'
+                    AND is_nullable = 1
+            )
+            BEGIN
+                ALTER TABLE dbo.alert_iocs ALTER COLUMN StatusUpdatedAtUtc datetimeoffset NOT NULL;
             END;
             """,
             """

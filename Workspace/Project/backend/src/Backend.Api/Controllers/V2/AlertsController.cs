@@ -16,6 +16,8 @@ namespace Backend.Api.Controllers.V2;
 [Route("api/v2/alerts")]
 public sealed class AlertsController : ControllerBase
 {
+    private static readonly AlertProgressResponse EmptyProgress = new(0, 0, 0, 0, 0);
+
     private readonly CtiDbContext _dbContext;
     private readonly LegacyScanPipelineDbContext _legacyDbContext;
 
@@ -105,15 +107,15 @@ public sealed class AlertsController : ControllerBase
             .OrderByDescending(x => x.LastDetectedAtUtc)
             .Skip(skip)
             .Take(pageSize)
-            .Select(x => new
-            {
-                Alert = x,
-                LinkedIocCount = _dbContext.AlertIocs.Count(link => link.AlertId == x.Id),
-            })
             .ToArrayAsync(cancellationToken);
+        var progressByAlertId = await BuildProgressByAlertIdAsync(items.Select(x => x.Id).ToArray(), cancellationToken);
 
         return Ok(new AlertListResponse(
-            items.Select(item => item.Alert.ToAlertResponse(item.LinkedIocCount)).ToArray(),
+            items.Select(item =>
+            {
+                var progress = ResolveProgress(progressByAlertId, item.Id);
+                return item.ToAlertResponse(progress.TotalIocs, progress);
+            }).ToArray(),
             totalCount,
             page,
             pageSize));
@@ -148,7 +150,7 @@ public sealed class AlertsController : ControllerBase
         {
             existing.RefreshDetection(request.Title, request.Summary, severity, request.DetectedAtUtc, request.ActorUserId, nowUtc);
             await _dbContext.SaveChangesAsync(cancellationToken);
-            return Ok(existing.ToAlertResponse());
+            return Ok(existing.ToAlertResponse(progress: EmptyProgress));
         }
 
         var entity = Alert.Create(
@@ -167,7 +169,7 @@ public sealed class AlertsController : ControllerBase
 
         _dbContext.AlertsV2.Add(entity);
         await _dbContext.SaveChangesAsync(cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { alertId = entity.Id }, entity.ToAlertResponse());
+        return CreatedAtAction(nameof(GetById), new { alertId = entity.Id }, entity.ToAlertResponse(progress: EmptyProgress));
     }
 
     [HttpPatch("{alertId:guid}/status")]
@@ -187,6 +189,43 @@ public sealed class AlertsController : ControllerBase
 
         var status = V2Mappings.ParseAlertStatusFromCaseStatus(request.Status);
         entity.SetStatus(status, request.ActorUserId, DateTimeOffset.UtcNow);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var response = await BuildAlertDetailAsync(alertId, cancellationToken);
+        return response is null ? NotFound() : Ok(response);
+    }
+
+    [HttpPatch("{alertId:guid}/iocs/{iocId:guid}/status")]
+    [EnableRateLimiting(RateLimitPolicies.Write)]
+    [ProducesResponseType<AlertDetailResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AlertDetailResponse>> UpdateIocStatus(
+        Guid alertId,
+        Guid iocId,
+        [FromBody] UpdateAlertIocStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var link = await _dbContext.AlertIocs
+            .FirstOrDefaultAsync(x => x.AlertId == alertId && x.IocId == iocId, cancellationToken);
+        if (link is null)
+        {
+            return NotFound();
+        }
+
+        var alert = await _dbContext.AlertsV2.FirstOrDefaultAsync(x => x.Id == alertId, cancellationToken);
+        if (alert is null)
+        {
+            return NotFound();
+        }
+
+        var status = V2Mappings.ParseAlertIocStatus(request.Status);
+        var nowUtc = DateTimeOffset.UtcNow;
+        link.SetStatus(status, request.ActorUserId, nowUtc);
+        if (alert.Status == AlertStatus.Open && status != AlertIocStatus.Open)
+        {
+            alert.SetStatus(AlertStatus.Investigating, request.ActorUserId, nowUtc);
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var response = await BuildAlertDetailAsync(alertId, cancellationToken);
@@ -233,29 +272,84 @@ public sealed class AlertsController : ControllerBase
         return NoContent();
     }
 
+    private async Task<IReadOnlyDictionary<Guid, AlertProgressResponse>> BuildProgressByAlertIdAsync(
+        IReadOnlyCollection<Guid> alertIds,
+        CancellationToken cancellationToken)
+    {
+        if (alertIds.Count == 0)
+        {
+            return new Dictionary<Guid, AlertProgressResponse>();
+        }
+
+        var links = await _dbContext.AlertIocs
+            .AsNoTracking()
+            .Where(x => alertIds.Contains(x.AlertId))
+            .Select(x => new AlertIocProgressRow(x.AlertId, x.Status))
+            .ToArrayAsync(cancellationToken);
+
+        return links
+            .GroupBy(x => x.AlertId)
+            .ToDictionary(x => x.Key, x => BuildProgress(x.Select(item => item.Status)));
+    }
+
+    private static AlertProgressResponse ResolveProgress(
+        IReadOnlyDictionary<Guid, AlertProgressResponse> progressByAlertId,
+        Guid alertId)
+    {
+        return progressByAlertId.TryGetValue(alertId, out var progress) ? progress : EmptyProgress;
+    }
+
+    private static AlertProgressResponse BuildProgress(IEnumerable<AlertIoc> links)
+    {
+        return BuildProgress(links.Select(x => x.Status));
+    }
+
+    private static AlertProgressResponse BuildProgress(IEnumerable<AlertIocStatus> statuses)
+    {
+        var items = statuses.ToArray();
+        if (items.Length == 0)
+        {
+            return EmptyProgress;
+        }
+
+        var openCount = items.Count(x => x == AlertIocStatus.Open);
+        var inReviewCount = items.Count(x => x == AlertIocStatus.InReview);
+        var completedCount = items.Count(IsCompletedIocStatus);
+        var score = items.Sum(GetProgressScore);
+        var percentComplete = (int)Math.Round(score / (double)items.Length, MidpointRounding.AwayFromZero);
+
+        return new AlertProgressResponse(items.Length, openCount, inReviewCount, completedCount, percentComplete);
+    }
+
+    private static bool IsCompletedIocStatus(AlertIocStatus status)
+        => status is AlertIocStatus.Contained or AlertIocStatus.FalsePositive or AlertIocStatus.AcceptedRisk;
+
+    private static int GetProgressScore(AlertIocStatus status)
+        => status switch
+        {
+            AlertIocStatus.Open => 0,
+            AlertIocStatus.InReview => 50,
+            _ => 100,
+        };
+
     private async Task<AlertDetailResponse?> BuildAlertDetailAsync(Guid alertId, CancellationToken cancellationToken)
     {
-        var alertRow = await _dbContext.AlertsV2
+        var alert = await _dbContext.AlertsV2
             .AsNoTracking()
             .Where(x => x.Id == alertId)
-            .Select(x => new
-            {
-                Alert = x,
-                LinkedIocCount = _dbContext.AlertIocs.Count(link => link.AlertId == x.Id),
-            })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (alertRow is null)
+        if (alert is null)
         {
             return null;
         }
 
-        var linkedIocIds = await _dbContext.AlertIocs
+        var linkedIocLinks = await _dbContext.AlertIocs
             .AsNoTracking()
             .Where(x => x.AlertId == alertId)
             .OrderByDescending(x => x.LinkedAtUtc)
-            .Select(x => x.IocId)
             .ToArrayAsync(cancellationToken);
+        var linkedIocIds = linkedIocLinks.Select(x => x.IocId).ToArray();
 
         var linkedIocs = linkedIocIds.Length == 0
             ? []
@@ -267,6 +361,7 @@ public sealed class AlertsController : ControllerBase
                 .Include(x => x.NetworkDetail)
                 .OrderByDescending(x => x.TimestampUtc)
                 .ToArrayAsync(cancellationToken);
+        var linkedIocsById = linkedIocs.ToDictionary(x => x.Id);
 
         var linkedResultIds = linkedIocs
             .Where(x => x.ResultId.HasValue)
@@ -290,27 +385,29 @@ public sealed class AlertsController : ControllerBase
                 select result)
             .ToArrayAsync(cancellationToken);
 
-        var target = alertRow.Alert.TargetId.HasValue
-            ? await _legacyDbContext.Targets.AsNoTracking().FirstOrDefaultAsync(x => x.TargetId == alertRow.Alert.TargetId.Value, cancellationToken)
+        var target = alert.TargetId.HasValue
+            ? await _legacyDbContext.Targets.AsNoTracking().FirstOrDefaultAsync(x => x.TargetId == alert.TargetId.Value, cancellationToken)
             : null;
+        var progress = BuildProgress(linkedIocLinks);
 
         var detail = new AlertDetailResponse(
-            alertRow.Alert.Id,
-            alertRow.Alert.Title,
-            alertRow.Alert.Summary,
-            alertRow.Alert.Severity.ToString(),
-            alertRow.Alert.Status.ToString(),
-            alertRow.Alert.OwnerUserId,
-            alertRow.Alert.ApprovalTierRequired,
-            alertRow.Alert.ScannerFamily,
-            alertRow.Alert.TargetId?.ToString(),
-            alertRow.Alert.TargetDisplay,
-            alertRow.Alert.RuleName,
-            alertRow.LinkedIocCount,
-            alertRow.Alert.FirstDetectedAtUtc,
-            alertRow.Alert.LastDetectedAtUtc,
-            alertRow.Alert.CreatedAtUtc,
-            alertRow.Alert.UpdatedAtUtc,
+            alert.Id,
+            alert.Title,
+            alert.Summary,
+            alert.Severity.ToString(),
+            alert.Status.ToString(),
+            alert.OwnerUserId,
+            alert.ApprovalTierRequired,
+            alert.ScannerFamily,
+            alert.TargetId?.ToString(),
+            alert.TargetDisplay,
+            alert.RuleName,
+            progress.TotalIocs,
+            progress,
+            alert.FirstDetectedAtUtc,
+            alert.LastDetectedAtUtc,
+            alert.CreatedAtUtc,
+            alert.UpdatedAtUtc,
             target is null
                 ? null
                 : new AlertTargetSummaryResponse(
@@ -324,7 +421,10 @@ public sealed class AlertsController : ControllerBase
                     target.IPAddress,
                     target.Status,
                     target.TargetOsType),
-            linkedIocs.Select(ToLinkedIocResponse).ToArray(),
+            linkedIocLinks
+                .Where(link => linkedIocsById.ContainsKey(link.IocId))
+                .Select(link => ToLinkedIocResponse(linkedIocsById[link.IocId], link))
+                .ToArray(),
             normalizedLinkedResults
                 .Select(ToLinkedScanResultResponse)
                 .Concat(linkedResults.Select(ToLinkedScanResultResponse))
@@ -333,7 +433,9 @@ public sealed class AlertsController : ControllerBase
         return detail;
     }
 
-    private static AlertLinkedIocResponse ToLinkedIocResponse(LegacyPipelineIocEntity source)
+    private sealed record AlertIocProgressRow(Guid AlertId, AlertIocStatus Status);
+
+    private static AlertLinkedIocResponse ToLinkedIocResponse(LegacyPipelineIocEntity source, AlertIoc link)
     {
         var severity = NormalizeAlertSeverity(
             source.ScannerType,
@@ -348,6 +450,9 @@ public sealed class AlertsController : ControllerBase
             indicator.Value,
             indicator.Kind,
             severity,
+            link.Status.ToString(),
+            link.StatusUpdatedAtUtc,
+            link.StatusUpdatedByUserId,
             DateTime.SpecifyKind(source.TimestampUtc, DateTimeKind.Utc),
             source.RawPayload,
             source.YaraDetail is null ? null : new AlertLinkedIocYaraDetailResponse(source.YaraDetail.FilePath, source.YaraDetail.FileHash),

@@ -80,7 +80,10 @@ public sealed record PowerBiVisualizationResponse(
     bool IsConfigured,
     bool IsDefault,
     int EmbedHeightPx,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    string? EmbedToken,
+    DateTimeOffset? EmbedTokenExpiresAtUtc,
+    string TokenType);
 
 public sealed record PowerBiVisualizationCatalogResponse(
     string Status,

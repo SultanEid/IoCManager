@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Compass, Filter, Search, SearchCode } from "lucide-react"
+import { Compass, Filter, SearchCode } from "lucide-react"
 import {
   Command,
   CommandDialog,
@@ -11,11 +11,9 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command"
-import { QUEUE_FOCUS_ITEMS } from "@/components/workbench/nav"
-import { resolveWorkbenchRoute, WORKBENCH_ROUTES } from "@/components/workbench/workbench-route-meta"
+import { WORKBENCH_ROUTES } from "@/components/workbench/workbench-route-meta"
 import { canAccessCanonicalRoute } from "@/shared/auth/role-access"
 import type { UserRole } from "@/shared/auth/session"
 import { gateway } from "@/shared/gateway"
@@ -69,18 +67,9 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
         return true
       }
 
-      return [item.label, ...item.commandAliases, ...item.aliases].some((token) => token.toLowerCase().includes(search))
+      return [item.label, item.title, item.subtitle, ...item.commandAliases].some((token) => token.toLowerCase().includes(search))
     })
   }, [normalizedQuery, roles])
-
-  const queueItems = useMemo(
-    () =>
-      QUEUE_FOCUS_ITEMS.filter((item) => {
-        const canonicalPath = resolveWorkbenchRoute(item.href).canonicalPath
-        return canAccessCanonicalRoute(roles, canonicalPath)
-      }),
-    [roles],
-  )
 
   const alertItems = useMemo(() => {
     if (!alertsQuery.data || normalizedQuery.length === 0) {
@@ -103,7 +92,7 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
     router.push(href)
   }
 
-  return (
+  const dialog = open ? (
     <CommandDialog
       open={open}
       onOpenChange={(next) => {
@@ -144,26 +133,8 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
             ))}
           </CommandGroup>
 
-          {queueItems.length > 0 ? (
-            <>
-              <CommandSeparator />
-              <CommandGroup heading="Queue Focus">
-                {queueItems.map((item) => (
-                  <CommandItem key={item.key} onSelect={() => navigate(item.href)}>
-                    <Filter className="h-4 w-4" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm">{item.label}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">{item.description}</p>
-                    </div>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </>
-          ) : null}
-
           {canOpenAlerts && alertItems.length > 0 ? (
             <>
-              <CommandSeparator />
               <CommandGroup heading="Alerts">
                 {alertItems.map((item) => (
                   <CommandItem key={item.id} onSelect={() => navigate(`/alerts/${item.id}`)}>
@@ -182,7 +153,6 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
 
           {canOpenAlerts && commandLabel ? (
             <>
-              <CommandSeparator />
               <CommandGroup heading="Open Alert">
                 <CommandItem onSelect={() => navigate(`/alerts/${normalizedQuery}`)}>
                   <SearchCode className="h-4 w-4" />
@@ -197,13 +167,12 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
 
           {canOpenAlerts && normalizedQuery.length > 0 ? (
             <>
-              <CommandSeparator />
-              <CommandGroup heading="Search Queue">
-                <CommandItem onSelect={() => navigate(`/queue?q=${encodeURIComponent(normalizedQuery)}`)}>
-                  <Search className="h-4 w-4" />
+              <CommandGroup heading="Search Alerts">
+                <CommandItem onSelect={() => navigate(`/alerts?q=${encodeURIComponent(normalizedQuery)}`)}>
+                  <Filter className="h-4 w-4" />
                   <div>
-                    <p className="text-sm">Search queue for &quot;{normalizedQuery}&quot;</p>
-                    <p className="text-[11px] text-muted-foreground">Full-text filter in triage queue</p>
+                    <p className="text-sm">Search alerts for &quot;{normalizedQuery}&quot;</p>
+                    <p className="text-[11px] text-muted-foreground">Full-text filter in the active alert registry</p>
                   </div>
                 </CommandItem>
               </CommandGroup>
@@ -212,5 +181,7 @@ export function WorkbenchCommandPalette({ open, onOpenChange, roles }: Workbench
         </CommandList>
       </Command>
     </CommandDialog>
-  )
+  ) : null
+
+  return dialog
 }

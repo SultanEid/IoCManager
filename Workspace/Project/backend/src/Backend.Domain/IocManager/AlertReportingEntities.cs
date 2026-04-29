@@ -131,8 +131,15 @@ public sealed class AlertIoc : Entity
     public Guid AlertId { get; private set; }
     public Guid IocId { get; private set; }
     public DateTimeOffset LinkedAtUtc { get; private set; }
+    public AlertIocStatus Status { get; private set; } = AlertIocStatus.Open;
+    public DateTimeOffset StatusUpdatedAtUtc { get; private set; }
+    public string StatusUpdatedByUserId { get; private set; } = "system";
 
-    public static AlertIoc Create(Guid alertId, Guid iocId, DateTimeOffset linkedAtUtc)
+    public static AlertIoc Create(
+        Guid alertId,
+        Guid iocId,
+        DateTimeOffset linkedAtUtc,
+        string statusUpdatedByUserId = "system")
     {
         if (alertId == Guid.Empty)
         {
@@ -149,7 +156,18 @@ public sealed class AlertIoc : Entity
             AlertId = alertId,
             IocId = iocId,
             LinkedAtUtc = linkedAtUtc,
+            Status = AlertIocStatus.Open,
+            StatusUpdatedAtUtc = linkedAtUtc,
+            StatusUpdatedByUserId = string.IsNullOrWhiteSpace(statusUpdatedByUserId) ? "system" : statusUpdatedByUserId.Trim(),
         };
+    }
+
+    public void SetStatus(AlertIocStatus status, string actorUserId, DateTimeOffset nowUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
+        Status = status;
+        StatusUpdatedAtUtc = nowUtc;
+        StatusUpdatedByUserId = actorUserId.Trim();
     }
 }
 
