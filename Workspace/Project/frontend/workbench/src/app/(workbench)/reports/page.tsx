@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
   Clock3,
@@ -436,12 +436,14 @@ function BuilderMetric({
 }
 
 export default function ReportsPage() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { session } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? "system"
   const [refreshKey, setRefreshKey] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
+  const [aegisBusyReportId, setAegisBusyReportId] = useState<string | null>(null)
   const [preview, setPreview] = useState<ReportPreviewState | null>(null)
   const [review, setReview] = useState<ReportPreviewState | null>(null)
   const [closedReviewId, setClosedReviewId] = useState<string | null>(null)
@@ -591,6 +593,35 @@ export default function ReportsPage() {
       fromUtc: range.fromUtc,
       toUtc: range.toUtc,
     }))
+  }
+
+  const openAegisPlan = (planId: string) => {
+    router.push(`/agents/aegis?plan=${encodeURIComponent(planId)}`)
+  }
+
+  const createAegisPlanForReport = async (reportId: string, regenerate: boolean) => {
+    setAegisBusyReportId(reportId)
+    setErrorText(null)
+    setMessage(null)
+    try {
+      const response = await gateway.generateReportMitigation({
+        sourceName: "Aegis report review",
+        sourceType: "bulletin",
+        existingReportId: reportId,
+        includeWorkspaceContext: true,
+        actorUserId,
+        regenerate,
+      })
+      if (!response.persistedMitigationReport) {
+        throw new Error("Aegis did not return a saved mitigation plan.")
+      }
+      setRefreshKey((value) => value + 1)
+      router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
+    } catch (error) {
+      setErrorText(classifyUiError(error).message)
+    } finally {
+      setAegisBusyReportId(null)
+    }
   }
 
   useEffect(() => {
@@ -955,6 +986,7 @@ export default function ReportsPage() {
                 {reports.map((report) => {
                   const snapshot = parseReportSnapshot(report, targets)
                   const deleting = deletingReportId === report.id
+                  const aegisBusy = aegisBusyReportId === report.id
                   const aegisPlan = aegisPlanBySourceReportId.get(report.id)
                   const isAegisPlan = isAegisMitigationReport(report)
                   return (
@@ -980,13 +1012,36 @@ export default function ReportsPage() {
                             Open
                           </Button>
                           {aegisPlan || isAegisPlan ? (
-                            <Link
-                              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                              href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => openAegisPlan(aegisPlan?.id ?? report.id)}
+                                disabled={deleting || aegisBusy}
+                              >
+                                Open in Aegis
+                              </Button>
+                              {!isAegisPlan ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => void createAegisPlanForReport(report.id, true)}
+                                  disabled={deleting || aegisBusy}
+                                >
+                                  {aegisBusy ? "Regenerating..." : "Regenerate"}
+                                </Button>
+                              ) : null}
+                            </>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => void createAegisPlanForReport(report.id, false)}
+                              disabled={deleting || aegisBusy}
                             >
-                              Open in Aegis
-                            </Link>
-                          ) : null}
+                              {aegisBusy ? "Creating..." : "Create mitigation plan"}
+                            </Button>
+                          )}
                           <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={deleting}>
                             {deleting ? "Deleting..." : "Delete"}
                           </Button>

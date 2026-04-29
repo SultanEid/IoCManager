@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Badge } from "@/components/ui/badge"
@@ -400,6 +400,7 @@ function EvidenceCard({
 
 export default function DetectionDecisionPage() {
   const params = useParams<{ detectionId: string }>()
+  const router = useRouter()
   const detectionId = params.detectionId
   const { session } = useAuth()
   const pollRunRef = useRef(0)
@@ -424,6 +425,8 @@ export default function DetectionDecisionPage() {
   const [actionPlanError, setActionPlanError] = useState<string | null>(null)
   const [evidenceError, setEvidenceError] = useState<string | null>(null)
   const [similarError, setSimilarError] = useState<string | null>(null)
+  const [aegisBusyAction, setAegisBusyAction] = useState<"create" | "regenerate" | null>(null)
+  const [aegisError, setAegisError] = useState<string | null>(null)
 
   const [overrideAction, setOverrideAction] = useState<OverrideAction>("accept")
   const [overrideReason, setOverrideReason] = useState("")
@@ -446,6 +449,11 @@ export default function DetectionDecisionPage() {
   const detectionQuery = useWorkbenchQuery(
     ["results-ingestion", "detection-detail", detectionId],
     (signal) => gateway.getDetectionDetail(detectionId, signal),
+    { enabled: !isMockMode },
+  )
+  const aegisPlansQuery = useWorkbenchQuery(
+    ["results-ingestion", "aegis-plans", detectionId],
+    (signal) => gateway.listReportMitigationPlans(signal),
     { enabled: !isMockMode },
   )
 
@@ -772,15 +780,18 @@ export default function DetectionDecisionPage() {
     )
   }
 
-  if (detectionQuery.isLoading) {
+  if (detectionQuery.isLoading || aegisPlansQuery.isLoading) {
     return <LoadingState label="Loading detection detail" />
   }
 
-  if (detectionQuery.isError || !detectionQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(detectionQuery.error)} fallbackTitle="Detection detail unavailable" />
+  if (detectionQuery.isError || aegisPlansQuery.isError || !detectionQuery.data) {
+    return <ClassifiedFailureState failure={classifyUiError(detectionQuery.error ?? aegisPlansQuery.error)} fallbackTitle="Detection detail unavailable" />
   }
 
   const detection = detectionQuery.data
+  const existingAegisPlan = detection.scanJobId
+    ? (aegisPlansQuery.data?.items ?? []).find((item) => item.sourceScanJobIds.includes(detection.scanJobId!)) ?? null
+    : null
   const caseSelectionRequired = linkedCases.length > 1 && !selectedCaseId
   const canSubmitDecision = linkedCases.length > 0 && !caseSelectionRequired && !isSubmitting
 
@@ -816,6 +827,38 @@ export default function DetectionDecisionPage() {
   const operatorOutcome = overrideResponse
     ? `${humanizeToken(overrideResponse.actionType)} submitted ${formatTimestamp(overrideResponse.submittedAtUtc)}`
     : "No operator decision has been submitted yet."
+
+  const openExistingAegisPlan = () => {
+    if (!existingAegisPlan) {
+      return
+    }
+
+    router.push(`/agents/aegis?plan=${encodeURIComponent(existingAegisPlan.id)}`)
+  }
+
+  const generateAegisPlan = async (regenerate: boolean) => {
+    if (!detection.scanJobId) {
+      return
+    }
+
+    setAegisBusyAction(regenerate ? "regenerate" : "create")
+    setAegisError(null)
+    try {
+      const response = await gateway.generateReportMitigationFromScanJob(detection.scanJobId, {
+        includeWorkspaceContext: true,
+        actorUserId,
+        regenerate,
+      })
+      if (!response.persistedMitigationReport) {
+        throw new Error("Aegis did not return a saved mitigation plan.")
+      }
+      router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
+    } catch (error) {
+      setAegisError(readErrorMessage(error))
+    } finally {
+      setAegisBusyAction(null)
+    }
+  }
 
   return (
     <motion.section className="wb-page" variants={staggerMotion} initial="hidden" animate="visible">
@@ -859,7 +902,7 @@ export default function DetectionDecisionPage() {
               Rule: {detection.ruleName ?? "Not linked"} | IOC: {detection.iocType ?? "n/a"} {detection.iocValue ?? ""}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Linked alerts: {detection.linkedAlerts.length} | Linked cases: {detection.linkedCases.length}
+              Linked alerts: {detection.linkedAlerts.length} | Linked cases: {detection.linkedCases.length} | Scan job: {detection.scanJobId ?? "Not linked"}
             </p>
           </div>
 
@@ -904,6 +947,47 @@ export default function DetectionDecisionPage() {
               </p>
             ) : null}
           </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-border/75 bg-surface-2/60 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="wb-kicker">Aegis</p>
+              <p className="mt-1 text-sm font-medium">
+                {existingAegisPlan
+                  ? "A mitigation plan already exists for this scan job."
+                  : detection.scanJobId
+                    ? "Send this scan job to Aegis for a mitigation plan."
+                    : "This detection is not linked to a scan job Aegis can review directly."}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {existingAegisPlan
+                  ? `${existingAegisPlan.severity} severity, ${existingAegisPlan.confidence} confidence, created ${formatTimestamp(existingAegisPlan.generatedAtUtc)}.`
+                  : detection.scanJobId
+                    ? "Use this when a finding matters operationally even if it did not auto-trigger Aegis."
+                    : "If needed, open a linked alert and generate a mitigation plan from that alert instead."}
+              </p>
+            </div>
+            {detection.scanJobId ? (
+              <div className="flex flex-wrap gap-2">
+                {existingAegisPlan ? (
+                  <>
+                    <Button type="button" variant="outline" onClick={openExistingAegisPlan} disabled={aegisBusyAction !== null}>
+                      Open mitigation plan
+                    </Button>
+                    <Button type="button" onClick={() => void generateAegisPlan(true)} disabled={aegisBusyAction !== null}>
+                      {aegisBusyAction === "regenerate" ? "Regenerating..." : "Regenerate"}
+                    </Button>
+                  </>
+                ) : (
+                  <Button type="button" onClick={() => void generateAegisPlan(false)} disabled={aegisBusyAction !== null}>
+                    {aegisBusyAction === "create" ? "Creating..." : "Create mitigation plan"}
+                  </Button>
+                )}
+              </div>
+            ) : null}
+          </div>
+          {aegisError ? <p className="mt-3 text-xs text-rose-300">{aegisError}</p> : null}
         </div>
       </motion.header>
 

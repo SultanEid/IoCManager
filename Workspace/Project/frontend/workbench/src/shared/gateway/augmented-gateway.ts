@@ -40,6 +40,8 @@ import type {
   Gateway,
   GenerateReportInput,
   GenerateReportMitigationInput,
+  GenerateReportMitigationFromAlertInput,
+  GenerateReportMitigationFromScanJobInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -176,6 +178,14 @@ export class AugmentedGateway implements Gateway {
 
   generateReportMitigation(input: GenerateReportMitigationInput) {
     return this.source.generateReportMitigation(input)
+  }
+
+  generateReportMitigationFromAlert(alertId: string, input: GenerateReportMitigationFromAlertInput) {
+    return this.source.generateReportMitigationFromAlert(alertId, input)
+  }
+
+  generateReportMitigationFromScanJob(scanJobId: string, input: GenerateReportMitigationFromScanJobInput) {
+    return this.source.generateReportMitigationFromScanJob(scanJobId, input)
   }
 
   listReportMitigationPlans(signal?: AbortSignal) {

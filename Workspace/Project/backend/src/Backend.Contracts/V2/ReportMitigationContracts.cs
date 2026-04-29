@@ -10,7 +10,18 @@ public sealed record ReportMitigationGenerateRequest(
     string? BulletinJson,
     Guid? ExistingReportId,
     bool IncludeWorkspaceContext,
-    string ActorUserId);
+    string ActorUserId,
+    bool Regenerate = false);
+
+public sealed record ReportMitigationGenerateFromAlertRequest(
+    bool IncludeWorkspaceContext,
+    string ActorUserId,
+    bool Regenerate = false);
+
+public sealed record ReportMitigationGenerateFromScanJobRequest(
+    bool IncludeWorkspaceContext,
+    string ActorUserId,
+    bool Regenerate = false);
 
 public sealed record ReportMitigationExtractedIocResponse(
     string IocType,
@@ -91,6 +102,7 @@ public sealed record ReportMitigationListItemResponse(
     Guid Id,
     string Title,
     Guid? SourceReportId,
+    IReadOnlyList<Guid> SourceScanJobIds,
     string Severity,
     string Confidence,
     string ExecutiveSummary,

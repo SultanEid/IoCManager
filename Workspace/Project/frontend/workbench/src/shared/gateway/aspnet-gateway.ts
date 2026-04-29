@@ -174,6 +174,8 @@ import type {
   RotateManagedServerConnectionSecretInput,
   GenerateReportInput,
   GenerateReportMitigationInput,
+  GenerateReportMitigationFromAlertInput,
+  GenerateReportMitigationFromScanJobInput,
   ReportListQuery,
   ReviewRuleProposalInput,
   SettingsAdminVM,
@@ -409,6 +411,29 @@ export class AspNetGateway {
         existingReportId: input.existingReportId ?? null,
         includeWorkspaceContext: input.includeWorkspaceContext,
         actorUserId: input.actorUserId,
+        regenerate: input.regenerate ?? false,
+      },
+    })
+  }
+
+  async generateReportMitigationFromAlert(alertId: string, input: GenerateReportMitigationFromAlertInput): Promise<ReportMitigationResponse> {
+    return requestJson(`/api/v2/ai/report-mitigation/alerts/${encodeURIComponent(alertId)}/generate`, reportMitigationResponseSchema, {
+      method: "POST",
+      body: {
+        includeWorkspaceContext: input.includeWorkspaceContext,
+        actorUserId: input.actorUserId,
+        regenerate: input.regenerate ?? false,
+      },
+    })
+  }
+
+  async generateReportMitigationFromScanJob(scanJobId: string, input: GenerateReportMitigationFromScanJobInput): Promise<ReportMitigationResponse> {
+    return requestJson(`/api/v2/ai/report-mitigation/scan-jobs/${encodeURIComponent(scanJobId)}/generate`, reportMitigationResponseSchema, {
+      method: "POST",
+      body: {
+        includeWorkspaceContext: input.includeWorkspaceContext,
+        actorUserId: input.actorUserId,
+        regenerate: input.regenerate ?? false,
       },
     })
   }

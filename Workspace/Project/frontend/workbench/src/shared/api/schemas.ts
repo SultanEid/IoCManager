@@ -1063,6 +1063,7 @@ export const reportMitigationListItemResponseSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
   sourceReportId: z.string().uuid().nullable(),
+  sourceScanJobIds: z.array(z.string().uuid()),
   severity: z.string(),
   confidence: z.string(),
   executiveSummary: z.string(),

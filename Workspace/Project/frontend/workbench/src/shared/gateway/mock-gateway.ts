@@ -79,6 +79,8 @@ import type {
   Gateway,
   GenerateReportInput,
   GenerateReportMitigationInput,
+  GenerateReportMitigationFromAlertInput,
+  GenerateReportMitigationFromScanJobInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -796,6 +798,26 @@ export class MockGateway implements Gateway {
     })
   }
 
+  async generateReportMitigationFromAlert(_alertId: string, input: GenerateReportMitigationFromAlertInput): Promise<ReportMitigationResponse> {
+    return this.generateReportMitigation({
+      sourceName: "Aegis alert review",
+      sourceType: "bulletin",
+      includeWorkspaceContext: input.includeWorkspaceContext,
+      actorUserId: input.actorUserId,
+      regenerate: input.regenerate,
+    })
+  }
+
+  async generateReportMitigationFromScanJob(_scanJobId: string, input: GenerateReportMitigationFromScanJobInput): Promise<ReportMitigationResponse> {
+    return this.generateReportMitigation({
+      sourceName: "Aegis scan review",
+      sourceType: "bulletin",
+      includeWorkspaceContext: input.includeWorkspaceContext,
+      actorUserId: input.actorUserId,
+      regenerate: input.regenerate,
+    })
+  }
+
   async listReportMitigationPlans(_signal?: AbortSignal): Promise<ReportMitigationListResponse> {
     consume(_signal)
     const items = this.generatedReports
@@ -822,6 +844,7 @@ export class MockGateway implements Gateway {
           id: item.id,
           title: item.title,
           sourceReportId,
+          sourceScanJobIds: [],
           severity,
           confidence,
           executiveSummary,

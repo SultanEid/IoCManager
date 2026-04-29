@@ -11,16 +11,39 @@ public interface ILegacyScanPipelineSchemaInitializer
 public sealed class LegacyScanPipelineSchemaInitializer : ILegacyScanPipelineSchemaInitializer
 {
     private readonly LegacyScanPipelineDbContext _dbContext;
+    private readonly ILogger<LegacyScanPipelineSchemaInitializer> _logger;
 
-    public LegacyScanPipelineSchemaInitializer(LegacyScanPipelineDbContext dbContext)
+    public LegacyScanPipelineSchemaInitializer(
+        LegacyScanPipelineDbContext dbContext,
+        ILogger<LegacyScanPipelineSchemaInitializer> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
         if (!_dbContext.Database.IsRelational())
         {
+            return;
+        }
+
+        var connectionString = _dbContext.Database.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            _logger.LogInformation("Skipping legacy scan pipeline schema initialization because no legacy database connection string is configured.");
+            return;
+        }
+
+        var coreLegacyTablesExist = await LegacyTableExistsAsync("dbo.NETWORK", cancellationToken)
+            || await LegacyTableExistsAsync("dbo.Target", cancellationToken)
+            || await LegacyTableExistsAsync("dbo.ScanPlan", cancellationToken)
+            || await LegacyTableExistsAsync("dbo.ScanJob", cancellationToken)
+            || await LegacyTableExistsAsync("dbo.Report", cancellationToken);
+
+        if (!coreLegacyTablesExist)
+        {
+            _logger.LogInformation("Skipping legacy scan pipeline schema initialization because the legacy tables are not present in the configured database.");
             return;
         }
 
@@ -53,5 +76,27 @@ public sealed class LegacyScanPipelineSchemaInitializer : ILegacyScanPipelineSch
         {
             await _dbContext.Database.ExecuteSqlRawAsync(command, cancellationToken);
         }
+    }
+
+    private async Task<bool> LegacyTableExistsAsync(string fullTableName, CancellationToken cancellationToken)
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT CASE WHEN OBJECT_ID(@tableName, 'U') IS NULL THEN 0 ELSE 1 END";
+
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@tableName";
+        parameter.Value = fullTableName;
+        command.Parameters.Add(parameter);
+
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        return scalar is int count && count == 1
+            || scalar is long longCount && longCount == 1
+            || scalar is decimal decimalCount && decimalCount == 1;
     }
 }

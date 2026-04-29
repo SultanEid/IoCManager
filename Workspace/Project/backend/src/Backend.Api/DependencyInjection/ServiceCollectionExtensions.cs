@@ -151,6 +151,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPowerBiVisualizationCatalogService, PowerBiVisualizationCatalogService>();
         services.AddScoped<IRuleRevisionValidationPipeline, RuleRevisionValidationPipeline>();
         services.AddScoped<IResultIngestionService, ResultIngestionService>();
+        services.AddScoped<AegisMitigationPlanner>();
         services.AddSingleton<ILegacyScannerResultExtractor, LegacyScannerResultExtractor>();
         services.AddSingleton<TargetServerConnectionSecretProtector>();
         services.AddSingleton<LegacyNetworkSshPasswordProtector>();

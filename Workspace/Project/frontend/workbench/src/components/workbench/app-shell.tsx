@@ -49,6 +49,8 @@ import { useThemeMode } from "@/shared/theme/theme-provider"
 import { pageMotion } from "@/shared/ui/motion"
 import { CompactEmptyState, CompactErrorState, CompactLoadingState } from "@/shared/ui/state-panels"
 
+const WORKSPACE_BUILD_LABEL = "W2 Agents build"
+
 type NotificationItem = {
   id: string
   title: string
@@ -490,7 +492,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
           </AnimatePresence>
 
           <footer className="border-t border-border/70 px-3 py-3 text-[11px] text-muted-foreground sm:px-4 md:px-6">
-            Signed in as {session?.username ?? "unknown"} | Roles: {session?.roles.length ? roleLabels(session.roles) : "none"}
+            Signed in as {session?.username ?? "unknown"} | Roles: {session?.roles.length ? roleLabels(session.roles) : "none"} | Build:{" "}
+            <span className="font-medium text-foreground/90">{WORKSPACE_BUILD_LABEL}</span>
           </footer>
         </div>
       </div>

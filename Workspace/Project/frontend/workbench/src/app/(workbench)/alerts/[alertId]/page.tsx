@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { Button } from "@/components/ui/button"
@@ -91,12 +91,18 @@ function ScannerSpecificFields({ detail }: { detail: V2AlertDetailResponse["link
 
 export default function AlertDetailPage() {
   const params = useParams<{ alertId: string }>()
+  const router = useRouter()
   const { session } = useAuth()
   const alertId = params.alertId
   const [statusUpdate, setStatusUpdate] = useState<string | null>(null)
   const [detailOverride, setDetailOverride] = useState<V2AlertDetailResponse | null>(null)
+  const [aegisBusyAction, setAegisBusyAction] = useState<"create" | "regenerate" | null>(null)
+  const [aegisError, setAegisError] = useState<string | null>(null)
 
   const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal), {
+    enabled: isModeConfigured,
+  })
+  const aegisPlansQuery = useWorkbenchQuery(["alert", alertId, "aegis-plans"], (signal) => gateway.listReportMitigationPlans(signal), {
     enabled: isModeConfigured,
   })
 
@@ -106,6 +112,7 @@ export default function AlertDetailPage() {
 
   const detail = detailOverride ?? alertQuery.data ?? null
   const canShowNonAlertPivots = !isItOnlyScope(session?.roles ?? [])
+  const existingAegisPlan = (aegisPlansQuery.data?.items ?? []).find((item) => item.alertIds.includes(alertId)) ?? null
 
   const updateStatus = async (nextStatus: string) => {
     if (!detail || statusUpdate) {
@@ -122,17 +129,45 @@ export default function AlertDetailPage() {
     }
   }
 
+  const openExistingAegisPlan = () => {
+    if (!existingAegisPlan) {
+      return
+    }
+
+    router.push(`/agents/aegis?plan=${encodeURIComponent(existingAegisPlan.id)}`)
+  }
+
+  const generateAegisPlan = async (regenerate: boolean) => {
+    setAegisBusyAction(regenerate ? "regenerate" : "create")
+    setAegisError(null)
+    try {
+      const response = await gateway.generateReportMitigationFromAlert(alertId, {
+        includeWorkspaceContext: true,
+        actorUserId: session?.userId ?? session?.username ?? "workbench",
+        regenerate,
+      })
+      if (!response.persistedMitigationReport) {
+        throw new Error("Aegis did not return a saved mitigation plan.")
+      }
+      router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
+    } catch (error) {
+      setAegisError(classifyUiError(error).message)
+    } finally {
+      setAegisBusyAction(null)
+    }
+  }
+
   if (!isModeConfigured) {
     const failure = classifyUiError(null, { modeMisconfigured: true })
     return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
   }
 
-  if (alertQuery.isLoading) {
+  if (alertQuery.isLoading || aegisPlansQuery.isLoading) {
     return <LoadingState label="Loading alert detail" />
   }
 
-  if (alertQuery.isError || !detail) {
-    const failure = classifyUiError(alertQuery.error)
+  if (alertQuery.isError || aegisPlansQuery.isError || !detail) {
+    const failure = classifyUiError(alertQuery.error ?? aegisPlansQuery.error)
     return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
   }
 
@@ -190,6 +225,38 @@ export default function AlertDetailPage() {
               {statusUpdate === option ? "Updating..." : option}
             </Button>
           ))}
+        </div>
+        <div className="rounded-xl border border-border/70 bg-surface-2/65 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="wb-kicker">Aegis</p>
+              <p className="mt-1 text-sm font-medium">
+                {existingAegisPlan ? "A mitigation plan already exists for this alert." : "Send this alert to Aegis for a mitigation plan."}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {existingAegisPlan
+                  ? `${existingAegisPlan.severity} severity, ${existingAegisPlan.confidence} confidence, created ${new Date(existingAegisPlan.generatedAtUtc).toLocaleString()}.`
+                  : "Use this for high-value alert review even when the case did not auto-trigger Aegis."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {existingAegisPlan ? (
+                <>
+                  <Button type="button" size="sm" variant="outline" onClick={openExistingAegisPlan} disabled={aegisBusyAction !== null}>
+                    Open mitigation plan
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => void generateAegisPlan(true)} disabled={aegisBusyAction !== null}>
+                    {aegisBusyAction === "regenerate" ? "Regenerating..." : "Regenerate"}
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" size="sm" onClick={() => void generateAegisPlan(false)} disabled={aegisBusyAction !== null}>
+                  {aegisBusyAction === "create" ? "Creating..." : "Create mitigation plan"}
+                </Button>
+              )}
+            </div>
+          </div>
+          {aegisError ? <p className="mt-3 text-xs text-rose-300">{aegisError}</p> : null}
         </div>
       </motion.article>
 

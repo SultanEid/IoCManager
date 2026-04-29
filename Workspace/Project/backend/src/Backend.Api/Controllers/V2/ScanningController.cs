@@ -3,6 +3,7 @@ using Backend.Contracts.V2;
 using Backend.Domain.Common;
 using Backend.Domain.IocManager;
 using Backend.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -31,17 +32,24 @@ public sealed class ScanningController : ControllerBase
     [ProducesResponseType<IReadOnlyList<ScanPlanResponse>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<ScanPlanResponse>>> ListPlans(CancellationToken cancellationToken)
     {
-        var plans = await _dbContext.ScanPlans
-            .AsNoTracking()
-            .OrderBy(x => x.Name)
-            .ToArrayAsync(cancellationToken);
+        try
+        {
+            var plans = await _dbContext.ScanPlans
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .ToArrayAsync(cancellationToken);
 
-        if (plans.Length == 0)
+            if (plans.Length == 0)
+            {
+                return Ok(Array.Empty<ScanPlanResponse>());
+            }
+
+            return Ok(await BuildScanPlanResponsesAsync(plans, cancellationToken));
+        }
+        catch (SqlException exception) when (exception.Number == 208)
         {
             return Ok(Array.Empty<ScanPlanResponse>());
         }
-
-        return Ok(await BuildScanPlanResponsesAsync(plans, cancellationToken));
     }
 
     [HttpGet("plans/{scanPlanId:guid}")]
@@ -342,25 +350,32 @@ public sealed class ScanningController : ControllerBase
             query = query.Where(x => x.QueuedAtUtc <= parsedToUtc.Value);
         }
 
-        var jobs = await query
-            .OrderByDescending(x => x.QueuedAtUtc)
-            .Take(boundedTake)
-            .ToArrayAsync(cancellationToken);
+        try
+        {
+            var jobs = await query
+                .OrderByDescending(x => x.QueuedAtUtc)
+                .Take(boundedTake)
+                .ToArrayAsync(cancellationToken);
 
-        if (jobs.Length == 0)
+            if (jobs.Length == 0)
+            {
+                return Ok(Array.Empty<ScanJobResponse>());
+            }
+
+            var counts = await LoadJobCountsByJobIdAsync(jobs.Select(x => x.Id), cancellationToken);
+            var response = jobs
+                .Select(job => job.ToScanJobResponse(
+                    counts.TryGetValue(job.Id, out var value)
+                        ? value
+                        : new ScanJobStatusCounts(0, 0, 0, 0, 0)))
+                .ToArray();
+
+            return Ok(response);
+        }
+        catch (SqlException exception) when (exception.Number == 208)
         {
             return Ok(Array.Empty<ScanJobResponse>());
         }
-
-        var counts = await LoadJobCountsByJobIdAsync(jobs.Select(x => x.Id), cancellationToken);
-        var response = jobs
-            .Select(job => job.ToScanJobResponse(
-                counts.TryGetValue(job.Id, out var value)
-                    ? value
-                    : new ScanJobStatusCounts(0, 0, 0, 0, 0)))
-            .ToArray();
-
-        return Ok(response);
     }
 
     [HttpGet("jobs/{scanJobId:guid}")]
@@ -495,23 +510,30 @@ public sealed class ScanningController : ControllerBase
         var (page, pageSize, skip) = V2SearchHelpers.NormalizePaging(query.Page, query.PageSize, defaultPageSize: 50, maxPageSize: 500);
         var take = pageSize;
 
-        var response = await BuildDetectionHistoryResponseAsync(
-            query.ServerId,
-            query.IocId,
-            query.RuleRevisionId,
-            query.Family,
-            parsedStatus,
-            query.Source,
-            query.ScanJobId,
-            parsedFromUtc,
-            parsedToUtc,
-            query.IncludeProvenance,
-            take,
-            skip,
-            query.Sort,
-            cancellationToken);
+        try
+        {
+            var response = await BuildDetectionHistoryResponseAsync(
+                query.ServerId,
+                query.IocId,
+                query.RuleRevisionId,
+                query.Family,
+                parsedStatus,
+                query.Source,
+                query.ScanJobId,
+                parsedFromUtc,
+                parsedToUtc,
+                query.IncludeProvenance,
+                take,
+                skip,
+                query.Sort,
+                cancellationToken);
 
-        return Ok(response);
+            return Ok(response);
+        }
+        catch (SqlException exception) when (exception.Number == 208)
+        {
+            return Ok(new DetectionHistoryResponse(0, take, skip, Array.Empty<DetectionHistoryItemResponse>()));
+        }
     }
 
     [HttpGet("results/servers/{serverId:guid}/history")]
