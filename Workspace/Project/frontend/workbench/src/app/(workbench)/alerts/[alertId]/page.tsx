@@ -7,6 +7,8 @@ import { motion } from "framer-motion"
 import { alertCaseContext, alertCaseTitle, formatAlertOwner, formatAlertTimestamp } from "@/components/workbench/alert-case-format"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
@@ -67,6 +69,21 @@ function ProgressMeter({
       </div>
     </div>
   )
+}
+
+function ownerDisplay(detail: V2AlertDetailResponse) {
+  if (detail.ownerUserId === "unassigned") {
+    return "Unassigned"
+  }
+
+  return detail.ownerDisplayName || detail.ownerUserId
+}
+
+function parseCcEmails(value: string) {
+  return value
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 function SectionHeader({ title, description }: { title: string; description: string }) {
@@ -200,10 +217,27 @@ export default function AlertDetailPage() {
   const [statusUpdate, setStatusUpdate] = useState<string | null>(null)
   const [iocStatusUpdate, setIocStatusUpdate] = useState<string | null>(null)
   const [detailOverride, setDetailOverride] = useState<V2AlertDetailResponse | null>(null)
+  const [selectedOwner, setSelectedOwner] = useState("unassigned")
+  const [ownerUpdate, setOwnerUpdate] = useState(false)
+  const [emailSubject, setEmailSubject] = useState("")
+  const [emailBody, setEmailBody] = useState("")
+  const [emailCc, setEmailCc] = useState("")
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
 
   const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal), {
     enabled: isModeConfigured,
   })
+  const ownersQuery = useWorkbenchQuery(["alert-owners"], (signal) => gateway.listAlertOwners(signal), {
+    enabled: isModeConfigured,
+  })
+  const emailUpdatesQuery = useWorkbenchQuery(
+    ["alert", alertId, "email-updates"],
+    (signal) => gateway.listAlertEmailUpdates(alertId, signal),
+    {
+      enabled: isModeConfigured,
+    },
+  )
 
   useEffect(() => {
     setDetailOverride(null)
@@ -211,6 +245,12 @@ export default function AlertDetailPage() {
 
   const detail = detailOverride ?? alertQuery.data ?? null
   const canShowNonAlertPivots = !isItOnlyScope(session?.roles ?? [])
+
+  useEffect(() => {
+    if (detail) {
+      setSelectedOwner(detail.ownerUserId || "unassigned")
+    }
+  }, [detail?.id, detail?.ownerUserId])
 
   const updateStatus = async (nextStatus: string) => {
     if (!detail || statusUpdate) {
@@ -239,6 +279,55 @@ export default function AlertDetailPage() {
       setDetailOverride(updated)
     } finally {
       setIocStatusUpdate(null)
+    }
+  }
+
+  const updateOwner = async () => {
+    if (!detail || ownerUpdate || selectedOwner === detail.ownerUserId) {
+      return
+    }
+
+    const actorUserId = session?.username ?? session?.userId ?? "workbench"
+    try {
+      setOwnerUpdate(true)
+      const updated = await gateway.updateAlertOwner(alertId, { ownerUserId: selectedOwner, actorUserId })
+      setDetailOverride(updated)
+    } finally {
+      setOwnerUpdate(false)
+    }
+  }
+
+  const sendEmailUpdate = async () => {
+    if (!detail || emailSending) {
+      return
+    }
+
+    const subject = emailSubject.trim()
+    const body = emailBody.trim()
+    if (!subject || !body) {
+      setEmailError("Subject and body are required.")
+      return
+    }
+
+    const ccEmails = parseCcEmails(emailCc)
+    if (ccEmails.length > 10) {
+      setEmailError("CC can include at most 10 addresses.")
+      return
+    }
+
+    const actorUserId = session?.username ?? session?.userId ?? "workbench"
+    try {
+      setEmailError(null)
+      setEmailSending(true)
+      await gateway.sendAlertEmailUpdate(alertId, { subject, body, ccEmails, actorUserId })
+      setEmailSubject("")
+      setEmailBody("")
+      setEmailCc("")
+      await emailUpdatesQuery.refetch()
+    } catch (error) {
+      setEmailError(error instanceof Error ? error.message : "Email update failed.")
+    } finally {
+      setEmailSending(false)
     }
   }
 
@@ -275,7 +364,8 @@ export default function AlertDetailPage() {
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <p className="wb-kicker">Owner</p>
-            <p className="mt-1 text-sm font-semibold">{formatAlertOwner(detail.ownerUserId)}</p>
+            <p className="mt-1 text-sm font-semibold">{ownerDisplay(detail)}</p>
+            <p className="mt-1 break-all text-xs text-muted-foreground">{detail.ownerEmail ?? formatAlertOwner(detail.ownerUserId)}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-surface-2/70 p-3">
             <p className="wb-kicker">Target</p>
@@ -321,6 +411,95 @@ export default function AlertDetailPage() {
               {statusUpdate === option ? "Updating..." : option}
             </Button>
           ))}
+        </div>
+      </motion.article>
+
+      <motion.article className="wb-panel space-y-4" variants={panelMotion}>
+        <SectionHeader
+          title="Owner Routing"
+          description="Assign the department mailbox used for manual alert updates."
+        />
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <select
+            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+            value={selectedOwner}
+            onChange={(event) => setSelectedOwner(event.target.value)}
+            disabled={ownerUpdate || ownersQuery.isLoading}
+          >
+            <option value="unassigned">Unassigned</option>
+            {(ownersQuery.data ?? []).map((owner) => (
+              <option key={owner.key} value={owner.key}>
+                {owner.displayName} - {owner.email}
+              </option>
+            ))}
+          </select>
+          <Button type="button" size="sm" onClick={() => void updateOwner()} disabled={ownerUpdate || selectedOwner === detail.ownerUserId}>
+            {ownerUpdate ? "Saving..." : "Save owner"}
+          </Button>
+        </div>
+      </motion.article>
+
+      <motion.article className="wb-panel space-y-4" variants={panelMotion}>
+        <SectionHeader
+          title="Email Updates"
+          description="Send a plain-text manual update to the assigned owner mailbox."
+        />
+        <div className="grid gap-3">
+          <Input
+            value={emailSubject}
+            onChange={(event) => setEmailSubject(event.target.value.slice(0, 200))}
+            placeholder="Subject"
+            disabled={!detail.ownerEmail || emailSending}
+          />
+          <Textarea
+            value={emailBody}
+            onChange={(event) => setEmailBody(event.target.value.slice(0, 8000))}
+            placeholder="Message"
+            className="min-h-32"
+            disabled={!detail.ownerEmail || emailSending}
+          />
+          <Input
+            value={emailCc}
+            onChange={(event) => setEmailCc(event.target.value)}
+            placeholder="CC addresses separated by comma, semicolon, or new line"
+            disabled={!detail.ownerEmail || emailSending}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              To: {detail.ownerEmail ?? "Assign an owner email before sending"}
+            </p>
+            <Button type="button" size="sm" onClick={() => void sendEmailUpdate()} disabled={!detail.ownerEmail || emailSending}>
+              {emailSending ? "Sending..." : "Send update"}
+            </Button>
+          </div>
+          {emailError ? <p className="text-xs text-destructive">{emailError}</p> : null}
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-semibold tracking-tight">Email history</p>
+          {(emailUpdatesQuery.data ?? []).length === 0 ? (
+            <EmptyState title="No email updates" description="Manual owner updates will appear here after they are sent or queued." />
+          ) : (
+            (emailUpdatesQuery.data ?? []).map((update) => (
+              <div key={update.id} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">{update.subject}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      To {update.toEmail} | {new Date(update.createdAtUtc).toLocaleString()}
+                    </p>
+                  </div>
+                  <StatusBadge value={update.deliveryStatus} />
+                </div>
+                {update.ccEmails.length > 0 ? (
+                  <p className="mt-2 break-all text-xs text-muted-foreground">CC {update.ccEmails.join(", ")}</p>
+                ) : null}
+                {update.failureDetail ? (
+                  <p className="mt-2 text-xs text-muted-foreground">{update.failureDetail}</p>
+                ) : null}
+              </div>
+            ))
+          )}
         </div>
       </motion.article>
 

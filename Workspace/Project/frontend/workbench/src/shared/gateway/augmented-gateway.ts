@@ -60,6 +60,7 @@ import type {
   SimulateRuleProposalInput,
   TriggerRollbackInput,
   RetryDistributionJobInput,
+  SendAlertEmailUpdateInput,
   SendScanAnalystChatTurnInput,
   UpdateScanAnalystPostureInput,
   AssignWorkbenchRolePermissionInput,
@@ -67,6 +68,7 @@ import type {
   UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
+  UpdateAlertOwnerInput,
   UpdateManagedServerInput,
   UpsertManagedServerScannerAssignmentInput,
 } from "@/shared/gateway/types"
@@ -82,6 +84,10 @@ export class AugmentedGateway implements Gateway {
     return this.source.listAlertRegistry(query, signal)
   }
 
+  listAlertOwners(signal?: AbortSignal) {
+    return this.source.listAlertOwners(signal)
+  }
+
   getAlertDetail(alertId: string, signal?: AbortSignal) {
     return this.source.getAlertDetail(alertId, signal)
   }
@@ -92,6 +98,18 @@ export class AugmentedGateway implements Gateway {
 
   updateAlertIocStatus(alertId: string, iocId: string, status: string, actorUserId: string) {
     return this.source.updateAlertIocStatus(alertId, iocId, status, actorUserId)
+  }
+
+  updateAlertOwner(alertId: string, input: UpdateAlertOwnerInput) {
+    return this.source.updateAlertOwner(alertId, input)
+  }
+
+  listAlertEmailUpdates(alertId: string, signal?: AbortSignal) {
+    return this.source.listAlertEmailUpdates(alertId, signal)
+  }
+
+  sendAlertEmailUpdate(alertId: string, input: SendAlertEmailUpdateInput) {
+    return this.source.sendAlertEmailUpdate(alertId, input)
   }
 
   listAlerts(signal?: AbortSignal) {

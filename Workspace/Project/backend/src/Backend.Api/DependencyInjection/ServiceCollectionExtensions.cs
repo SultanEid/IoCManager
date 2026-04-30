@@ -122,6 +122,15 @@ public static class ServiceCollectionExtensions
             .AddOptions<PowerBiVisualizationOptions>()
             .Bind(configuration.GetSection(PowerBiVisualizationOptions.SectionName));
         services
+            .AddOptions<AlertOwnerOptions>()
+            .Bind(configuration.GetSection(AlertOwnerOptions.SectionName))
+            .ValidateOnStart();
+        services
+            .AddOptions<SmtpNotificationOptions>()
+            .Bind(configuration.GetSection(SmtpNotificationOptions.SectionName))
+            .Validate(options => options.Port > 0, "Notifications:Smtp:Port must be positive.")
+            .ValidateOnStart();
+        services
             .AddOptions<LegacyScanPipelineOptions>()
             .Bind(configuration.GetSection(LegacyScanPipelineOptions.SectionName))
             .ValidateOnStart();
@@ -151,6 +160,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPowerBiVisualizationCatalogService, PowerBiVisualizationCatalogService>();
         services.AddScoped<IRuleRevisionValidationPipeline, RuleRevisionValidationPipeline>();
         services.AddScoped<IResultIngestionService, ResultIngestionService>();
+        services.AddSingleton<IAlertOwnerResolver, AlertOwnerResolver>();
+        services.AddSingleton<IAlertEmailSender, SmtpAlertEmailSender>();
         services.AddSingleton<ILegacyScannerResultExtractor, LegacyScannerResultExtractor>();
         services.AddSingleton<TargetServerConnectionSecretProtector>();
         services.AddSingleton<LegacyNetworkSshPasswordProtector>();

@@ -11,6 +11,8 @@ public sealed class Alert : AuditableEntity
     public AlertSeverity Severity { get; private set; } = AlertSeverity.Medium;
     public AlertStatus Status { get; private set; } = AlertStatus.Open;
     public string OwnerUserId { get; private set; } = string.Empty;
+    public string OwnerDisplayName { get; private set; } = string.Empty;
+    public string? OwnerEmail { get; private set; }
     public string ApprovalTierRequired { get; private set; } = "Analyst";
     public string ScannerFamily { get; private set; } = string.Empty;
     public int? TargetId { get; private set; }
@@ -24,6 +26,8 @@ public sealed class Alert : AuditableEntity
         string summary,
         AlertSeverity severity,
         string ownerUserId,
+        string ownerDisplayName,
+        string? ownerEmail,
         string approvalTierRequired,
         string scannerFamily,
         int? targetId,
@@ -47,6 +51,8 @@ public sealed class Alert : AuditableEntity
             Severity = severity,
             Status = AlertStatus.Open,
             OwnerUserId = ownerUserId.Trim(),
+            OwnerDisplayName = NormalizeOptional(ownerDisplayName),
+            OwnerEmail = NormalizeNullableEmail(ownerEmail),
             ApprovalTierRequired = string.IsNullOrWhiteSpace(approvalTierRequired) ? "Analyst" : approvalTierRequired.Trim(),
             ScannerFamily = scannerFamily.Trim(),
             TargetId = targetId,
@@ -92,6 +98,75 @@ public sealed class Alert : AuditableEntity
         ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
         Status = status;
         Touch(actorUserId.Trim(), nowUtc);
+    }
+
+    public void SetOwner(string ownerUserId, string ownerDisplayName, string? ownerEmail, string actorUserId, DateTimeOffset nowUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerUserId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
+
+        OwnerUserId = ownerUserId.Trim();
+        OwnerDisplayName = NormalizeOptional(ownerDisplayName);
+        OwnerEmail = NormalizeNullableEmail(ownerEmail);
+        Touch(actorUserId.Trim(), nowUtc);
+    }
+
+    private static string NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string? NormalizeNullableEmail(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+public sealed class AlertEmailUpdate : AuditableEntity
+{
+    private AlertEmailUpdate() { }
+
+    public Guid AlertId { get; private set; }
+    public string Subject { get; private set; } = string.Empty;
+    public string Body { get; private set; } = string.Empty;
+    public string ToEmail { get; private set; } = string.Empty;
+    public string CcEmailsJson { get; private set; } = "[]";
+    public AlertEmailDeliveryStatus DeliveryStatus { get; private set; } = AlertEmailDeliveryStatus.NotConfigured;
+    public string? FailureDetail { get; private set; }
+    public DateTimeOffset? SentAtUtc { get; private set; }
+
+    public static AlertEmailUpdate Create(
+        Guid alertId,
+        string subject,
+        string body,
+        string toEmail,
+        string ccEmailsJson,
+        AlertEmailDeliveryStatus deliveryStatus,
+        string? failureDetail,
+        DateTimeOffset? sentAtUtc,
+        string actorUserId,
+        DateTimeOffset nowUtc)
+    {
+        if (alertId == Guid.Empty)
+        {
+            throw new ArgumentException("Alert id is required.", nameof(alertId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(subject);
+        ArgumentException.ThrowIfNullOrWhiteSpace(body);
+        ArgumentException.ThrowIfNullOrWhiteSpace(toEmail);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
+
+        var item = new AlertEmailUpdate
+        {
+            AlertId = alertId,
+            Subject = subject.Trim(),
+            Body = body.Trim(),
+            ToEmail = toEmail.Trim(),
+            CcEmailsJson = string.IsNullOrWhiteSpace(ccEmailsJson) ? "[]" : ccEmailsJson.Trim(),
+            DeliveryStatus = deliveryStatus,
+            FailureDetail = string.IsNullOrWhiteSpace(failureDetail) ? null : failureDetail.Trim(),
+            SentAtUtc = sentAtUtc,
+        };
+
+        item.StampCreation(actorUserId.Trim(), nowUtc);
+        return item;
     }
 }
 

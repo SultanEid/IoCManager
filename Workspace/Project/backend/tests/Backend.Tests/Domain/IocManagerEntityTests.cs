@@ -175,6 +175,8 @@ public sealed class IocManagerEntityTests
             summary: "Malicious domain seen",
             severity: AlertSeverity.Medium,
             ownerUserId: "analyst-1",
+            ownerDisplayName: string.Empty,
+            ownerEmail: null,
             approvalTierRequired: "Lead",
             scannerFamily: "yara",
             targetId: 1,

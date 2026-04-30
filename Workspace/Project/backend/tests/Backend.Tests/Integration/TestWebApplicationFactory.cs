@@ -16,6 +16,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"backend-tests-{Guid.NewGuid():N}";
     private readonly IReadOnlyDictionary<string, string?> _configurationOverrides;
+    private readonly Action<IServiceCollection>? _configureTestServices;
 
     public TestWebApplicationFactory()
         : this(new Dictionary<string, string?>
@@ -32,13 +33,16 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             ["RateLimiting:AuthToken:PermitLimit"] = "100000",
             ["RateLimiting:Write:PermitLimit"] = "100000",
             ["RateLimiting:Read:PermitLimit"] = "100000",
-        })
+        }, null)
     {
     }
 
-    internal TestWebApplicationFactory(IReadOnlyDictionary<string, string?> configurationOverrides)
+    internal TestWebApplicationFactory(
+        IReadOnlyDictionary<string, string?> configurationOverrides,
+        Action<IServiceCollection>? configureTestServices = null)
     {
         _configurationOverrides = configurationOverrides;
+        _configureTestServices = configureTestServices;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -78,6 +82,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IScanExecutionDispatcher>();
             services.AddSingleton<TestScanExecutionDispatcher>();
             services.AddSingleton<IScanExecutionDispatcher>(sp => sp.GetRequiredService<TestScanExecutionDispatcher>());
+            _configureTestServices?.Invoke(services);
 
             using var scope = services.BuildServiceProvider().CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
