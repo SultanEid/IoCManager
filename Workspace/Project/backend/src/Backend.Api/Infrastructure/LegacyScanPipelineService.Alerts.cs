@@ -7,6 +7,7 @@ namespace Backend.Api.Infrastructure;
 
 public sealed partial class LegacyScanPipelineService
 {
+    private const string PromoteYaraHighTestingEnvironmentVariable = "IOC_MANAGER_PROMOTE_YARA_HIGH_FOR_TESTING";
     private const string AlertQueueOwnerUserId = "unassigned";
     private const string AlertPromotionActorUserId = "legacy-pipeline";
     private const int AlertTitleMaxLength = 200;
@@ -144,9 +145,11 @@ public sealed partial class LegacyScanPipelineService
 
     internal static AlertSeverity ResolveFindingAlertSeverity(LegacyPipelinePersistedIoc ioc)
     {
-        if (string.Equals(ioc.ScannerType, "YARA", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(ioc.ScannerType, "YARA", StringComparison.OrdinalIgnoreCase)
+            && IsYaraHighSeverityTestingOverrideEnabled())
         {
-            // Temporary testing override: promote legacy YARA matches as High so Aegis auto-plan flows can be exercised.
+            // Local testing override: promote legacy YARA matches as High so Aegis auto-plan flows can be exercised
+            // without changing the default production/test expectation.
             return AlertSeverity.High;
         }
 
@@ -162,6 +165,12 @@ public sealed partial class LegacyScanPipelineService
 
         return AlertSeverity.Medium;
     }
+
+    private static bool IsYaraHighSeverityTestingOverrideEnabled()
+        => string.Equals(
+            Environment.GetEnvironmentVariable(PromoteYaraHighTestingEnvironmentVariable),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
 
     private static (string Value, string Kind) ResolveFindingIndicator(string normalizedFamily, LegacyPipelinePersistedIoc ioc)
     {
