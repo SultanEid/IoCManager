@@ -3,7 +3,9 @@ import { requestForm, requestJson } from "@/shared/api/client"
 import { ApiError } from "@/shared/api/error"
 import {
   alertResponseSchema,
+  alertEmailUpdateResponseSchema,
   alertListResponseSchema,
+  alertOwnerResponseSchema,
   aiModelStatisticsSchema,
   v2AlertDetailResponseSchema,
   aiDecisionActionPlanOrPendingResponseSchema,
@@ -75,6 +77,8 @@ import {
   userResponseSchema,
   type AlertListResponse,
   type AlertResponse,
+  type AlertEmailUpdateResponse,
+  type AlertOwnerResponse,
   type AiModelStatistics,
   type AiDecisionActionPlanOrPendingResponse,
   type AiDecisionExplanationOrPendingResponse,
@@ -186,16 +190,20 @@ import type {
   RetryDistributionJobInput,
   SendScanAnalystChatTurnInput,
   UpdateScanAnalystPostureInput,
+  SendAlertEmailUpdateInput,
   AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
+  UpdateAlertOwnerInput,
   UpdateManagedServerInput,
   UpsertManagedServerScannerAssignmentInput,
 } from "@/shared/gateway/types"
 
 const alertsSchema = z.array(alertResponseSchema)
+const alertOwnersSchema = z.array(alertOwnerResponseSchema)
+const alertEmailUpdatesSchema = z.array(alertEmailUpdateResponseSchema)
 const evidenceSchema = z.array(evidenceResponseSchema)
 const decisionsSchema = z.array(decisionResponseSchema)
 const rulesSchema = z.array(ruleResponseSchema)
@@ -310,6 +318,10 @@ export class AspNetGateway {
     return requestJson(`/api/v2/alerts${suffix}`, alertListResponseSchema, { signal })
   }
 
+  async listAlertOwners(signal?: AbortSignal): Promise<AlertOwnerResponse[]> {
+    return requestJson("/api/v2/alerts/owners", alertOwnersSchema, { signal })
+  }
+
   async listAlerts(signal?: AbortSignal): Promise<AlertResponse[]> {
     return requestJson("/api/alerts", alertsSchema, { signal })
   }
@@ -338,6 +350,32 @@ export class AspNetGateway {
       body: {
         status,
         actorUserId,
+      },
+    })
+  }
+
+  async updateAlertOwner(alertId: string, input: UpdateAlertOwnerInput): Promise<V2AlertDetailResponse> {
+    return requestJson(`/api/v2/alerts/${alertId}/owner`, v2AlertDetailResponseSchema, {
+      method: "PATCH",
+      body: {
+        ownerUserId: input.ownerUserId,
+        actorUserId: input.actorUserId,
+      },
+    })
+  }
+
+  async listAlertEmailUpdates(alertId: string, signal?: AbortSignal): Promise<AlertEmailUpdateResponse[]> {
+    return requestJson(`/api/v2/alerts/${alertId}/email-updates`, alertEmailUpdatesSchema, { signal })
+  }
+
+  async sendAlertEmailUpdate(alertId: string, input: SendAlertEmailUpdateInput): Promise<AlertEmailUpdateResponse> {
+    return requestJson(`/api/v2/alerts/${alertId}/email-updates`, alertEmailUpdateResponseSchema, {
+      method: "POST",
+      body: {
+        subject: input.subject,
+        body: input.body,
+        ccEmails: input.ccEmails ?? [],
+        actorUserId: input.actorUserId,
       },
     })
   }

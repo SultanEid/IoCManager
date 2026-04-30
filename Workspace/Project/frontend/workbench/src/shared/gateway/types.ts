@@ -1,5 +1,7 @@
 import type {
   AlertResponse,
+  AlertEmailUpdateResponse,
+  AlertOwnerResponse,
   AiModelStatistics,
   AiDecisionActionPlanOrPendingResponse,
   AiDecisionExplanationOrPendingResponse,
@@ -659,6 +661,18 @@ export type AlertListQuery = {
   pageSize?: number
 }
 
+export type UpdateAlertOwnerInput = {
+  ownerUserId: string
+  actorUserId: string
+}
+
+export type SendAlertEmailUpdateInput = {
+  subject: string
+  body: string
+  ccEmails?: string[]
+  actorUserId: string
+}
+
 export type ReportListQuery = {
   q?: string
   reportType?: string
@@ -782,10 +796,14 @@ export type RetryDistributionJobInput = {
 
 export interface Gateway {
   login(username: string, password: string): Promise<TokenResponse>
+  listAlertOwners(signal?: AbortSignal): Promise<AlertOwnerResponse[]>
   listAlertRegistry(query?: AlertListQuery, signal?: AbortSignal): Promise<AlertListResponse>
   getAlertDetail(alertId: string, signal?: AbortSignal): Promise<V2AlertDetailResponse>
   updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
   updateAlertIocStatus(alertId: string, iocId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
+  updateAlertOwner(alertId: string, input: UpdateAlertOwnerInput): Promise<V2AlertDetailResponse>
+  listAlertEmailUpdates(alertId: string, signal?: AbortSignal): Promise<AlertEmailUpdateResponse[]>
+  sendAlertEmailUpdate(alertId: string, input: SendAlertEmailUpdateInput): Promise<AlertEmailUpdateResponse>
   listReports(query?: ReportListQuery, signal?: AbortSignal): Promise<ReportListResponse>
   getReport(reportId: string, signal?: AbortSignal): Promise<ReportResponse>
   generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>

@@ -37,6 +37,8 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
                     Severity nvarchar(64) NOT NULL,
                     Status nvarchar(64) NOT NULL,
                     OwnerUserId nvarchar(128) NOT NULL,
+                    OwnerDisplayName nvarchar(200) NOT NULL CONSTRAINT DF_alerts_v2_OwnerDisplayName DEFAULT(''),
+                    OwnerEmail nvarchar(320) NULL,
                     ApprovalTierRequired nvarchar(64) NOT NULL,
                     ScannerFamily nvarchar(64) NOT NULL CONSTRAINT DF_alerts_v2_ScannerFamily DEFAULT(''),
                     TargetId int NULL,
@@ -52,6 +54,8 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
             END;
             """,
             "IF COL_LENGTH('dbo.alerts_v2', 'ScannerFamily') IS NULL ALTER TABLE dbo.alerts_v2 ADD ScannerFamily nvarchar(64) NOT NULL CONSTRAINT DF_alerts_v2_ScannerFamily_Alter DEFAULT('');",
+            "IF COL_LENGTH('dbo.alerts_v2', 'OwnerDisplayName') IS NULL ALTER TABLE dbo.alerts_v2 ADD OwnerDisplayName nvarchar(200) NOT NULL CONSTRAINT DF_alerts_v2_OwnerDisplayName_Alter DEFAULT('');",
+            "IF COL_LENGTH('dbo.alerts_v2', 'OwnerEmail') IS NULL ALTER TABLE dbo.alerts_v2 ADD OwnerEmail nvarchar(320) NULL;",
             "IF COL_LENGTH('dbo.alerts_v2', 'TargetId') IS NULL ALTER TABLE dbo.alerts_v2 ADD TargetId int NULL;",
             "IF COL_LENGTH('dbo.alerts_v2', 'TargetDisplay') IS NULL ALTER TABLE dbo.alerts_v2 ADD TargetDisplay nvarchar(200) NOT NULL CONSTRAINT DF_alerts_v2_TargetDisplay_Alter DEFAULT('');",
             "IF COL_LENGTH('dbo.alerts_v2', 'RuleName') IS NULL ALTER TABLE dbo.alerts_v2 ADD RuleName nvarchar(255) NOT NULL CONSTRAINT DF_alerts_v2_RuleName_Alter DEFAULT('');",
@@ -95,8 +99,41 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
             END;
             """,
             """
+            IF OBJECT_ID('dbo.alert_email_updates', 'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.alert_email_updates
+                (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_alert_email_updates PRIMARY KEY,
+                    AlertId uniqueidentifier NOT NULL,
+                    Subject nvarchar(200) NOT NULL,
+                    Body nvarchar(max) NOT NULL,
+                    ToEmail nvarchar(320) NOT NULL,
+                    CcEmailsJson nvarchar(max) NOT NULL CONSTRAINT DF_alert_email_updates_CcEmailsJson DEFAULT('[]'),
+                    DeliveryStatus nvarchar(64) NOT NULL,
+                    FailureDetail nvarchar(2000) NULL,
+                    SentAtUtc datetimeoffset NULL,
+                    CreatedAtUtc datetimeoffset NOT NULL,
+                    UpdatedAtUtc datetimeoffset NOT NULL,
+                    CreatedByUserId nvarchar(128) NOT NULL,
+                    UpdatedByUserId nvarchar(128) NOT NULL
+                );
+            END;
+            """,
+            """
+            IF OBJECT_ID('dbo.FK_alert_email_updates_alerts_v2_AlertId', 'F') IS NULL
+            BEGIN
+                ALTER TABLE dbo.alert_email_updates
+                    ADD CONSTRAINT FK_alert_email_updates_alerts_v2_AlertId
+                    FOREIGN KEY (AlertId) REFERENCES dbo.alerts_v2 (Id) ON DELETE CASCADE;
+            END;
+            """,
+            """
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alerts_v2_Status_Severity' AND object_id = OBJECT_ID('dbo.alerts_v2'))
                 CREATE INDEX IX_alerts_v2_Status_Severity ON dbo.alerts_v2 (Status, Severity);
+            """,
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alerts_v2_OwnerUserId' AND object_id = OBJECT_ID('dbo.alerts_v2'))
+                CREATE INDEX IX_alerts_v2_OwnerUserId ON dbo.alerts_v2 (OwnerUserId);
             """,
             """
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alerts_v2_TargetId_ScannerFamily_RuleName_Status' AND object_id = OBJECT_ID('dbo.alerts_v2'))
@@ -113,6 +150,14 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
             """
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alert_iocs_IocId' AND object_id = OBJECT_ID('dbo.alert_iocs'))
                 CREATE INDEX IX_alert_iocs_IocId ON dbo.alert_iocs (IocId);
+            """,
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alert_email_updates_AlertId_CreatedAtUtc' AND object_id = OBJECT_ID('dbo.alert_email_updates'))
+                CREATE INDEX IX_alert_email_updates_AlertId_CreatedAtUtc ON dbo.alert_email_updates (AlertId, CreatedAtUtc);
+            """,
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alert_email_updates_DeliveryStatus' AND object_id = OBJECT_ID('dbo.alert_email_updates'))
+                CREATE INDEX IX_alert_email_updates_DeliveryStatus ON dbo.alert_email_updates (DeliveryStatus);
             """,
         };
 

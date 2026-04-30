@@ -83,6 +83,8 @@ public sealed class AlertsController : ControllerBase
             request.Summary,
             severity,
             request.OwnerUserId,
+            string.Empty,
+            null,
             request.ApprovalTierRequired,
             "manual",
             null,

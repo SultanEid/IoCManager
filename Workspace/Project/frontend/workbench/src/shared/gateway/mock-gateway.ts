@@ -1,5 +1,7 @@
 import type {
   AlertListResponse,
+  AlertEmailUpdateResponse,
+  AlertOwnerResponse,
   AiDecisionActionPlanOrPendingResponse,
   AiDecisionExplanationOrPendingResponse,
   AiDecisionResultResponse,
@@ -104,12 +106,14 @@ import type {
   TriggerRollbackInput,
   AssignWorkbenchRolePermissionInput,
   RetryDistributionJobInput,
+  SendAlertEmailUpdateInput,
   SendScanAnalystChatTurnInput,
   UpdateScanAnalystPostureInput,
   ImportRuleFileInput,
   UpdateScannerCapabilitiesInput,
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
+  UpdateAlertOwnerInput,
   UpdateManagedServerInput,
   UpsertManagedServerScannerAssignmentInput,
 } from "@/shared/gateway/types"
@@ -150,6 +154,27 @@ function copy<T>(value: T): T {
 
 function consume(...args: unknown[]) {
   void args.length
+}
+
+const mockAlertOwners: AlertOwnerResponse[] = [
+  { key: "it-security", displayName: "IT Security", email: "it-security@local.test" },
+  { key: "soc", displayName: "Security Operations Center", email: "soc@local.test" },
+  { key: "forensics", displayName: "Digital Forensics", email: "forensics@local.test" },
+]
+
+const mockAlertEmailUpdates = new Map<string, AlertEmailUpdateResponse[]>()
+const mockAlertOwnerAssignments = new Map<string, string>()
+
+function resolveMockOwner(ownerUserId: string) {
+  return mockAlertOwners.find((owner) => owner.key === ownerUserId)
+}
+
+function enrichMockAlertOwner(ownerUserId: string) {
+  const owner = resolveMockOwner(ownerUserId)
+  return {
+    ownerDisplayName: owner?.displayName ?? "",
+    ownerEmail: owner?.email ?? null,
+  }
 }
 
 function paginate<T>(items: T[], page = 1, pageSize = 20) {
@@ -498,13 +523,16 @@ export class MockGateway implements Gateway {
 
     const page = paginate(filtered, query.page, query.pageSize)
     return {
-      items: page.items.map((item) => ({
+      items: page.items.map((item) => {
+        const ownerUserId = mockAlertOwnerAssignments.get(item.id) ?? item.ownerUserId
+        return {
         id: item.id,
         title: item.title,
         summary: item.summary,
         severity: item.priority,
         status: item.status,
-        ownerUserId: item.ownerUserId,
+        ownerUserId,
+        ...enrichMockAlertOwner(ownerUserId),
         approvalTierRequired: item.approvalTierRequired,
         scannerFamily: "sigma",
         targetId: null,
@@ -522,16 +550,27 @@ export class MockGateway implements Gateway {
         lastDetectedAtUtc: item.updatedAtUtc,
         createdAtUtc: item.createdAtUtc,
         updatedAtUtc: item.updatedAtUtc,
-      })),
+        }
+      }),
       totalCount: filtered.length,
       page: page.page,
       pageSize: page.pageSize,
     }
   }
 
+  async listAlertOwners(_signal?: AbortSignal): Promise<AlertOwnerResponse[]> {
+    consume(_signal)
+    return copy(mockAlertOwners)
+  }
+
   async listAlerts(_signal?: AbortSignal) {
     consume(_signal)
-    return copy(selectCases(getMockState()))
+    return copy(
+      selectCases(getMockState()).map((item) => ({
+        ...item,
+        ownerUserId: mockAlertOwnerAssignments.get(item.id) ?? item.ownerUserId,
+      })),
+    )
   }
 
   async getAlert(alertId: string, _signal?: AbortSignal) {
@@ -542,13 +581,15 @@ export class MockGateway implements Gateway {
   async getAlertDetail(alertId: string, _signal?: AbortSignal): Promise<V2AlertDetailResponse> {
     consume(_signal)
     const item = selectCase(getMockState(), alertId)
+    const ownerUserId = mockAlertOwnerAssignments.get(alertId) ?? item.ownerUserId
     return {
       id: item.id,
       title: item.title,
       summary: item.summary,
       severity: item.priority,
       status: item.status,
-      ownerUserId: item.ownerUserId,
+      ownerUserId,
+      ...enrichMockAlertOwner(ownerUserId),
       approvalTierRequired: item.approvalTierRequired,
       scannerFamily: "sigma",
       targetId: null,
@@ -580,6 +621,47 @@ export class MockGateway implements Gateway {
   async updateAlertIocStatus(alertId: string, iocId: string, status: string, _actorUserId: string): Promise<V2AlertDetailResponse> {
     consume(iocId, status, _actorUserId)
     return this.getAlertDetail(alertId)
+  }
+
+  async updateAlertOwner(alertId: string, input: UpdateAlertOwnerInput): Promise<V2AlertDetailResponse> {
+    consume(input.actorUserId)
+    const owner = resolveMockOwner(input.ownerUserId)
+    mockAlertOwnerAssignments.set(alertId, owner?.key ?? "unassigned")
+    return this.getAlertDetail(alertId).then((detail) => ({
+      ...detail,
+      ownerUserId: owner?.key ?? "unassigned",
+      ownerDisplayName: owner?.displayName ?? "",
+      ownerEmail: owner?.email ?? null,
+    }))
+  }
+
+  async listAlertEmailUpdates(alertId: string, _signal?: AbortSignal): Promise<AlertEmailUpdateResponse[]> {
+    consume(_signal)
+    return copy(mockAlertEmailUpdates.get(alertId) ?? [])
+  }
+
+  async sendAlertEmailUpdate(alertId: string, input: SendAlertEmailUpdateInput): Promise<AlertEmailUpdateResponse> {
+    const detail = await this.getAlertDetail(alertId)
+    if (!detail.ownerEmail) {
+      throw new Error("Alert owner email is required before sending an email update.")
+    }
+
+    const update: AlertEmailUpdateResponse = {
+      id: crypto.randomUUID(),
+      alertId,
+      subject: input.subject,
+      body: input.body,
+      toEmail: detail.ownerEmail,
+      ccEmails: input.ccEmails ?? [],
+      deliveryStatus: "NotConfigured",
+      failureDetail: "SMTP is not configured in mock mode.",
+      sentAtUtc: null,
+      createdByUserId: input.actorUserId,
+      createdAtUtc: new Date().toISOString(),
+    }
+    const existing = mockAlertEmailUpdates.get(alertId) ?? []
+    mockAlertEmailUpdates.set(alertId, [update, ...existing])
+    return copy(update)
   }
 
   async listCases(_signal?: AbortSignal) {

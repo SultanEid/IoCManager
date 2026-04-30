@@ -1673,6 +1673,17 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("OwnerDisplayName")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasDefaultValue("");
+
+                    b.Property<string>("OwnerEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
                     b.Property<string>("RuleName")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -1727,6 +1738,8 @@ namespace Backend.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OwnerUserId");
+
                     b.HasIndex("ScannerFamily", "LastDetectedAtUtc");
 
                     b.HasIndex("Status", "Severity");
@@ -1734,6 +1747,72 @@ namespace Backend.Infrastructure.Persistence.Migrations
                     b.HasIndex("TargetId", "ScannerFamily", "RuleName", "Status");
 
                     b.ToTable("alerts_v2", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Domain.IocManager.AlertEmailUpdate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AlertId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CcEmailsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValue("[]");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DeliveryStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("FailureDetail")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTimeOffset?>("SentAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ToEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeliveryStatus");
+
+                    b.HasIndex("AlertId", "CreatedAtUtc");
+
+                    b.ToTable("alert_email_updates", (string)null);
                 });
 
             modelBuilder.Entity("Backend.Domain.IocManager.AlertIoc", b =>
@@ -5610,6 +5689,15 @@ namespace Backend.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Backend.Domain.IocManager.AlertIoc", b =>
+                {
+                    b.HasOne("Backend.Domain.IocManager.Alert", null)
+                        .WithMany()
+                        .HasForeignKey("AlertId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Backend.Domain.IocManager.AlertEmailUpdate", b =>
                 {
                     b.HasOne("Backend.Domain.IocManager.Alert", null)
                         .WithMany()

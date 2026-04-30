@@ -913,6 +913,8 @@ public sealed class AlertConfiguration : IEntityTypeConfiguration<Alert>
         builder.Property(x => x.Severity).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.OwnerUserId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.OwnerDisplayName).HasMaxLength(200).HasDefaultValue(string.Empty).IsRequired();
+        builder.Property(x => x.OwnerEmail).HasMaxLength(320);
         builder.Property(x => x.ApprovalTierRequired).HasMaxLength(64).IsRequired();
         builder.Property(x => x.ScannerFamily).HasMaxLength(64).HasDefaultValue(string.Empty).IsRequired();
         builder.Property(x => x.TargetDisplay).HasMaxLength(200).HasDefaultValue(string.Empty).IsRequired();
@@ -920,8 +922,34 @@ public sealed class AlertConfiguration : IEntityTypeConfiguration<Alert>
         builder.Property(x => x.CreatedByUserId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.UpdatedByUserId).HasMaxLength(128).IsRequired();
         builder.HasIndex(x => new { x.Status, x.Severity });
+        builder.HasIndex(x => x.OwnerUserId);
         builder.HasIndex(x => new { x.TargetId, x.ScannerFamily, x.RuleName, x.Status });
         builder.HasIndex(x => new { x.ScannerFamily, x.LastDetectedAtUtc });
+    }
+}
+
+public sealed class AlertEmailUpdateConfiguration : IEntityTypeConfiguration<AlertEmailUpdate>
+{
+    public void Configure(EntityTypeBuilder<AlertEmailUpdate> builder)
+    {
+        builder.ToTable("alert_email_updates");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Subject).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Body).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(x => x.ToEmail).HasMaxLength(320).IsRequired();
+        builder.Property(x => x.CcEmailsJson).HasColumnType("nvarchar(max)").HasDefaultValue("[]").IsRequired();
+        builder.Property(x => x.DeliveryStatus).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.FailureDetail).HasMaxLength(2000);
+        builder.Property(x => x.CreatedByUserId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.UpdatedByUserId).HasMaxLength(128).IsRequired();
+
+        builder.HasOne<Alert>()
+            .WithMany()
+            .HasForeignKey(x => x.AlertId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(x => new { x.AlertId, x.CreatedAtUtc });
+        builder.HasIndex(x => x.DeliveryStatus);
     }
 }
 

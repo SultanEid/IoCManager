@@ -11,7 +11,24 @@ public sealed record CreateAlertRequest(
 
 public sealed record UpdateAlertStatusRequest(string Status, string ActorUserId);
 public sealed record UpdateAlertIocStatusRequest(string Status, string ActorUserId);
+public sealed record UpdateAlertOwnerRequest(string OwnerUserId, string ActorUserId);
 public sealed record LinkAlertScanResultRequest(Guid ScanResultId, string ActorUserId);
+public sealed record SendAlertEmailUpdateRequest(string Subject, string Body, IReadOnlyList<string>? CcEmails, string ActorUserId);
+
+public sealed record AlertOwnerResponse(string Key, string DisplayName, string Email);
+
+public sealed record AlertEmailUpdateResponse(
+    Guid Id,
+    Guid AlertId,
+    string Subject,
+    string Body,
+    string ToEmail,
+    IReadOnlyList<string> CcEmails,
+    string DeliveryStatus,
+    string? FailureDetail,
+    DateTimeOffset? SentAtUtc,
+    string CreatedByUserId,
+    DateTimeOffset CreatedAtUtc);
 
 public sealed record AlertProgressResponse(
     int TotalIocs,
@@ -27,6 +44,8 @@ public sealed record AlertResponse(
     string Severity,
     string Status,
     string OwnerUserId,
+    string OwnerDisplayName,
+    string? OwnerEmail,
     string ApprovalTierRequired,
     string ScannerFamily,
     string? TargetId,
@@ -82,6 +101,8 @@ public sealed record AlertDetailResponse(
     string Severity,
     string Status,
     string OwnerUserId,
+    string OwnerDisplayName,
+    string? OwnerEmail,
     string ApprovalTierRequired,
     string ScannerFamily,
     string? TargetId,

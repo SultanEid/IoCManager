@@ -3,10 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import AlertDetailPage from "@/app/(workbench)/alerts/[alertId]/page"
 
 const mockedUseWorkbenchQuery = vi.hoisted(() => vi.fn())
-const mockedGateway = vi.hoisted(() => ({
+const gatewayMocks = vi.hoisted(() => ({
   getAlertDetail: vi.fn(),
   updateAlertStatus: vi.fn(),
   updateAlertIocStatus: vi.fn(),
+  listAlertOwners: vi.fn(),
+  updateAlertOwner: vi.fn(),
+  listAlertEmailUpdates: vi.fn(),
+  sendAlertEmailUpdate: vi.fn(),
 }))
 const gatewayState = vi.hoisted(() => ({
   isModeConfigured: true,
@@ -21,7 +25,7 @@ vi.mock("@/shared/query/use-workbench-query", () => ({
 }))
 
 vi.mock("@/shared/gateway", () => ({
-  gateway: mockedGateway,
+  gateway: gatewayMocks,
   get isModeConfigured() {
     return gatewayState.isModeConfigured
   },
@@ -44,10 +48,14 @@ describe("AlertDetailPage", () => {
     summary: "Alert summary",
     severity: "High",
     status: "Open",
-    ownerUserId: "lead-1",
+    ownerUserId: "soc",
+    ownerDisplayName: "Security Operations Center",
+    ownerEmail: "soc@local.test",
     approvalTierRequired: "Lead",
     scannerFamily: "yara",
+    targetId: null,
     targetDisplay: "srv-app-01",
+    ruleName: "Suspicious config",
     linkedIocCount: 1,
     progress: {
       totalIocs: 1,
@@ -56,7 +64,7 @@ describe("AlertDetailPage", () => {
       completedCount: 0,
       percentComplete: 0,
     },
-    detectedAtUtc: "2026-04-20T00:00:00Z",
+    firstDetectedAtUtc: "2026-04-20T00:00:00Z",
     lastDetectedAtUtc: "2026-04-20T00:00:00Z",
     createdAtUtc: "2026-04-20T00:00:00Z",
     updatedAtUtc: "2026-04-20T00:00:00Z",
@@ -94,14 +102,83 @@ describe("AlertDetailPage", () => {
     ],
   }
 
+  let currentDetail: typeof baseDetail
+  let emailRefetch: ReturnType<typeof vi.fn>
+
   beforeEach(() => {
+    currentDetail = {
+      ...baseDetail,
+      progress: { ...baseDetail.progress },
+      linkedIocs: baseDetail.linkedIocs.map((ioc) => ({ ...ioc })),
+      linkedScanResults: baseDetail.linkedScanResults.map((result) => ({ ...result })),
+    }
+    emailRefetch = vi.fn()
     mockedUseWorkbenchQuery.mockReset()
-    mockedGateway.updateAlertIocStatus.mockReset()
-    mockedUseWorkbenchQuery.mockReturnValue({
-      isLoading: false,
-      isError: false,
-      error: null,
-      data: baseDetail,
+    gatewayMocks.updateAlertIocStatus.mockReset()
+    gatewayMocks.updateAlertOwner.mockReset()
+    gatewayMocks.sendAlertEmailUpdate.mockReset()
+    gatewayMocks.updateAlertOwner.mockResolvedValue({
+      ...currentDetail,
+      ownerUserId: "forensics",
+      ownerDisplayName: "Digital Forensics",
+      ownerEmail: "forensics@local.test",
+    })
+    gatewayMocks.sendAlertEmailUpdate.mockResolvedValue({
+      id: "551ad0e4-7f91-42f7-9a33-d94e76594477",
+      alertId: "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
+      subject: "Owner update",
+      body: "Review this alert.",
+      toEmail: "soc@local.test",
+      ccEmails: ["lead@local.test"],
+      deliveryStatus: "NotConfigured",
+      failureDetail: "SMTP is not configured.",
+      sentAtUtc: null,
+      createdByUserId: "lead-1",
+      createdAtUtc: "2026-04-20T00:05:00Z",
+    })
+    mockedUseWorkbenchQuery.mockImplementation((key: readonly unknown[]) => {
+      if (key[0] === "alert-owners") {
+        return {
+          isLoading: false,
+          isError: false,
+          error: null,
+          data: [
+            { key: "soc", displayName: "Security Operations Center", email: "soc@local.test" },
+            { key: "forensics", displayName: "Digital Forensics", email: "forensics@local.test" },
+          ],
+        }
+      }
+
+      if (key[2] === "email-updates") {
+        return {
+          isLoading: false,
+          isError: false,
+          error: null,
+          refetch: emailRefetch,
+          data: [
+            {
+              id: "551ad0e4-7f91-42f7-9a33-d94e76594477",
+              alertId: "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
+              subject: "Prior update",
+              body: "Already sent.",
+              toEmail: "soc@local.test",
+              ccEmails: ["lead@local.test"],
+              deliveryStatus: "NotConfigured",
+              failureDetail: "SMTP is not configured.",
+              sentAtUtc: null,
+              createdByUserId: "lead-1",
+              createdAtUtc: "2026-04-20T00:05:00Z",
+            },
+          ],
+        }
+      }
+
+      return {
+        isLoading: false,
+        isError: false,
+        error: null,
+        data: currentDetail,
+      }
     })
   })
 
@@ -122,15 +199,10 @@ describe("AlertDetailPage", () => {
   })
 
   it("renders a muted fallback when source scan context is absent", () => {
-    mockedUseWorkbenchQuery.mockReturnValueOnce({
-      isLoading: false,
-      isError: false,
-      error: null,
-      data: {
-        ...baseDetail,
-        linkedScanResults: [],
-      },
-    })
+    currentDetail = {
+      ...currentDetail,
+      linkedScanResults: [],
+    }
 
     render(<AlertDetailPage />)
 
@@ -139,8 +211,8 @@ describe("AlertDetailPage", () => {
   })
 
   it("renders IOC progress and updates linked IOC status", async () => {
-    mockedGateway.updateAlertIocStatus.mockResolvedValueOnce({
-      ...baseDetail,
+    gatewayMocks.updateAlertIocStatus.mockResolvedValueOnce({
+      ...currentDetail,
       status: "Investigating",
       progress: {
         totalIocs: 1,
@@ -149,7 +221,7 @@ describe("AlertDetailPage", () => {
         completedCount: 0,
         percentComplete: 50,
       },
-      linkedIocs: baseDetail.linkedIocs.map((ioc) => ({ ...ioc, status: "InReview", statusUpdatedByUserId: "lead-1" })),
+      linkedIocs: currentDetail.linkedIocs.map((ioc) => ({ ...ioc, status: "InReview", statusUpdatedByUserId: "lead-1" })),
     })
 
     render(<AlertDetailPage />)
@@ -158,7 +230,7 @@ describe("AlertDetailPage", () => {
     fireEvent.change(screen.getByLabelText(/Update status for IOC/i), { target: { value: "InReview" } })
 
     await waitFor(() => {
-      expect(mockedGateway.updateAlertIocStatus).toHaveBeenCalledWith(
+      expect(gatewayMocks.updateAlertIocStatus).toHaveBeenCalledWith(
         "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
         "fb192f1b-bcc8-4617-9dde-6ed434770bf8",
         "InReview",
@@ -169,27 +241,70 @@ describe("AlertDetailPage", () => {
   })
 
   it("renders an empty progress state when no IOCs are linked", () => {
-    mockedUseWorkbenchQuery.mockReturnValueOnce({
-      isLoading: false,
-      isError: false,
-      error: null,
-      data: {
-        ...baseDetail,
-        linkedIocCount: 0,
-        progress: {
-          totalIocs: 0,
-          openCount: 0,
-          inReviewCount: 0,
-          completedCount: 0,
-          percentComplete: 0,
-        },
-        linkedIocs: [],
+    currentDetail = {
+      ...currentDetail,
+      linkedIocCount: 0,
+      progress: {
+        totalIocs: 0,
+        openCount: 0,
+        inReviewCount: 0,
+        completedCount: 0,
+        percentComplete: 0,
       },
-    })
+      linkedIocs: [],
+    }
 
     render(<AlertDetailPage />)
 
     expect(screen.getByText("No linked IOC evidence yet")).toBeInTheDocument()
     expect(screen.queryByText("0% complete")).not.toBeInTheDocument()
+  })
+
+  it("renders owner routing and email history", () => {
+    render(<AlertDetailPage />)
+
+    expect(screen.getAllByText("Security Operations Center").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("soc@local.test").length).toBeGreaterThan(0)
+    expect(screen.getByText("Prior update")).toBeInTheDocument()
+    expect(screen.getByText("SMTP is not configured.")).toBeInTheDocument()
+  })
+
+  it("updates the alert owner from configured owner choices", async () => {
+    render(<AlertDetailPage />)
+
+    fireEvent.change(screen.getByDisplayValue("Security Operations Center - soc@local.test"), {
+      target: { value: "forensics" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save owner" }))
+
+    await waitFor(() => {
+      expect(gatewayMocks.updateAlertOwner).toHaveBeenCalledWith(
+        "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
+        { ownerUserId: "forensics", actorUserId: "lead-1" },
+      )
+    })
+  })
+
+  it("sends a manual email update to the stored owner mailbox", async () => {
+    render(<AlertDetailPage />)
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), { target: { value: "Owner update" } })
+    fireEvent.change(screen.getByPlaceholderText("Message"), { target: { value: "Review this alert." } })
+    fireEvent.change(screen.getByPlaceholderText("CC addresses separated by comma, semicolon, or new line"), {
+      target: { value: "lead@local.test" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send update" }))
+
+    await waitFor(() => {
+      expect(gatewayMocks.sendAlertEmailUpdate).toHaveBeenCalledWith(
+        "8afdfb88-f5c2-40ef-87ff-872e0e7248c1",
+        {
+          subject: "Owner update",
+          body: "Review this alert.",
+          ccEmails: ["lead@local.test"],
+          actorUserId: "lead-1",
+        },
+      )
+    })
   })
 })

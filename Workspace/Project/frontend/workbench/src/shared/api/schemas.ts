@@ -9,6 +9,9 @@ export const tokenResponseSchema = z.object({
 const safeString = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((value) => (typeof value === "string" ? value : ""))
+const nullableString = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((value) => (typeof value === "string" ? value : null))
 
 export const caseResponseSchema = z.object({
   id: z.string().uuid(),
@@ -29,6 +32,8 @@ export const v2AlertResponseSchema = z.object({
   severity: safeString,
   status: safeString,
   ownerUserId: safeString,
+  ownerDisplayName: safeString,
+  ownerEmail: nullableString,
   approvalTierRequired: safeString,
   scannerFamily: safeString,
   targetId: z.string().nullable(),
@@ -55,6 +60,24 @@ export const alertListResponseSchema = z.object({
   totalCount: z.number().int(),
   page: z.number().int(),
   pageSize: z.number().int(),
+})
+export const alertOwnerResponseSchema = z.object({
+  key: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+})
+export const alertEmailUpdateResponseSchema = z.object({
+  id: z.string().uuid(),
+  alertId: z.string().uuid(),
+  subject: z.string(),
+  body: z.string(),
+  toEmail: z.string(),
+  ccEmails: z.array(z.string()),
+  deliveryStatus: z.string(),
+  failureDetail: z.string().nullable(),
+  sentAtUtc: z.string().nullable(),
+  createdByUserId: z.string(),
+  createdAtUtc: z.string(),
 })
 export const v2AlertTargetSummarySchema = z.object({
   id: z.string().nullable(),
@@ -1585,6 +1608,8 @@ export type AlertResponse = z.infer<typeof alertResponseSchema>
 export type AlertProgressResponse = z.infer<typeof alertProgressResponseSchema>
 export type V2AlertResponse = z.infer<typeof v2AlertResponseWithProgressSchema>
 export type AlertListResponse = z.infer<typeof alertListResponseSchema>
+export type AlertOwnerResponse = z.infer<typeof alertOwnerResponseSchema>
+export type AlertEmailUpdateResponse = z.infer<typeof alertEmailUpdateResponseSchema>
 export type V2AlertTargetSummary = z.infer<typeof v2AlertTargetSummarySchema>
 export type V2AlertLinkedIocYaraDetail = z.infer<typeof v2AlertLinkedIocYaraDetailSchema>
 export type V2AlertLinkedIocSigmaDetail = z.infer<typeof v2AlertLinkedIocSigmaDetailSchema>
