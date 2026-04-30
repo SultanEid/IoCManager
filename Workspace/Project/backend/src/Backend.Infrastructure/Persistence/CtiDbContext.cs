@@ -152,6 +152,7 @@ public sealed class CtiDbContext
     public DbSet<Alert> AlertsV2 => Set<Alert>();
     public DbSet<AlertIoc> AlertIocs => Set<AlertIoc>();
     public DbSet<AlertScanResult> AlertScanResults => Set<AlertScanResult>();
+    public DbSet<AlertEmailUpdate> AlertEmailUpdates => Set<AlertEmailUpdate>();
     public DbSet<Report> ReportsV2 => Set<Report>();
     public DbSet<ReportAlert> ReportAlerts => Set<ReportAlert>();
     public DbSet<AuditLog> AuditLogsV2 => Set<AuditLog>();

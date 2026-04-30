@@ -96,6 +96,8 @@ public sealed partial class LegacyScanPipelineService
             summary,
             severity,
             AlertQueueOwnerUserId,
+            string.Empty,
+            null,
             "Analyst",
             firstCandidate.ScannerFamily,
             targetId,

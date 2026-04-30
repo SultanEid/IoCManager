@@ -8,7 +8,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using System.Text.Json;
 
 namespace Backend.Api.Controllers.V2;
 
@@ -22,15 +24,32 @@ public sealed class AlertsController : ControllerBase
     private readonly CtiDbContext _dbContext;
     private readonly LegacyScanPipelineDbContext _legacyDbContext;
     private readonly ILegacyScanPipelineService _legacyScanPipelineService;
+    private readonly IAlertOwnerResolver _ownerResolver;
+    private readonly IAlertEmailSender _emailSender;
 
     public AlertsController(
         CtiDbContext dbContext,
         LegacyScanPipelineDbContext legacyDbContext,
-        ILegacyScanPipelineService legacyScanPipelineService)
+        ILegacyScanPipelineService legacyScanPipelineService,
+        IAlertOwnerResolver ownerResolver,
+        IAlertEmailSender emailSender)
     {
         _dbContext = dbContext;
         _legacyDbContext = legacyDbContext;
         _legacyScanPipelineService = legacyScanPipelineService;
+        _ownerResolver = ownerResolver;
+        _emailSender = emailSender;
+    }
+
+    [HttpGet("owners")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType<IReadOnlyList<AlertOwnerResponse>>(StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<AlertOwnerResponse>> ListOwners()
+    {
+        return Ok(_ownerResolver
+            .ListConfiguredOwners()
+            .Select(owner => new AlertOwnerResponse(owner.Key, owner.DisplayName, owner.Email))
+            .ToArray());
     }
 
     [HttpGet]
@@ -150,18 +169,24 @@ public sealed class AlertsController : ControllerBase
     [ProducesResponseType<AlertResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<AlertResponse>> Create([FromBody] CreateAlertRequest request, CancellationToken cancellationToken)
     {
+        if (!_ownerResolver.TryResolve(request.OwnerUserId, out var owner))
+        {
+            return BadRequest($"Invalid alert owner '{request.OwnerUserId}'.");
+        }
+
         var severity = V2Mappings.ParseSeverityOrPriority(request.Severity);
         var nowUtc = DateTimeOffset.UtcNow;
 
         var existing = await _dbContext.AlertsV2.FirstOrDefaultAsync(
             x => x.Title == request.Title.Trim()
-                && x.OwnerUserId == request.OwnerUserId.Trim()
+                && x.OwnerUserId == owner.Key
                 && x.Severity == severity
                 && (x.Status == AlertStatus.Open || x.Status == AlertStatus.Investigating),
             cancellationToken);
 
         if (existing is not null)
         {
+            existing.SetOwner(owner.Key, owner.DisplayName, owner.Email, request.ActorUserId, nowUtc);
             existing.RefreshDetection(request.Title, request.Summary, severity, request.DetectedAtUtc, request.ActorUserId, nowUtc);
             await _dbContext.SaveChangesAsync(cancellationToken);
             return Ok(existing.ToAlertResponse(progress: EmptyProgress));
@@ -171,7 +196,9 @@ public sealed class AlertsController : ControllerBase
             request.Title,
             request.Summary,
             severity,
-            request.OwnerUserId,
+            owner.Key,
+            owner.DisplayName,
+            owner.Email,
             request.ApprovalTierRequired,
             "manual",
             null,
@@ -184,6 +211,39 @@ public sealed class AlertsController : ControllerBase
         _dbContext.AlertsV2.Add(entity);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return CreatedAtAction(nameof(GetById), new { alertId = entity.Id }, entity.ToAlertResponse(progress: EmptyProgress));
+    }
+
+    [HttpPatch("{alertId:guid}/owner")]
+    [EnableRateLimiting(RateLimitPolicies.Write)]
+    [ProducesResponseType<AlertDetailResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AlertDetailResponse>> UpdateOwner(
+        Guid alertId,
+        [FromBody] UpdateAlertOwnerRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.ActorUserId))
+        {
+            return BadRequest("Actor user id is required.");
+        }
+
+        if (!_ownerResolver.TryResolve(request.OwnerUserId, out var owner))
+        {
+            return BadRequest($"Invalid alert owner '{request.OwnerUserId}'.");
+        }
+
+        var entity = await _dbContext.AlertsV2.FirstOrDefaultAsync(x => x.Id == alertId, cancellationToken);
+        if (entity is null)
+        {
+            return NotFound();
+        }
+
+        entity.SetOwner(owner.Key, owner.DisplayName, owner.Email, request.ActorUserId, DateTimeOffset.UtcNow);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var response = await BuildAlertDetailAsync(alertId, cancellationToken);
+        return response is null ? NotFound() : Ok(response);
     }
 
     [HttpPatch("{alertId:guid}/status")]
@@ -346,6 +406,92 @@ public sealed class AlertsController : ControllerBase
             _ => 100,
         };
 
+    [HttpGet("{alertId:guid}/email-updates")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType<IReadOnlyList<AlertEmailUpdateResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<AlertEmailUpdateResponse>>> ListEmailUpdates(
+        Guid alertId,
+        CancellationToken cancellationToken)
+    {
+        var alertExists = await _dbContext.AlertsV2.AsNoTracking().AnyAsync(x => x.Id == alertId, cancellationToken);
+        if (!alertExists)
+        {
+            return NotFound();
+        }
+
+        var updates = await _dbContext.AlertEmailUpdates
+            .AsNoTracking()
+            .Where(x => x.AlertId == alertId)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(updates.Select(ToEmailUpdateResponse).ToArray());
+    }
+
+    [HttpPost("{alertId:guid}/email-updates")]
+    [EnableRateLimiting(RateLimitPolicies.Write)]
+    [ProducesResponseType<AlertEmailUpdateResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AlertEmailUpdateResponse>> SendEmailUpdate(
+        Guid alertId,
+        [FromBody] SendAlertEmailUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validationError = ValidateEmailUpdateRequest(request);
+        if (validationError is not null)
+        {
+            return BadRequest(validationError);
+        }
+
+        var alert = await _dbContext.AlertsV2.FirstOrDefaultAsync(x => x.Id == alertId, cancellationToken);
+        if (alert is null)
+        {
+            return NotFound();
+        }
+
+        if (string.IsNullOrWhiteSpace(alert.OwnerEmail))
+        {
+            return BadRequest("Alert owner email is required before sending an email update.");
+        }
+
+        var ccEmails = NormalizeCcEmails(request.CcEmails);
+        AlertEmailDeliveryResult delivery;
+        try
+        {
+            delivery = await _emailSender.SendAsync(
+                alert.OwnerEmail,
+                ccEmails,
+                request.Subject.Trim(),
+                request.Body.Trim(),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            delivery = new AlertEmailDeliveryResult(AlertEmailDeliveryStatus.Failed, ex.Message, null);
+        }
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var entity = AlertEmailUpdate.Create(
+            alert.Id,
+            request.Subject,
+            request.Body,
+            alert.OwnerEmail,
+            JsonSerializer.Serialize(ccEmails),
+            delivery.Status,
+            delivery.FailureDetail,
+            delivery.SentAtUtc,
+            request.ActorUserId,
+            nowUtc);
+
+        _dbContext.AlertEmailUpdates.Add(entity);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var response = ToEmailUpdateResponse(entity);
+        return CreatedAtAction(nameof(ListEmailUpdates), new { alertId = alert.Id }, response);
+    }
+
     private async Task<AlertDetailResponse?> BuildAlertDetailAsync(Guid alertId, CancellationToken cancellationToken)
     {
         Alert? alert = null;
@@ -418,6 +564,8 @@ public sealed class AlertsController : ControllerBase
             alert.Severity.ToString(),
             alert.Status.ToString(),
             alert.OwnerUserId,
+            alert.OwnerDisplayName,
+            alert.OwnerEmail,
             alert.ApprovalTierRequired,
             alert.ScannerFamily,
             alert.TargetId?.ToString(),
@@ -504,6 +652,8 @@ public sealed class AlertsController : ControllerBase
             NormalizeLegacyAlertSeverity(detail.Severity),
             MapLegacyAlertStatus(detail.Status),
             "legacy-pipeline",
+            "Legacy pipeline",
+            null,
             "Analyst",
             NormalizeFamily(detail.ScannerFamily),
             detail.TargetId,
@@ -560,6 +710,8 @@ public sealed class AlertsController : ControllerBase
             NormalizeLegacyAlertSeverity(finding.Severity),
             MapLegacyAlertStatus(finding.Status),
             "legacy-pipeline",
+            "Legacy pipeline",
+            null,
             "Analyst",
             NormalizeFamily(finding.ScannerFamily),
             finding.TargetId,
@@ -610,6 +762,73 @@ public sealed class AlertsController : ControllerBase
             };
 
     private sealed record AlertIocProgressRow(Guid AlertId, AlertIocStatus Status);
+
+    private static string? ValidateEmailUpdateRequest(SendAlertEmailUpdateRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ActorUserId))
+        {
+            return "Actor user id is required.";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Subject))
+        {
+            return "Subject is required.";
+        }
+
+        if (request.Subject.Trim().Length > 200)
+        {
+            return "Subject must be 200 characters or fewer.";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Body))
+        {
+            return "Body is required.";
+        }
+
+        if (request.Body.Trim().Length > 8000)
+        {
+            return "Body must be 8000 characters or fewer.";
+        }
+
+        var ccEmails = NormalizeCcEmails(request.CcEmails);
+        if (ccEmails.Count > 10)
+        {
+            return "CC can include at most 10 email addresses.";
+        }
+
+        var emailValidator = new EmailAddressAttribute();
+        var invalidCc = ccEmails.FirstOrDefault(email => !emailValidator.IsValid(email));
+        return invalidCc is null ? null : $"Invalid CC email '{invalidCc}'.";
+    }
+
+    private static IReadOnlyList<string> NormalizeCcEmails(IReadOnlyList<string>? ccEmails)
+    {
+        return (ccEmails ?? [])
+            .Where(email => !string.IsNullOrWhiteSpace(email))
+            .Select(email => email.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static AlertEmailUpdateResponse ToEmailUpdateResponse(AlertEmailUpdate source)
+    {
+        var ccEmails = string.IsNullOrWhiteSpace(source.CcEmailsJson)
+            ? Array.Empty<string>()
+            : JsonSerializer.Deserialize<string[]>(source.CcEmailsJson) ?? [];
+
+        return new AlertEmailUpdateResponse(
+            source.Id,
+            source.AlertId,
+            source.Subject,
+            source.Body,
+            source.ToEmail,
+            ccEmails,
+            source.DeliveryStatus.ToString(),
+            source.FailureDetail,
+            source.SentAtUtc,
+            source.CreatedByUserId,
+            source.CreatedAtUtc);
+    }
 
     private static AlertLinkedIocResponse ToLinkedIocResponse(LegacyPipelineIocEntity source, AlertIoc link)
     {

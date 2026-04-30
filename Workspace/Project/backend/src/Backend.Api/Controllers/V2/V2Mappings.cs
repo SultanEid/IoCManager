@@ -101,6 +101,8 @@ internal static class V2Mappings
             source.Severity.ToString(),
             source.Status.ToString(),
             source.OwnerUserId,
+            source.OwnerDisplayName,
+            source.OwnerEmail,
             source.ApprovalTierRequired,
             source.ScannerFamily,
             source.TargetId?.ToString(),

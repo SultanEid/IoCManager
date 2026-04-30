@@ -143,6 +143,13 @@ public enum AlertIocStatus
     AcceptedRisk = 5,
 }
 
+public enum AlertEmailDeliveryStatus
+{
+    Sent = 1,
+    Failed = 2,
+    NotConfigured = 3,
+}
+
 public enum RuleRevisionStatus
 {
     Draft = 1,
