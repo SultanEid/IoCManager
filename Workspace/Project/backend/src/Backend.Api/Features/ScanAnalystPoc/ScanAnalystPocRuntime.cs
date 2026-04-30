@@ -18,6 +18,7 @@ public sealed class ScanAnalystPocOptions
     public int MaxTargetsPerRun { get; init; } = 5;
     public string PreferredScannerFamily { get; init; } = "Auto";
     public bool AutoRun { get; init; } = true;
+    public bool AllowLocalPlannerWhenOpenAiMissing { get; init; }
     public string QuietHours { get; init; } = "01:00-05:00 UTC";
     public bool WatchForNewHosts { get; init; } = true;
     public bool WatchForFailedRecentJobs { get; init; } = true;
