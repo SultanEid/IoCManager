@@ -60,7 +60,12 @@ public sealed record ScanAnalystAgentStatusDto(
     IReadOnlyList<string> AvailableMockConditions,
     IReadOnlyList<string> ActiveMockConditions,
     ScanAnalystAgentParametersDto Parameters,
-    ScanAnalystAutonomousActivityDto? LastAutonomousActivity);
+    ScanAnalystAutonomousActivityDto? LastAutonomousActivity,
+    string? PersonaName,
+    string? CurrentActivity,
+    string? LatestActionSummary,
+    IReadOnlyList<ScanAnalystRecentActionDto> RecentActions,
+    IReadOnlyList<ScanAnalystCompletedPlanDto> CompletedPlans);
 
 public sealed record ScanAnalystAgentParametersDto(
     bool Enabled,
@@ -93,6 +98,23 @@ public sealed record ScanAnalystAutonomousActivityDto(
     string Action,
     string OperatingMode,
     DateTimeOffset OccurredAtUtc);
+
+public sealed record ScanAnalystRecentActionDto(
+    string Id,
+    string Title,
+    string Summary,
+    DateTimeOffset OccurredAtUtc,
+    string Status);
+
+public sealed record ScanAnalystCompletedPlanDto(
+    string Id,
+    string Name,
+    string ScannerCapability,
+    int TargetCount,
+    int DetectionCount,
+    string Outcome,
+    DateTimeOffset CompletedAtUtc,
+    string? RulePath);
 
 public sealed record ScanAnalystContextSummaryDto(
     Guid? FocusSubnetId,

@@ -217,6 +217,7 @@ export default function AlertDetailPage() {
 
   const detail = detailOverride ?? alertQuery.data ?? null
   const canShowNonAlertPivots = !isItOnlyScope(session?.roles ?? [])
+  const isLegacyCompatibilityAlert = detail?.ownerUserId === "legacy-pipeline"
   const existingAegisPlan = (aegisPlansQuery.data?.items ?? []).find((item) => item.alertIds.includes(alertId)) ?? null
 
   const updateStatus = async (nextStatus: string) => {
@@ -350,28 +351,39 @@ export default function AlertDetailPage() {
               type="button"
               size="sm"
               variant={detail.status === option ? "default" : "outline"}
-              disabled={statusUpdate !== null}
+              disabled={statusUpdate !== null || isLegacyCompatibilityAlert}
               onClick={() => void updateStatus(option)}
             >
               {statusUpdate === option ? "Updating..." : option}
             </Button>
           ))}
         </div>
+        {isLegacyCompatibilityAlert ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            This case is being served through the legacy compatibility path, so status edits stay read-only until it is promoted into the newer alert store.
+          </p>
+        ) : null}
         <div className="rounded-xl border border-border/70 bg-surface-2/65 p-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="wb-kicker">Aegis</p>
               <p className="mt-1 text-sm font-medium">
-                {existingAegisPlan ? "A mitigation plan already exists for this alert." : "Send this alert to Aegis for a mitigation plan."}
+                {isLegacyCompatibilityAlert
+                  ? "This compatibility-backed alert can be reviewed here, but Aegis actions require a promoted v2 alert."
+                  : existingAegisPlan
+                    ? "A mitigation plan already exists for this alert."
+                    : "Send this alert to Aegis for a mitigation plan."}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {existingAegisPlan
+                {isLegacyCompatibilityAlert
+                  ? "Legacy fallback keeps the alert visible and reviewable while the newer alert tables are unavailable."
+                  : existingAegisPlan
                   ? `${existingAegisPlan.severity} severity, ${existingAegisPlan.confidence} confidence, created ${new Date(existingAegisPlan.generatedAtUtc).toLocaleString()}.`
                   : "Use this for high-value alert review even when the case did not auto-trigger Aegis."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {existingAegisPlan ? (
+              {isLegacyCompatibilityAlert ? null : existingAegisPlan ? (
                 <>
                   <Button type="button" size="sm" variant="outline" onClick={openExistingAegisPlan} disabled={aegisBusyAction !== null}>
                     Open mitigation plan

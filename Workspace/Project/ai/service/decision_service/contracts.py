@@ -778,6 +778,26 @@ class ReportMitigationActionResponse(ApiModel):
     automation_readiness: Literal["manual_review", "safe_to_draft", "policy_gated"]
 
 
+class ReportMitigationPrimaryActionResponse(ApiModel):
+    rank: int = Field(ge=1, le=3)
+    title: str
+    target_hint: str
+    urgency: Literal["now", "hours", "same_day", "next_day", "multi_day"]
+    reasoning: str
+
+
+class ReportMitigationTimelineStepResponse(ApiModel):
+    step_id: str
+    title: str
+    linked_primary_action_rank: int | None = Field(default=None, ge=1, le=3)
+    target_hint: str = ""
+    lane: Literal["containment", "validation", "recovery", "follow_up"]
+    starts_in: int = Field(ge=0)
+    duration: int = Field(ge=1)
+    unit: Literal["hours", "days"]
+    rationale: str
+
+
 class ReportMitigationScanRecommendationResponse(ApiModel):
     scanner_family: str
     target_hint: str
@@ -792,6 +812,8 @@ class ReportMitigationPlanResponse(ApiModel):
     severity: Literal["critical", "high", "medium", "low"]
     confidence: Literal["high", "medium", "low"]
     affected_asset_hypotheses: list[str] = Field(default_factory=list)
+    primary_actions: list[ReportMitigationPrimaryActionResponse] = Field(default_factory=list, min_length=3, max_length=3)
+    timeline: list[ReportMitigationTimelineStepResponse] = Field(default_factory=list, min_length=3)
     immediate_actions: list[ReportMitigationActionResponse] = Field(default_factory=list)
     detection_actions: list[ReportMitigationActionResponse] = Field(default_factory=list)
     hardening_actions: list[ReportMitigationActionResponse] = Field(default_factory=list)
@@ -800,6 +822,13 @@ class ReportMitigationPlanResponse(ApiModel):
     assumptions: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     requires_human_review: bool = True
+
+    @model_validator(mode="after")
+    def _validate_primary_actions(self) -> "ReportMitigationPlanResponse":
+        ranks = [item.rank for item in self.primary_actions]
+        if ranks != [1, 2, 3]:
+            raise ValueError("primary_actions must contain exactly ranks 1, 2, and 3 in order.")
+        return self
 
 
 class ReportMitigationResponse(ApiModel):

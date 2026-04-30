@@ -289,6 +289,8 @@ public sealed class AiReportMitigationController : ControllerBase
             source.Severity,
             source.Confidence,
             source.AffectedAssetHypotheses,
+            (source.PrimaryActions ?? []).Select(ToResponse).ToArray(),
+            (source.Timeline ?? []).Select(ToResponse).ToArray(),
             source.ImmediateActions.Select(ToResponse).ToArray(),
             source.DetectionActions.Select(ToResponse).ToArray(),
             source.HardeningActions.Select(ToResponse).ToArray(),
@@ -297,6 +299,12 @@ public sealed class AiReportMitigationController : ControllerBase
             source.Assumptions,
             source.Gaps,
             source.RequiresHumanReview);
+
+    private static ReportMitigationPrimaryActionResponse ToResponse(AiReportMitigationPrimaryAction source)
+        => new(source.Rank, source.Title, source.TargetHint, source.Urgency, source.Reasoning);
+
+    private static ReportMitigationTimelineStepResponse ToResponse(AiReportMitigationTimelineStep source)
+        => new(source.StepId, source.Title, source.LinkedPrimaryActionRank, source.TargetHint, source.Lane, source.StartsIn, source.Duration, source.Unit, source.Rationale);
 
     private static ReportMitigationActionResponse ToResponse(AiReportMitigationAction source)
         => new(source.Title, source.Rationale, source.Priority, source.OwnerHint, source.Validation, source.AutomationReadiness);
@@ -307,11 +315,12 @@ public sealed class AiReportMitigationController : ControllerBase
     private static ReportMitigationListItemResponse ToPlanListItem(Backend.Domain.IocManager.Report report, IReadOnlyList<Guid> alertIds)
     {
         var sourceReportId = ReadGuidFromSummary(report.SummaryJson, "sourceReportId");
+        var sourceDocumentId = ReadStringFromSummary(report.SummaryJson, "sourceDocumentId");
         var sourceScanJobIds = ReadGuidArrayFromSummary(report.SummaryJson, "sourceScanJobIds");
         var severity = ReadNestedString(report.SummaryJson, "result", "mitigationPlan", "severity") ?? "unknown";
         var confidence = ReadNestedString(report.SummaryJson, "result", "mitigationPlan", "confidence") ?? "unknown";
         var summary = ReadNestedString(report.SummaryJson, "result", "mitigationPlan", "executiveSummary") ?? report.Title;
-        return new ReportMitigationListItemResponse(report.Id, report.Title, sourceReportId, sourceScanJobIds, severity, confidence, summary, report.GeneratedAtUtc, alertIds);
+        return new ReportMitigationListItemResponse(report.Id, report.Title, sourceReportId, sourceDocumentId, sourceScanJobIds, severity, confidence, summary, report.GeneratedAtUtc, alertIds);
     }
 
     private static Guid? ReadGuidFromSummary(string summaryJson, string propertyName)
@@ -347,6 +356,25 @@ public sealed class AiReportMitigationController : ControllerBase
             }
 
             return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadStringFromSummary(string summaryJson, string propertyName)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(summaryJson);
+            if (!document.RootElement.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var text = value.GetString();
+            return string.IsNullOrWhiteSpace(text) ? null : text;
         }
         catch (JsonException)
         {

@@ -25,9 +25,9 @@ public sealed class AiScanAnalystController : ControllerBase
     [HttpGet("status")]
     [EnableRateLimiting(RateLimitPolicies.Read)]
     [ProducesResponseType<ScanAnalystAgentStatusDto>(StatusCodes.Status200OK)]
-    public ActionResult<ScanAnalystAgentStatusDto> GetStatus()
+    public async Task<ActionResult<ScanAnalystAgentStatusDto>> GetStatus(CancellationToken cancellationToken)
     {
-        return Ok(_service.GetStatus());
+        return Ok(await _service.GetStatusAsync(cancellationToken));
     }
 
     [HttpPut("posture")]

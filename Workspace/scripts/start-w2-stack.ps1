@@ -55,6 +55,9 @@ function Start-Backend {
 `$env:Auth__LocalFallback__Password='don'
 `$env:Auth__LocalFallback__Roles='IT,Analyst,Lead,Admin,DEV'
 `$env:AppStartup__SkipHostedWorkers='true'
+`$env:AppStartup__EnableLegacyScanPipelineWorker='true'
+`$env:AppStartup__EnableScanAnalystPocAutonomyWorker='true'
+`$env:AppStartup__EnableAegisMitigationAutonomyWorker='true'
 & dotnet '$backendDll' --urls http://localhost:5127
 "@
     Start-Process powershell.exe -ArgumentList "-NoProfile -Command $backendCommand" -WorkingDirectory $backendRoot -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden

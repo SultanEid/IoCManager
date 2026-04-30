@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Backend.Application.Abstractions.Integrations;
 using Backend.Domain.IocManager;
 using Backend.Infrastructure.Persistence;
@@ -14,13 +15,16 @@ public sealed class AegisMitigationPlanner
 
     private readonly CtiDbContext _dbContext;
     private readonly IAiReportMitigationClient _aiReportMitigationClient;
+    private readonly AegisActivityNotifier _activityNotifier;
 
     public AegisMitigationPlanner(
         CtiDbContext dbContext,
-        IAiReportMitigationClient aiReportMitigationClient)
+        IAiReportMitigationClient aiReportMitigationClient,
+        AegisActivityNotifier activityNotifier)
     {
         _dbContext = dbContext;
         _aiReportMitigationClient = aiReportMitigationClient;
+        _activityNotifier = activityNotifier;
     }
 
     public async Task<AegisMitigationGenerationOutcome> GenerateAsync(
@@ -69,6 +73,12 @@ public sealed class AegisMitigationPlanner
             : Array.Empty<IReadOnlyDictionary<string, object?>>();
         var priorOutcomeContext = await BuildPriorOutcomeContextAsync(cancellationToken);
 
+        var isAutonomousTrigger = !resolved.TriggerKind.StartsWith("manual_", StringComparison.Ordinal);
+        if (isAutonomousTrigger)
+        {
+            await _activityNotifier.NotifyAutonomousPlanningStartedAsync(resolved, request.ActorUserId, cancellationToken);
+        }
+
         var aiResult = await _aiReportMitigationClient.GenerateAsync(
             new AiReportMitigationRequest(
                 resolved.SourceName,
@@ -86,8 +96,14 @@ public sealed class AegisMitigationPlanner
                 RuleContext: ruleContext,
                 PriorOutcomeContext: priorOutcomeContext),
             cancellationToken);
+        aiResult = StrengthenMitigationResult(aiResult, resolved, alertContext);
 
         var persisted = await PersistMitigationReportAsync(aiResult, resolved, request.ActorUserId, cancellationToken);
+        if (isAutonomousTrigger)
+        {
+            await _activityNotifier.NotifyAutonomousPlanCompletedAsync(resolved, persisted, aiResult, request.ActorUserId, cancellationToken);
+        }
+
         return new AegisMitigationGenerationOutcome(
             aiResult,
             resolved.SourceReportId,
@@ -360,6 +376,7 @@ public sealed class AegisMitigationPlanner
             aegisMitigationPlanVersion = 2,
             planOrigin = source.TriggerKind.StartsWith("manual_", StringComparison.Ordinal) ? "manual" : "autonomy",
             planTrigger = source.TriggerKind,
+            sourceDocumentId = source.DocumentId,
             sourceReportId = source.SourceReportId,
             sourceAlertIds = source.AlertIds,
             sourceScanJobIds = source.ScanJobIds,
@@ -573,6 +590,394 @@ public sealed class AegisMitigationPlanner
 
         return builder.ToString();
     }
+
+    private static AiReportMitigationResult StrengthenMitigationResult(
+        AiReportMitigationResult result,
+        AegisResolvedSource source,
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> alertContext)
+    {
+        var scannerFamily = InferScannerFamily(alertContext, source.DocumentText, result.MitigationPlan);
+        if (scannerFamily is null)
+        {
+            return result;
+        }
+
+        var targetHint = InferTargetHint(alertContext, source.DocumentText)
+            ?? FirstNonEmpty(result.MitigationPlan.AffectedAssetHypotheses)
+            ?? "affected asset";
+        var indicatorHint = InferIndicatorHint(result.ExtractedIocs)
+            ?? InferRuleHint(alertContext, source.DocumentText)
+            ?? "matched indicator";
+        var likelyValidationArtifact = IsLikelyValidationArtifact(source, result, indicatorHint);
+        var existingPrimaryActions = result.MitigationPlan.PrimaryActions ?? Array.Empty<AiReportMitigationPrimaryAction>();
+
+        if (!NeedsPrimaryActionStrengthening(existingPrimaryActions))
+        {
+            return result;
+        }
+
+        var strongerPrimaryActions = BuildStrongPrimaryActions(
+            scannerFamily,
+            targetHint,
+            indicatorHint,
+            likelyValidationArtifact);
+        var strongerTimeline = BuildStrongTimeline(scannerFamily, targetHint, indicatorHint, strongerPrimaryActions);
+        var strongerValidationSteps = BuildStrongValidationSteps(scannerFamily, targetHint, indicatorHint, likelyValidationArtifact, result.MitigationPlan.ValidationSteps);
+
+        var strengthenedPlan = result.MitigationPlan with
+        {
+            PrimaryActions = strongerPrimaryActions,
+            Timeline = strongerTimeline,
+            ValidationSteps = strongerValidationSteps,
+        };
+
+        return result with
+        {
+            MitigationPlan = strengthenedPlan,
+        };
+    }
+
+    private static string? InferScannerFamily(
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> alertContext,
+        string? documentText,
+        AiReportMitigationPlan plan)
+    {
+        foreach (var alert in alertContext)
+        {
+            if (TryReadString(alert, "scannerFamily") is { Length: > 0 } family)
+            {
+                return family.Trim().ToLowerInvariant();
+            }
+        }
+
+        var text = string.Join(
+            Environment.NewLine,
+            new[]
+            {
+                documentText,
+                plan.ExecutiveSummary,
+                plan.ThreatSummary,
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        if (text.Contains("suricata", StringComparison.OrdinalIgnoreCase))
+        {
+            return "suricata";
+        }
+
+        if (text.Contains("snort", StringComparison.OrdinalIgnoreCase))
+        {
+            return "snort";
+        }
+
+        if (text.Contains("sigma", StringComparison.OrdinalIgnoreCase))
+        {
+            return "sigma";
+        }
+
+        if (text.Contains("yara", StringComparison.OrdinalIgnoreCase))
+        {
+            return "yara";
+        }
+
+        return null;
+    }
+
+    private static string? InferTargetHint(
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> alertContext,
+        string? documentText)
+    {
+        foreach (var alert in alertContext)
+        {
+            if (TryReadString(alert, "targetDisplay") is { Length: > 0 } targetDisplay)
+            {
+                return targetDisplay.Trim();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(documentText))
+        {
+            return null;
+        }
+
+        var targetMatch = Regex.Match(
+            documentText,
+            @"-\s*(?<host>[A-Za-z0-9._-]+)\s*\((?<ip>\d{1,3}(?:\.\d{1,3}){3})\)",
+            RegexOptions.IgnoreCase);
+        if (targetMatch.Success)
+        {
+            return $"{targetMatch.Groups["host"].Value} ({targetMatch.Groups["ip"].Value})";
+        }
+
+        return null;
+    }
+
+    private static string? InferIndicatorHint(IReadOnlyList<AiReportMitigationExtractedIoc> extractedIocs)
+    {
+        var preferred = extractedIocs
+            .OrderByDescending(x => x.Confidence)
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.IocValue));
+        if (preferred is null)
+        {
+            return null;
+        }
+
+        return preferred.IocValue;
+    }
+
+    private static string? InferRuleHint(
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> alertContext,
+        string? documentText)
+    {
+        foreach (var alert in alertContext)
+        {
+            if (TryReadString(alert, "ruleName") is { Length: > 0 } ruleName)
+            {
+                return ruleName.Trim();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(documentText))
+        {
+            return null;
+        }
+
+        var match = Regex.Match(documentText, @"rule\s*:\s*(?<rule>[^\r\n]+)", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups["rule"].Value.Trim() : null;
+    }
+
+    private static bool IsLikelyValidationArtifact(
+        AegisResolvedSource source,
+        AiReportMitigationResult result,
+        string? indicatorHint)
+    {
+        var joined = string.Join(
+            " ",
+            new[]
+            {
+                source.SourceName,
+                source.DocumentText,
+                result.MitigationPlan.ExecutiveSummary,
+                result.MitigationPlan.ThreatSummary,
+                indicatorHint,
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        return joined.Contains("test", StringComparison.OrdinalIgnoreCase)
+            || joined.Contains("validation", StringComparison.OrdinalIgnoreCase)
+            || joined.Contains("beacon", StringComparison.OrdinalIgnoreCase) && joined.Contains("test", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool NeedsPrimaryActionStrengthening(IReadOnlyList<AiReportMitigationPrimaryAction> actions)
+    {
+        if (actions.Count != 3)
+        {
+            return true;
+        }
+
+        var genericPrefixes = new[]
+        {
+            "validate",
+            "review",
+            "assess",
+            "prepare",
+            "confirm",
+            "consider",
+        };
+
+        var genericCount = actions.Count(action =>
+        {
+            var normalized = action.Title.Trim().ToLowerInvariant();
+            return genericPrefixes.Any(prefix => normalized.StartsWith(prefix, StringComparison.Ordinal));
+        });
+
+        return genericCount >= 2;
+    }
+
+    private static IReadOnlyList<AiReportMitigationPrimaryAction> BuildStrongPrimaryActions(
+        string scannerFamily,
+        string targetHint,
+        string indicatorHint,
+        bool likelyValidationArtifact)
+    {
+        return scannerFamily switch
+        {
+            "sigma" => BuildSigmaPrimaryActions(targetHint, indicatorHint),
+            "suricata" or "snort" => BuildNetworkPrimaryActions(scannerFamily, targetHint, indicatorHint),
+            _ => BuildYaraPrimaryActions(targetHint, indicatorHint, likelyValidationArtifact),
+        };
+    }
+
+    private static IReadOnlyList<AiReportMitigationPrimaryAction> BuildYaraPrimaryActions(
+        string targetHint,
+        string indicatorHint,
+        bool likelyValidationArtifact)
+    {
+        var action1 = likelyValidationArtifact
+            ? $"Restrict execution of the matched artifact on {targetHint} and verify whether {indicatorHint} is an approved test artifact"
+            : $"Isolate or tightly restrict {targetHint} until the matched artifact tied to {indicatorHint} is triaged";
+        var reasoning1 = likelyValidationArtifact
+            ? "Prevent additional execution while confirming whether the match came from an approved validation file rather than an unmanaged artifact."
+            : "Contain the affected host first so the matched file or artifact cannot continue running or spreading while triage is underway.";
+
+        return
+        [
+            new AiReportMitigationPrimaryAction(
+                1,
+                action1,
+                targetHint,
+                "now",
+                reasoning1),
+            new AiReportMitigationPrimaryAction(
+                2,
+                $"Hash, copy, and quarantine the matched file or artifact on {targetHint} after evidence capture",
+                targetHint,
+                "now",
+                $"Preserve evidence first, then remove or quarantine the artifact associated with {indicatorHint} so it cannot execute again on the host."),
+            new AiReportMitigationPrimaryAction(
+                3,
+                $"Sweep nearby Windows assets for the same {indicatorHint} indicator and remove any repeat artifacts or persistence",
+                targetHint,
+                "hours",
+                "The single-host hit may indicate local staging or lateral reuse, so nearby hosts and persistence locations need the same indicator sweep immediately after containment."),
+        ];
+    }
+
+    private static IReadOnlyList<AiReportMitigationPrimaryAction> BuildSigmaPrimaryActions(
+        string targetHint,
+        string indicatorHint)
+    {
+        return
+        [
+            new AiReportMitigationPrimaryAction(
+                1,
+                $"Contain the affected host or user session on {targetHint} and stop the behavior tied to {indicatorHint}",
+                targetHint,
+                "now",
+                "Behavioral detections should be contained quickly so the suspicious process, user session, or scheduled task cannot continue executing while triage runs."),
+            new AiReportMitigationPrimaryAction(
+                2,
+                $"Collect the event logs, process tree, command line, and persistence evidence for the Sigma hit on {targetHint}",
+                targetHint,
+                "now",
+                "A Sigma match is most useful when backed by the exact process lineage and log evidence needed to confirm the technique and identify follow-on artifacts."),
+            new AiReportMitigationPrimaryAction(
+                3,
+                $"Hunt peer systems for the same {indicatorHint} pattern and disable related accounts, tasks, or startup entries if the behavior repeats",
+                targetHint,
+                "hours",
+                "Once the original host is contained, the same behavioral pattern must be checked across nearby systems so repeated execution paths can be removed."),
+        ];
+    }
+
+    private static IReadOnlyList<AiReportMitigationPrimaryAction> BuildNetworkPrimaryActions(
+        string scannerFamily,
+        string targetHint,
+        string indicatorHint)
+    {
+        var displayFamily = scannerFamily.Equals("snort", StringComparison.OrdinalIgnoreCase) ? "Snort" : "Suricata";
+        return
+        [
+            new AiReportMitigationPrimaryAction(
+                1,
+                $"Block the {indicatorHint} network IOC and isolate the host or segment associated with {targetHint}",
+                targetHint,
+                "now",
+                $"{displayFamily} findings are strongest when the network IOC is blocked quickly so the affected host cannot continue beaconing or communicating with the suspicious endpoint."),
+            new AiReportMitigationPrimaryAction(
+                2,
+                $"Capture packet, DNS, and process-to-connection evidence for the {displayFamily} alert involving {targetHint}",
+                targetHint,
+                "now",
+                "The next step is to map the network IOC back to the initiating process and preserve enough network evidence to prove what communicated and when."),
+            new AiReportMitigationPrimaryAction(
+                3,
+                $"Hunt adjacent systems for the same {indicatorHint} communication pattern and remove any persistence or egress path that supports it",
+                targetHint,
+                "hours",
+                "Network detections often represent shared infrastructure or repeated destinations, so nearby assets and egress controls must be checked before the IOC reappears."),
+        ];
+    }
+
+    private static IReadOnlyList<AiReportMitigationTimelineStep> BuildStrongTimeline(
+        string scannerFamily,
+        string targetHint,
+        string indicatorHint,
+        IReadOnlyList<AiReportMitigationPrimaryAction> primaryActions)
+    {
+        return
+        [
+            new AiReportMitigationTimelineStep(
+                "contain-1",
+                primaryActions[0].Title,
+                1,
+                targetHint,
+                "containment",
+                0,
+                1,
+                "hours",
+                "Start containment immediately so the IOC cannot continue executing or communicating."),
+            new AiReportMitigationTimelineStep(
+                "validate-1",
+                primaryActions[1].Title,
+                2,
+                targetHint,
+                "validation",
+                0,
+                2,
+                "hours",
+                $"Capture evidence and remove or quarantine the artifact associated with {indicatorHint} once the host is controlled."),
+            new AiReportMitigationTimelineStep(
+                "follow-up-1",
+                primaryActions[2].Title,
+                3,
+                targetHint,
+                scannerFamily is "suricata" or "snort" ? "follow_up" : "recovery",
+                2,
+                1,
+                "days",
+                "After the initial host is handled, sweep related systems and remove repeat footholds or network paths."),
+        ];
+    }
+
+    private static IReadOnlyList<string> BuildStrongValidationSteps(
+        string scannerFamily,
+        string targetHint,
+        string indicatorHint,
+        bool likelyValidationArtifact,
+        IReadOnlyList<string> existingValidationSteps)
+    {
+        var baseline = new List<string>();
+        if (likelyValidationArtifact)
+        {
+            baseline.Add($"Confirm whether {indicatorHint} on {targetHint} is an approved validation or test artifact before closing the case.");
+        }
+
+        baseline.Add($"Record the exact file, process, or connection associated with {indicatorHint} on {targetHint}.");
+        baseline.Add($"Verify whether the indicator reappears on {targetHint} after containment and cleanup.");
+        baseline.Add(scannerFamily switch
+        {
+            "sigma" => $"Query nearby hosts for the same Sigma behavior and confirm any matching account, task, or parent-child process chain is removed.",
+            "suricata" or "snort" => $"Confirm the suspicious destination, source, or protocol tied to {indicatorHint} is blocked and no longer appears in fresh traffic.",
+            _ => $"Run a focused YARA or endpoint sweep for the same indicator on nearby Windows assets and confirm no repeat artifacts remain.",
+        });
+
+        foreach (var item in existingValidationSteps)
+        {
+            if (!string.IsNullOrWhiteSpace(item) && !baseline.Contains(item, StringComparer.OrdinalIgnoreCase))
+            {
+                baseline.Add(item);
+            }
+        }
+
+        return baseline.Take(8).ToArray();
+    }
+
+    private static string? TryReadString(IReadOnlyDictionary<string, object?> values, string key)
+        => values.TryGetValue(key, out var value)
+            ? value?.ToString()
+            : null;
+
+    private static string? FirstNonEmpty(IEnumerable<string> values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim();
 
     private static string? NormalizeSourceType(string? value)
     {

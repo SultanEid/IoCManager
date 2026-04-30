@@ -142,6 +142,12 @@ public sealed partial class LegacyScanPipelineService
 
     internal static AlertSeverity ResolveFindingAlertSeverity(LegacyPipelinePersistedIoc ioc)
     {
+        if (string.Equals(ioc.ScannerType, "YARA", StringComparison.OrdinalIgnoreCase))
+        {
+            // Temporary testing override: promote legacy YARA matches as High so Aegis auto-plan flows can be exercised.
+            return AlertSeverity.High;
+        }
+
         if (ioc.SigmaDetail is not null)
         {
             return NormalizeAlertSeverity(ioc.SigmaDetail.Severity);
