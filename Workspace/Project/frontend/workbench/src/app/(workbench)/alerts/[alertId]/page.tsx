@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { alertCaseContext, alertCaseTitle, formatAlertOwner, formatAlertTimestamp } from "@/components/workbench/alert-case-format"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
@@ -212,11 +212,14 @@ function CaseSource({ detail }: { detail: V2AlertDetailResponse }) {
 
 export default function AlertDetailPage() {
   const params = useParams<{ alertId: string }>()
+  const router = useRouter()
   const { session } = useAuth()
   const alertId = params.alertId
   const [statusUpdate, setStatusUpdate] = useState<string | null>(null)
   const [iocStatusUpdate, setIocStatusUpdate] = useState<string | null>(null)
   const [detailOverride, setDetailOverride] = useState<V2AlertDetailResponse | null>(null)
+  const [aegisBusyAction, setAegisBusyAction] = useState<"create" | "regenerate" | null>(null)
+  const [aegisError, setAegisError] = useState<string | null>(null)
   const [selectedOwner, setSelectedOwner] = useState("unassigned")
   const [ownerUpdate, setOwnerUpdate] = useState(false)
   const [emailSubject, setEmailSubject] = useState("")
@@ -226,6 +229,9 @@ export default function AlertDetailPage() {
   const [emailError, setEmailError] = useState<string | null>(null)
 
   const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal), {
+    enabled: isModeConfigured,
+  })
+  const aegisPlansQuery = useWorkbenchQuery(["alert", alertId, "aegis-plans"], (signal) => gateway.listReportMitigationPlans(signal), {
     enabled: isModeConfigured,
   })
   const ownersQuery = useWorkbenchQuery(["alert-owners"], (signal) => gateway.listAlertOwners(signal), {
@@ -245,6 +251,8 @@ export default function AlertDetailPage() {
 
   const detail = detailOverride ?? alertQuery.data ?? null
   const canShowNonAlertPivots = !isItOnlyScope(session?.roles ?? [])
+  const isLegacyCompatibilityAlert = detail?.ownerUserId === "legacy-pipeline"
+  const existingAegisPlan = (aegisPlansQuery.data?.items ?? []).find((item) => item.alertIds.includes(alertId)) ?? null
 
   useEffect(() => {
     if (detail) {
@@ -264,6 +272,34 @@ export default function AlertDetailPage() {
       setDetailOverride(updated)
     } finally {
       setStatusUpdate(null)
+    }
+  }
+
+  const openExistingAegisPlan = () => {
+    if (!existingAegisPlan) {
+      return
+    }
+
+    router.push(`/agents/aegis?plan=${encodeURIComponent(existingAegisPlan.id)}`)
+  }
+
+  const generateAegisPlan = async (regenerate: boolean) => {
+    setAegisBusyAction(regenerate ? "regenerate" : "create")
+    setAegisError(null)
+    try {
+      const response = await gateway.generateReportMitigationFromAlert(alertId, {
+        includeWorkspaceContext: true,
+        actorUserId: session?.userId ?? session?.username ?? "workbench",
+        regenerate,
+      })
+      if (!response.persistedMitigationReport) {
+        throw new Error("Aegis did not return a saved mitigation plan.")
+      }
+      router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
+    } catch (error) {
+      setAegisError(classifyUiError(error).message)
+    } finally {
+      setAegisBusyAction(null)
     }
   }
 
@@ -336,13 +372,13 @@ export default function AlertDetailPage() {
     return <ClassifiedFailureState failure={failure} fallbackTitle="Case detail unavailable" />
   }
 
-  if (alertQuery.isLoading) {
-    return <LoadingState label="Loading case detail" />
+  if (alertQuery.isLoading || aegisPlansQuery.isLoading || ownersQuery.isLoading || emailUpdatesQuery.isLoading) {
+    return <LoadingState label="Loading alert detail" />
   }
 
-  if (alertQuery.isError || !detail) {
-    const failure = classifyUiError(alertQuery.error)
-    return <ClassifiedFailureState failure={failure} fallbackTitle="Case detail unavailable" />
+  if (alertQuery.isError || aegisPlansQuery.isError || ownersQuery.isError || emailUpdatesQuery.isError || !detail) {
+    const failure = classifyUiError(alertQuery.error ?? aegisPlansQuery.error ?? ownersQuery.error ?? emailUpdatesQuery.error)
+    return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
   }
 
   return (
@@ -405,12 +441,55 @@ export default function AlertDetailPage() {
               type="button"
               size="sm"
               variant={detail.status === option ? "default" : "outline"}
-              disabled={statusUpdate !== null}
+              disabled={statusUpdate !== null || isLegacyCompatibilityAlert}
               onClick={() => void updateStatus(option)}
             >
               {statusUpdate === option ? "Updating..." : option}
             </Button>
           ))}
+        </div>
+        {isLegacyCompatibilityAlert ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            This case is being served through the legacy compatibility path, so status edits stay read-only until it is promoted into the newer alert store.
+          </p>
+        ) : null}
+        <div className="rounded-xl border border-border/70 bg-surface-2/65 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="wb-kicker">Aegis</p>
+              <p className="mt-1 text-sm font-medium">
+                {isLegacyCompatibilityAlert
+                  ? "This compatibility-backed alert can be reviewed here, but Aegis actions require a promoted v2 alert."
+                  : existingAegisPlan
+                    ? "A mitigation plan already exists for this alert."
+                    : "Send this alert to Aegis for a mitigation plan."}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isLegacyCompatibilityAlert
+                  ? "Legacy fallback keeps the alert visible and reviewable while the newer alert tables are unavailable."
+                  : existingAegisPlan
+                  ? `${existingAegisPlan.severity} severity, ${existingAegisPlan.confidence} confidence, created ${new Date(existingAegisPlan.generatedAtUtc).toLocaleString()}.`
+                  : "Use this for high-value alert review even when the case did not auto-trigger Aegis."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {isLegacyCompatibilityAlert ? null : existingAegisPlan ? (
+                <>
+                  <Button type="button" size="sm" variant="outline" onClick={openExistingAegisPlan} disabled={aegisBusyAction !== null}>
+                    Open mitigation plan
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => void generateAegisPlan(true)} disabled={aegisBusyAction !== null}>
+                    {aegisBusyAction === "regenerate" ? "Regenerating..." : "Regenerate"}
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" size="sm" onClick={() => void generateAegisPlan(false)} disabled={aegisBusyAction !== null}>
+                  {aegisBusyAction === "create" ? "Creating..." : "Create mitigation plan"}
+                </Button>
+              )}
+            </div>
+          </div>
+          {aegisError ? <p className="mt-3 text-xs text-rose-300">{aegisError}</p> : null}
         </div>
       </motion.article>
 

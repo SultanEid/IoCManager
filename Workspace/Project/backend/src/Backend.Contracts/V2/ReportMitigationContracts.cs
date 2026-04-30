@@ -10,7 +10,18 @@ public sealed record ReportMitigationGenerateRequest(
     string? BulletinJson,
     Guid? ExistingReportId,
     bool IncludeWorkspaceContext,
-    string ActorUserId);
+    string ActorUserId,
+    bool Regenerate = false);
+
+public sealed record ReportMitigationGenerateFromAlertRequest(
+    bool IncludeWorkspaceContext,
+    string ActorUserId,
+    bool Regenerate = false);
+
+public sealed record ReportMitigationGenerateFromScanJobRequest(
+    bool IncludeWorkspaceContext,
+    string ActorUserId,
+    bool Regenerate = false);
 
 public sealed record ReportMitigationExtractedIocResponse(
     string IocType,
@@ -52,6 +63,24 @@ public sealed record ReportMitigationActionResponse(
     string Validation,
     string AutomationReadiness);
 
+public sealed record ReportMitigationPrimaryActionResponse(
+    int Rank,
+    string Title,
+    string TargetHint,
+    string Urgency,
+    string Reasoning);
+
+public sealed record ReportMitigationTimelineStepResponse(
+    string StepId,
+    string Title,
+    int? LinkedPrimaryActionRank,
+    string TargetHint,
+    string Lane,
+    int StartsIn,
+    int Duration,
+    string Unit,
+    string Rationale);
+
 public sealed record ReportMitigationScanRecommendationResponse(
     string ScannerFamily,
     string TargetHint,
@@ -65,6 +94,8 @@ public sealed record ReportMitigationPlanResponse(
     string Severity,
     string Confidence,
     IReadOnlyList<string> AffectedAssetHypotheses,
+    IReadOnlyList<ReportMitigationPrimaryActionResponse> PrimaryActions,
+    IReadOnlyList<ReportMitigationTimelineStepResponse> Timeline,
     IReadOnlyList<ReportMitigationActionResponse> ImmediateActions,
     IReadOnlyList<ReportMitigationActionResponse> DetectionActions,
     IReadOnlyList<ReportMitigationActionResponse> HardeningActions,
@@ -91,6 +122,8 @@ public sealed record ReportMitigationListItemResponse(
     Guid Id,
     string Title,
     Guid? SourceReportId,
+    string? SourceDocumentId,
+    IReadOnlyList<Guid> SourceScanJobIds,
     string Severity,
     string Confidence,
     string ExecutiveSummary,

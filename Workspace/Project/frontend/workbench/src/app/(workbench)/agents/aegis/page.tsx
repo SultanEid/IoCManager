@@ -5,12 +5,14 @@ import type { ChangeEvent } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { AlertTriangle, FileText, FolderOpen, ShieldCheck, UploadCloud } from "lucide-react"
+import { AegisMitigationTimeline, AegisPrimaryActions } from "@/components/workbench/aegis/mitigation-plan-elements"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
 import type { ReportMitigationActionResponse, ReportMitigationResponse, ReportResponse } from "@/shared/api/schemas"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
+import { listLegacyJobs } from "@/shared/gateway/legacy-scan-pipeline"
 import type { GenerateReportMitigationInput } from "@/shared/gateway/types"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
@@ -141,6 +143,9 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
         </div>
       </article>
 
+      <AegisPrimaryActions plan={plan} />
+      <AegisMitigationTimeline plan={plan} collapsible />
+
       <ActionGroup title="Immediate actions" actions={plan.immediateActions} />
       <ActionGroup title="Detection actions" actions={plan.detectionActions} />
       <ActionGroup title="Hardening actions" actions={plan.hardeningActions} />
@@ -219,9 +224,12 @@ export default function AegisPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [selectedScanJobId, setSelectedScanJobId] = useState("")
+  const [scanBusyAction, setScanBusyAction] = useState<"create" | "regenerate" | null>(null)
   const planDetailsRef = useRef<HTMLDivElement | null>(null)
 
   const reportsQuery = useWorkbenchQuery(["aegis", "reports"], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
+  const jobsQuery = useWorkbenchQuery(["aegis", "legacy-jobs"], (signal) => listLegacyJobs(signal))
   const plansQuery = useWorkbenchQuery(["aegis", "plans", refreshKey], (signal) => gateway.listReportMitigationPlans(signal))
   const selectedReport = useMemo(
     () => reportsQuery.data?.items.find((item) => item.id === selectedReportId) ?? null,
@@ -288,7 +296,16 @@ export default function AegisPage() {
 
   const canGenerate = Boolean(selectedReport || documentText.trim() || documentBytesBase64)
   const reports = useMemo(() => reportsQuery.data?.items ?? [], [reportsQuery.data?.items])
+  const scanJobs = useMemo(() => jobsQuery.data ?? [], [jobsQuery.data])
   const plans = useMemo(() => plansQuery.data?.items ?? [], [plansQuery.data?.items])
+  const selectedScanJob = useMemo(
+    () => scanJobs.find((job) => job.id === selectedScanJobId) ?? null,
+    [scanJobs, selectedScanJobId],
+  )
+  const existingScanPlan = useMemo(
+    () => plans.find((plan) => selectedScanJobId && plan.sourceScanJobIds.includes(selectedScanJobId)) ?? null,
+    [plans, selectedScanJobId],
+  )
   const requestedPlanId = searchParams.get("plan")
   const loadPlanDetails = useCallback(async (planId: string, signal?: AbortSignal) => {
     const matchingReport = reports.find((report) => report.id === planId) ?? await gateway.getReport(planId, signal)
@@ -320,6 +337,37 @@ export default function AegisPage() {
       setErrorText(null)
     } catch (error) {
       setErrorText(classifyUiError(error).message)
+    }
+  }
+
+  const createPlanFromSelectedScan = async (regenerate: boolean) => {
+    if (!selectedScanJobId) {
+      return
+    }
+
+    setScanBusyAction(regenerate ? "regenerate" : "create")
+    setErrorText(null)
+    setMessage(null)
+    try {
+      const response = await gateway.generateReportMitigationFromScanJob(selectedScanJobId, {
+        includeWorkspaceContext: true,
+        actorUserId,
+        regenerate,
+      })
+      if (!response.persistedMitigationReport) {
+        throw new Error("Aegis did not return a saved mitigation plan.")
+      }
+
+      setResult(response)
+      setClosedPlanId(null)
+      setShouldFocusResult(true)
+      setRefreshKey((value) => value + 1)
+      window.history.replaceState(null, "", `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
+      setMessage("Aegis created a mitigation plan from the selected scan run.")
+    } catch (error) {
+      setErrorText(classifyUiError(error).message)
+    } finally {
+      setScanBusyAction(null)
     }
   }
 
@@ -368,12 +416,12 @@ export default function AegisPage() {
     return () => window.clearTimeout(timeoutId)
   }, [message])
 
-  if (reportsQuery.isLoading || plansQuery.isLoading) {
+  if (reportsQuery.isLoading || jobsQuery.isLoading || plansQuery.isLoading) {
     return <LoadingState label="Loading Aegis workspace" />
   }
 
-  if (reportsQuery.isError || plansQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(reportsQuery.error ?? plansQuery.error)} fallbackTitle="Aegis unavailable" />
+  if (reportsQuery.isError || jobsQuery.isError || plansQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(reportsQuery.error ?? jobsQuery.error ?? plansQuery.error)} fallbackTitle="Aegis unavailable" />
   }
 
   return (
@@ -391,14 +439,71 @@ export default function AegisPage() {
       {message ? <div className="rounded-2xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{message}</div> : null}
       {errorText ? <div className="rounded-2xl border border-rose-400/35 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{errorText}</div> : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <article className="wb-panel space-y-5">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <article className="wb-panel self-start space-y-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="wb-kicker">Input</p>
-              <h2 className="mt-1 text-xl font-semibold">Choose report evidence</h2>
+              <h2 className="mt-1 text-xl font-semibold">Choose report evidence or a scan run</h2>
             </div>
             <span className="wb-chip"><ShieldCheck className="h-3.5 w-3.5" /> Read-only</span>
+          </div>
+
+          <div className="rounded-2xl border border-border/60 bg-surface-2/35 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="wb-kicker">Saved scan run</p>
+                <h3 className="mt-1 text-base font-semibold">Send a specific scan to Aegis</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Pick a completed or failed scan run when you want Aegis to create a mitigation plan from that exact result set.
+                </p>
+              </div>
+              {selectedScanJob ? <span className="wb-chip">{selectedScanJob.scannerFamily} | {selectedScanJob.status}</span> : null}
+            </div>
+
+            <label className="mt-4 grid gap-2 text-sm">
+              <span className="text-muted-foreground">Scan run</span>
+              <select
+                value={selectedScanJobId}
+                onChange={(event) => setSelectedScanJobId(event.target.value)}
+                className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm outline-none"
+              >
+                <option value="">Select a recent scan run</option>
+                {scanJobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.scannerFamily} | {job.status} | {new Date(job.finishedAtUtc ?? job.queuedAtUtc).toLocaleString()}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedScanJob ? (
+              <div className="mt-4 rounded-2xl border border-border/60 bg-background/45 p-4 text-sm">
+                <p className="font-medium">{selectedScanJob.summary}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Targets: {selectedScanJob.completedTargets}/{selectedScanJob.totalTargets} complete | Failed: {selectedScanJob.failedTargets} | No findings: {selectedScanJob.noFindingsTargets}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Rule file: {selectedScanJob.rulePath?.trim() ? selectedScanJob.rulePath : "Not recorded"}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {existingScanPlan ? (
+                    <>
+                      <Button type="button" variant="outline" onClick={() => { void openPlanDetails(existingScanPlan.id) }} disabled={scanBusyAction !== null}>
+                        Open mitigation plan
+                      </Button>
+                      <Button type="button" onClick={() => { void createPlanFromSelectedScan(true) }} disabled={scanBusyAction !== null}>
+                        {scanBusyAction === "regenerate" ? "Regenerating..." : "Regenerate"}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button type="button" onClick={() => { void createPlanFromSelectedScan(false) }} disabled={scanBusyAction !== null}>
+                      {scanBusyAction === "create" ? "Creating..." : "Create mitigation plan"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <label className="grid gap-2 text-sm">
@@ -458,7 +563,7 @@ export default function AegisPage() {
               }}
               disabled={Boolean(selectedReport)}
               placeholder="Paste report text, IOC lists, scan summaries, or threat bulletins here."
-              className="min-h-[220px] rounded-2xl border border-border/70 bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/70"
+              className="min-h-[140px] max-h-[260px] resize-y rounded-2xl border border-border/70 bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/70"
             />
           </label>
 

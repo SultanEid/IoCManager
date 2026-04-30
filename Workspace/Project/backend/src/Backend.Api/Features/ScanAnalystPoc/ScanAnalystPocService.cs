@@ -62,9 +62,56 @@ public sealed class ScanAnalystPocService
         _logger = logger;
     }
 
-    public ScanAnalystAgentStatusDto GetStatus()
+    public async Task<ScanAnalystAgentStatusDto> GetStatusAsync(CancellationToken cancellationToken)
     {
         var parameters = GetEffectiveParameters();
+        var personaName = "Zira";
+        var currentActivity = parameters.Enabled
+            ? "Zira is monitoring the workspace and waiting for the next task."
+            : "Autonomy is disabled. Zira will wait for direct requests.";
+        var latestActionSummary = currentActivity;
+        var recentActions = Array.Empty<ScanAnalystRecentActionDto>();
+        var completedPlans = Array.Empty<ScanAnalystCompletedPlanDto>();
+
+        try
+        {
+            var legacyPlans = await _legacyScanPipelineService.ListPlansAsync(cancellationToken);
+            var legacyJobs = await _legacyScanPipelineService.ListJobsAsync(cancellationToken);
+            var legacyPlanById = legacyPlans.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+
+            recentActions = legacyJobs
+                .OrderByDescending(GetLegacyJobLatestActivityUtc)
+                .Take(6)
+                .Select(job => ToRecentAction(job))
+                .ToArray();
+
+            completedPlans = legacyJobs
+                .Where(IsLegacyJobFinished)
+                .OrderByDescending(GetLegacyJobLatestActivityUtc)
+                .Take(6)
+                .Select(job => ToCompletedPlan(job, legacyPlanById))
+                .ToArray();
+
+            var latestJob = legacyJobs
+                .OrderByDescending(GetLegacyJobLatestActivityUtc)
+                .FirstOrDefault();
+
+            if (latestJob is not null)
+            {
+                currentActivity = BuildLegacyJobCurrentActivity(latestJob, parameters.Enabled);
+                latestActionSummary = BuildLegacyJobLatestSummary(latestJob);
+            }
+
+            if (_runtimeState.LastAutonomousActivity is not null)
+            {
+                latestActionSummary = _runtimeState.LastAutonomousActivity.Summary;
+            }
+        }
+        catch (Exception ex) when (IsTransientStatusCompatibilityException(ex))
+        {
+            _logger.LogDebug(ex, "Scan analyst status compatibility feed fell back to runtime-only state.");
+        }
+
         return new ScanAnalystAgentStatusDto(
             AgentEnabled: _options.Enabled,
             AutonomyEnabled: parameters.Enabled,
@@ -76,7 +123,12 @@ public sealed class ScanAnalystPocService
             AvailableMockConditions: ScanAnalystPocMockConditions.All,
             ActiveMockConditions: _runtimeState.ActiveMockConditions,
             Parameters: parameters,
-            LastAutonomousActivity: _runtimeState.LastAutonomousActivity);
+            LastAutonomousActivity: _runtimeState.LastAutonomousActivity,
+            PersonaName: personaName,
+            CurrentActivity: currentActivity,
+            LatestActionSummary: latestActionSummary,
+            RecentActions: recentActions,
+            CompletedPlans: completedPlans);
     }
 
     public ScanAnalystAgentStatusDto UpdatePosture(UpdateScanAnalystPostureRequestDto request)
@@ -95,7 +147,7 @@ public sealed class ScanAnalystPocService
         var quietHours = string.IsNullOrWhiteSpace(request.QuietHours) ? "none" : request.QuietHours.Trim();
 
         _runtimeState.UpdatePosture(_options, request, preferredScannerFamily, quietHours);
-        return GetStatus();
+        return GetStatusAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     public async Task<ScanAnalystResponseDto> AnalyzeAsync(
@@ -2289,6 +2341,140 @@ public sealed class ScanAnalystPocService
 
         return normalized;
     }
+
+    private static readonly HashSet<string> LegacyActiveJobStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Queued",
+        "Running",
+        "InProgress",
+        "In_Progress",
+        "Processing",
+        "Started",
+    };
+
+    private static readonly HashSet<string> LegacyFinishedJobStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Completed",
+        "Succeeded",
+        "Success",
+        "Finished",
+        "PartiallyCompleted",
+    };
+
+    private static readonly HashSet<string> LegacyAttentionJobStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Failed",
+        "Error",
+        "Cancelled",
+        "Canceled",
+        "Stopped",
+    };
+
+    private static DateTimeOffset GetLegacyJobLatestActivityUtc(LegacyPipelineScanJobResponse job)
+        => job.FinishedAtUtc ?? job.StartedAtUtc ?? job.QueuedAtUtc;
+
+    private static bool IsLegacyJobFinished(LegacyPipelineScanJobResponse job)
+        => LegacyFinishedJobStatuses.Contains(job.Status);
+
+    private static ScanAnalystRecentActionDto ToRecentAction(LegacyPipelineScanJobResponse job)
+    {
+        var scannerCapability = ToDisplayScannerCapability(job.ScannerFamily);
+        var latestAtUtc = GetLegacyJobLatestActivityUtc(job);
+
+        string title;
+        if (LegacyActiveJobStatuses.Contains(job.Status))
+        {
+            title = $"{scannerCapability} scan queued";
+        }
+        else if (LegacyAttentionJobStatuses.Contains(job.Status))
+        {
+            title = $"{scannerCapability} scan needs review";
+        }
+        else
+        {
+            title = $"{scannerCapability} scan finished";
+        }
+
+        return new ScanAnalystRecentActionDto(
+            Id: $"legacy-job:{job.Id}",
+            Title: title,
+            Summary: string.IsNullOrWhiteSpace(job.Summary)
+                ? $"{scannerCapability} scan {job.Status.ToLowerInvariant()}."
+                : job.Summary,
+            OccurredAtUtc: latestAtUtc,
+            Status: job.Status);
+    }
+
+    private static ScanAnalystCompletedPlanDto ToCompletedPlan(
+        LegacyPipelineScanJobResponse job,
+        IReadOnlyDictionary<string, LegacyPipelineScanPlanResponse> legacyPlanById)
+    {
+        var scannerCapability = ToDisplayScannerCapability(job.ScannerFamily);
+        legacyPlanById.TryGetValue(job.ScanPlanId ?? string.Empty, out var plan);
+
+        return new ScanAnalystCompletedPlanDto(
+            Id: $"legacy-job:{job.Id}",
+            Name: plan?.Name ?? $"Legacy {scannerCapability} scan {job.Id}",
+            ScannerCapability: scannerCapability,
+            TargetCount: job.TotalTargets,
+            DetectionCount: Math.Max(0, job.TotalTargets - job.NoFindingsTargets - job.FailedTargets),
+            Outcome: job.Status,
+            CompletedAtUtc: GetLegacyJobLatestActivityUtc(job),
+            RulePath: job.RulePath ?? plan?.RulePathsByFamily.GetValueOrDefault(job.ScannerFamily));
+    }
+
+    private static string BuildLegacyJobCurrentActivity(LegacyPipelineScanJobResponse job, bool autonomyEnabled)
+    {
+        var scannerCapability = ToDisplayScannerCapability(job.ScannerFamily);
+        if (LegacyActiveJobStatuses.Contains(job.Status))
+        {
+            return $"{scannerCapability} scan is queued or running in the legacy pipeline.";
+        }
+
+        if (LegacyAttentionJobStatuses.Contains(job.Status))
+        {
+            return $"{scannerCapability} scan needs review before the next action.";
+        }
+
+        if (LegacyFinishedJobStatuses.Contains(job.Status))
+        {
+            return autonomyEnabled
+                ? $"{scannerCapability} scan finished and Zira is waiting for the next task."
+                : $"{scannerCapability} scan finished. Zira is waiting for a direct request.";
+        }
+
+        return autonomyEnabled
+            ? "Zira is monitoring the workspace and waiting for the next task."
+            : "Autonomy is disabled. Zira will wait for direct requests.";
+    }
+
+    private static string BuildLegacyJobLatestSummary(LegacyPipelineScanJobResponse job)
+    {
+        var scannerCapability = ToDisplayScannerCapability(job.ScannerFamily);
+        if (!string.IsNullOrWhiteSpace(job.Summary))
+        {
+            return job.Summary;
+        }
+
+        if (LegacyAttentionJobStatuses.Contains(job.Status))
+        {
+            return $"{scannerCapability} scan needs review.";
+        }
+
+        if (LegacyActiveJobStatuses.Contains(job.Status))
+        {
+            return $"{scannerCapability} scan is queued in the legacy pipeline.";
+        }
+
+        return $"{scannerCapability} scan finished.";
+    }
+
+    private static bool IsTransientStatusCompatibilityException(Exception ex)
+        => ex is DbException
+            || ex is SqlException
+            || ex is TimeoutException
+            || ex is SocketException
+            || ex is InvalidOperationException;
 
     private static Guid BuildLegacyTargetGuid(string targetId) => BuildStableGuid($"legacy-target:{targetId}");
 

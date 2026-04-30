@@ -718,6 +718,19 @@ export type GenerateReportMitigationInput = {
   existingReportId?: string
   includeWorkspaceContext: boolean
   actorUserId: string
+  regenerate?: boolean
+}
+
+export type GenerateReportMitigationFromAlertInput = {
+  includeWorkspaceContext: boolean
+  actorUserId: string
+  regenerate?: boolean
+}
+
+export type GenerateReportMitigationFromScanJobInput = {
+  includeWorkspaceContext: boolean
+  actorUserId: string
+  regenerate?: boolean
 }
 
 export type AuditLogListQuery = {
@@ -808,6 +821,8 @@ export interface Gateway {
   getReport(reportId: string, signal?: AbortSignal): Promise<ReportResponse>
   generateReport(input: GenerateReportInput): Promise<GeneratedReportResponse>
   generateReportMitigation(input: GenerateReportMitigationInput): Promise<ReportMitigationResponse>
+  generateReportMitigationFromAlert(alertId: string, input: GenerateReportMitigationFromAlertInput): Promise<ReportMitigationResponse>
+  generateReportMitigationFromScanJob(scanJobId: string, input: GenerateReportMitigationFromScanJobInput): Promise<ReportMitigationResponse>
   listReportMitigationPlans(signal?: AbortSignal): Promise<ReportMitigationListResponse>
   deleteReport(reportId: string): Promise<void>
   getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse>

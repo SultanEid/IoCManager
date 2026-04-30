@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
   Clock3,
@@ -15,6 +15,7 @@ import {
   type LucideIcon,
   X,
 } from "lucide-react"
+import { AegisMitigationTimeline, AegisPrimaryActions, type LegacyPlanLike } from "@/components/workbench/aegis/mitigation-plan-elements"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { reportTypeAccent } from "@/components/workbench/accent-tone"
@@ -134,6 +135,7 @@ type ReportSnapshot = {
   scope: string
   query: SnapshotQuery
   sections: GeneratedReportSectionResponse[]
+  aegisPlan?: LegacyPlanLike | null
 }
 
 type ReportPreviewState =
@@ -265,6 +267,7 @@ function buildAegisSnapshot(report: ReportResponse, record: Record<string, unkno
       source: trigger ?? (sourceAlertId ? "alert-driven" : "report-review"),
       status: requiresHumanReview === false ? "Ready for operator review" : "Human review recommended",
     },
+    aegisPlan: plan as LegacyPlanLike,
     sections: [
       {
         title: "Aegis mitigation plan",
@@ -469,12 +472,14 @@ function BuilderMetric({
 }
 
 export default function ReportsPage() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { session } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? "system"
   const [refreshKey, setRefreshKey] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
+  const [aegisBusyReportId, setAegisBusyReportId] = useState<string | null>(null)
   const [preview, setPreview] = useState<ReportPreviewState | null>(null)
   const [review, setReview] = useState<ReportPreviewState | null>(null)
   const [closedReviewId, setClosedReviewId] = useState<string | null>(null)
@@ -608,6 +613,35 @@ export default function ReportsPage() {
     }))
   }
 
+  const openAegisPlan = (planId: string) => {
+    router.push(`/agents/aegis?plan=${encodeURIComponent(planId)}`)
+  }
+
+  const createAegisPlanForReport = async (reportId: string, regenerate: boolean) => {
+    setAegisBusyReportId(reportId)
+    setErrorText(null)
+    setMessage(null)
+    try {
+      const response = await gateway.generateReportMitigation({
+        sourceName: "Aegis report review",
+        sourceType: "bulletin",
+        existingReportId: reportId,
+        includeWorkspaceContext: true,
+        actorUserId,
+        regenerate,
+      })
+      if (!response.persistedMitigationReport) {
+        throw new Error("Aegis did not return a saved mitigation plan.")
+      }
+      setRefreshKey((value) => value + 1)
+      router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
+    } catch (error) {
+      setErrorText(classifyUiError(error).message)
+    } finally {
+      setAegisBusyReportId(null)
+    }
+  }
+
   useEffect(() => {
     if (
       !requestedReviewId
@@ -684,6 +718,7 @@ export default function ReportsPage() {
   const reviewQuery = review?.kind === "saved" ? review.snapshot.query : generatedQuery
   const reviewGeneratedAt = review?.kind === "saved" ? review.report.generatedAtUtc : review?.report.generatedAtUtc
   const reviewIsAegisPlan = review?.kind === "saved" ? isAegisMitigationReport(review.report) : false
+  const reviewAegisPlan = review?.kind === "saved" ? review.snapshot.aegisPlan ?? null : null
   const previewExportReportId = preview?.kind === "saved" ? preview.report.id : preview?.report.persistedReport?.id
   const reviewExportReportId = review?.kind === "saved" ? review.report.id : review?.report.persistedReport?.id
 
@@ -1039,6 +1074,7 @@ export default function ReportsPage() {
                 {reports.map((report) => {
                   const snapshot = parseReportSnapshot(report, targets)
                   const deleting = deletingReportId === report.id
+                  const aegisBusy = aegisBusyReportId === report.id
                   const aegisPlan = aegisPlanBySourceReportId.get(report.id)
                   const isAegisPlan = isAegisMitigationReport(report)
                   return (
@@ -1071,13 +1107,36 @@ export default function ReportsPage() {
                             Export HTML
                           </a>
                           {aegisPlan || isAegisPlan ? (
-                            <Link
-                              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                              href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => openAegisPlan(aegisPlan?.id ?? report.id)}
+                                disabled={deleting || aegisBusy}
+                              >
+                                Open in Aegis
+                              </Button>
+                              {!isAegisPlan ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => void createAegisPlanForReport(report.id, true)}
+                                  disabled={deleting || aegisBusy}
+                                >
+                                  {aegisBusy ? "Regenerating..." : "Regenerate"}
+                                </Button>
+                              ) : null}
+                            </>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => void createAegisPlanForReport(report.id, false)}
+                              disabled={deleting || aegisBusy}
                             >
-                              Open in Aegis
-                            </Link>
-                          ) : null}
+                              {aegisBusy ? "Creating..." : "Create mitigation plan"}
+                            </Button>
+                          )}
                           <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={deleting}>
                             {deleting ? "Deleting..." : "Delete"}
                           </Button>
@@ -1185,80 +1244,205 @@ export default function ReportsPage() {
                 </section>
               ) : null}
 
-              <div className="space-y-4">
-                {reviewSections?.map((section) => (
-                  <div key={section.title} className="wb-section-frame">
-                    <div>
-                      <p className="text-base font-semibold">{section.title}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
-                    </div>
-
-                    {section.narrative ? (
-                      <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
-                        {section.narrative}
-                      </div>
-                    ) : null}
-
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                      {section.metrics.map((metric) => (
-                        <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
-                          <p className="wb-kicker">{metric.label}</p>
-                          <p className="mt-1 text-lg font-semibold">{metric.value}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
+              {reviewIsAegisPlan && reviewAegisPlan ? (
+                <div className="space-y-5">
+                  <section className="rounded-[1.8rem] border border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_82%,transparent),color-mix(in_srgb,var(--background)_88%,transparent))] p-5 shadow-[var(--shadow-soft)]">
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+                      <div className="space-y-4">
+                        <div>
+                          <p className="wb-kicker">Mitigation Brief</p>
+                          <h3 className="mt-1 text-2xl font-semibold tracking-tight">Operator-ready response plan</h3>
+                          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                            {reviewAegisPlan.executiveSummary?.trim() || "Aegis created a mitigation plan from the stored report evidence and linked alert context."}
+                          </p>
                         </div>
-                      ))}
+                        {reviewAegisPlan.threatSummary ? (
+                          <div className="rounded-2xl border border-border/60 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
+                            {reviewAegisPlan.threatSummary}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
+                          <p className="wb-kicker">Severity</p>
+                          <p className="mt-2 text-xl font-semibold">{reviewAegisPlan.severity || "Unknown"}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Aegis-assessed response priority for this case.</p>
+                        </div>
+                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
+                          <p className="wb-kicker">Confidence</p>
+                          <p className="mt-2 text-xl font-semibold">{reviewAegisPlan.confidence || "Unknown"}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Confidence based on available evidence and linked operational context.</p>
+                        </div>
+                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
+                          <p className="wb-kicker">Review Gate</p>
+                          <p className="mt-2 text-base font-semibold">{reviewAegisPlan.requiresHumanReview === false ? "Operator can proceed" : "Human review recommended"}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Aegis remains advisory and does not apply mitigations directly.</p>
+                        </div>
+                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
+                          <p className="wb-kicker">Affected Focus</p>
+                          <p className="mt-2 text-base font-semibold">{reviewAegisPlan.affectedAssetHypotheses?.[0] || "Workspace-wide case"}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Primary target or case hypothesis Aegis anchored the plan around.</p>
+                        </div>
+                      </div>
                     </div>
+                  </section>
 
-                    {section.highlights.length > 0 ? (
-                      <div className="mt-4 grid gap-2">
-                        {section.highlights.map((highlight) => (
-                          <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm text-muted-foreground">
-                            {highlight}
+                  <AegisPrimaryActions plan={reviewAegisPlan} />
+                  <AegisMitigationTimeline plan={reviewAegisPlan} />
+
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+                    {reviewSections?.slice(1).map((section) => (
+                      <div key={section.title} className="wb-section-frame">
+                        <div>
+                          <p className="text-base font-semibold">{section.title}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
+                        </div>
+
+                        {section.narrative ? (
+                          <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
+                            {section.narrative}
+                          </div>
+                        ) : null}
+
+                        {section.metrics.length > 0 ? (
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            {section.metrics.map((metric) => (
+                              <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
+                                <p className="wb-kicker">{metric.label}</p>
+                                <p className="mt-1 text-lg font-semibold">{metric.value}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {section.highlights.length > 0 ? (
+                          <div className="mt-4 grid gap-2">
+                            {section.highlights.map((highlight) => (
+                              <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                                {highlight}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {section.tables.length > 0 ? (
+                          <div className="mt-4 space-y-4">
+                            {section.tables.map((table) => (
+                              <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
+                                <div className="border-b border-border/55 px-4 py-3">
+                                  <p className="text-sm font-semibold">{table.title}</p>
+                                </div>
+                                {table.rows.length === 0 ? (
+                                  <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full min-w-[720px] text-sm">
+                                      <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                                        <tr>
+                                          {table.columns.map((column) => (
+                                            <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {table.rows.map((row, rowIndex) => (
+                                          <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0">
+                                            {table.columns.map((column) => (
+                                              <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
+                                                {row.values[column.key] ?? "n/a"}
+                                              </td>
+                                            ))}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {reviewSections?.map((section) => (
+                    <div key={section.title} className="wb-section-frame">
+                      <div>
+                        <p className="text-base font-semibold">{section.title}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
+                      </div>
+
+                      {section.narrative ? (
+                        <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
+                          {section.narrative}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                        {section.metrics.map((metric) => (
+                          <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
+                            <p className="wb-kicker">{metric.label}</p>
+                            <p className="mt-1 text-lg font-semibold">{metric.value}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
                           </div>
                         ))}
                       </div>
-                    ) : null}
 
-                    {section.tables.length > 0 ? (
-                      <div className="mt-4 space-y-4">
-                        {section.tables.map((table) => (
-                          <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
-                            <div className="border-b border-border/55 px-4 py-3">
-                              <p className="text-sm font-semibold">{table.title}</p>
+                      {section.highlights.length > 0 ? (
+                        <div className="mt-4 grid gap-2">
+                          {section.highlights.map((highlight) => (
+                            <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm text-muted-foreground">
+                              {highlight}
                             </div>
-                            {table.rows.length === 0 ? (
-                              <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
-                            ) : (
-                              <div className="overflow-x-auto">
-                                <table className="w-full min-w-[720px] text-sm">
-                                  <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                                    <tr>
-                                      {table.columns.map((column) => (
-                                        <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {table.rows.map((row, rowIndex) => (
-                                      <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0">
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {section.tables.length > 0 ? (
+                        <div className="mt-4 space-y-4">
+                          {section.tables.map((table) => (
+                            <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
+                              <div className="border-b border-border/55 px-4 py-3">
+                                <p className="text-sm font-semibold">{table.title}</p>
+                              </div>
+                              {table.rows.length === 0 ? (
+                                <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full min-w-[720px] text-sm">
+                                    <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                                      <tr>
                                         {table.columns.map((column) => (
-                                          <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
-                                            {row.values[column.key] ?? "n/a"}
-                                          </td>
+                                          <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
                                         ))}
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+                                    </thead>
+                                    <tbody>
+                                      {table.rows.map((row, rowIndex) => (
+                                        <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0">
+                                          {table.columns.map((column) => (
+                                            <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
+                                              {row.values[column.key] ?? "n/a"}
+                                            </td>
+                                          ))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

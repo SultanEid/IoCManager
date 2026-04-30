@@ -82,6 +82,8 @@ import type {
   Gateway,
   GenerateReportInput,
   GenerateReportMitigationInput,
+  GenerateReportMitigationFromAlertInput,
+  GenerateReportMitigationFromScanJobInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -851,6 +853,64 @@ export class MockGateway implements Gateway {
       severity: "medium",
       confidence: "medium",
       affectedAssetHypotheses: ["Review affected hosts and linked alerts before taking action."],
+      primaryActions: [
+        {
+          rank: 1,
+          title: "Triage linked alerts",
+          targetHint: "Affected hosts linked to the report",
+          urgency: "now",
+          reasoning: "Confirm whether the reported indicators match active detections before broader containment work starts.",
+        },
+        {
+          rank: 2,
+          title: "Run targeted validation scan",
+          targetHint: "Targets linked to the report",
+          urgency: "hours",
+          reasoning: "Use focused follow-up scanning to verify the scope and persistence of the reported activity.",
+        },
+        {
+          rank: 3,
+          title: "Harden the impacted environment",
+          targetHint: "Impacted network segment or host group",
+          urgency: "same_day",
+          reasoning: "Reduce recurrence risk after the immediate evidence has been reviewed and validated.",
+        },
+      ],
+      timeline: [
+        {
+          stepId: "containment-1",
+          title: "Review linked alerts and evidence",
+          linkedPrimaryActionRank: 1,
+          targetHint: "Affected hosts linked to the report",
+          lane: "containment",
+          startsIn: 0,
+          duration: 2,
+          unit: "hours",
+          rationale: "This should happen immediately so the team can confirm the case before expanding response scope.",
+        },
+        {
+          stepId: "validation-1",
+          title: "Validate with focused follow-up scan",
+          linkedPrimaryActionRank: 2,
+          targetHint: "Targets linked to the report",
+          lane: "validation",
+          startsIn: 2,
+          duration: 4,
+          unit: "hours",
+          rationale: "Shortly after triage, targeted scanning helps confirm the scope and current exposure level.",
+        },
+        {
+          stepId: "recovery-1",
+          title: "Apply hardening and verify closure",
+          linkedPrimaryActionRank: 3,
+          targetHint: "Impacted network segment or host group",
+          lane: "recovery",
+          startsIn: 1,
+          duration: 1,
+          unit: "days",
+          rationale: "Follow-up hardening is best scheduled after the first response pass and validation steps complete.",
+        },
+      ],
       immediateActions: [
         {
           title: "Triage linked alerts",
@@ -908,6 +968,26 @@ export class MockGateway implements Gateway {
     })
   }
 
+  async generateReportMitigationFromAlert(_alertId: string, input: GenerateReportMitigationFromAlertInput): Promise<ReportMitigationResponse> {
+    return this.generateReportMitigation({
+      sourceName: "Aegis alert review",
+      sourceType: "bulletin",
+      includeWorkspaceContext: input.includeWorkspaceContext,
+      actorUserId: input.actorUserId,
+      regenerate: input.regenerate,
+    })
+  }
+
+  async generateReportMitigationFromScanJob(_scanJobId: string, input: GenerateReportMitigationFromScanJobInput): Promise<ReportMitigationResponse> {
+    return this.generateReportMitigation({
+      sourceName: "Aegis scan review",
+      sourceType: "bulletin",
+      includeWorkspaceContext: input.includeWorkspaceContext,
+      actorUserId: input.actorUserId,
+      regenerate: input.regenerate,
+    })
+  }
+
   async listReportMitigationPlans(_signal?: AbortSignal): Promise<ReportMitigationListResponse> {
     consume(_signal)
     const items = this.generatedReports
@@ -934,6 +1014,7 @@ export class MockGateway implements Gateway {
           id: item.id,
           title: item.title,
           sourceReportId,
+          sourceScanJobIds: [],
           severity,
           confidence,
           executiveSummary,

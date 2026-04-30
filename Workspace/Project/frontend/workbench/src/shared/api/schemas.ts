@@ -853,6 +853,7 @@ export const scanAnalystCompletedPlanResponseSchema = z.object({
   detectionCount: z.number().int(),
   outcome: z.string(),
   completedAtUtc: z.string(),
+  rulePath: z.string().nullable().optional(),
 })
 
 export const scanAnalystAgentStatusResponseSchema = z.object({
@@ -1079,6 +1080,26 @@ export const reportMitigationActionResponseSchema = z.object({
   automationReadiness: z.string(),
 })
 
+export const reportMitigationPrimaryActionResponseSchema = z.object({
+  rank: z.number().int(),
+  title: z.string(),
+  targetHint: z.string(),
+  urgency: z.string(),
+  reasoning: z.string(),
+})
+
+export const reportMitigationTimelineStepResponseSchema = z.object({
+  stepId: z.string(),
+  title: z.string(),
+  linkedPrimaryActionRank: z.number().int().nullable(),
+  targetHint: z.string(),
+  lane: z.string(),
+  startsIn: z.number().int(),
+  duration: z.number().int(),
+  unit: z.string(),
+  rationale: z.string(),
+})
+
 export const reportMitigationScanRecommendationResponseSchema = z.object({
   scannerFamily: z.string(),
   targetHint: z.string(),
@@ -1093,9 +1114,11 @@ export const reportMitigationPlanResponseSchema = z.object({
   severity: z.string(),
   confidence: z.string(),
   affectedAssetHypotheses: z.array(z.string()),
-  immediateActions: z.array(reportMitigationActionResponseSchema),
-  detectionActions: z.array(reportMitigationActionResponseSchema),
-  hardeningActions: z.array(reportMitigationActionResponseSchema),
+  primaryActions: z.array(reportMitigationPrimaryActionResponseSchema).optional().default([]),
+  timeline: z.array(reportMitigationTimelineStepResponseSchema).optional().default([]),
+  immediateActions: z.array(reportMitigationActionResponseSchema).optional().default([]),
+  detectionActions: z.array(reportMitigationActionResponseSchema).optional().default([]),
+  hardeningActions: z.array(reportMitigationActionResponseSchema).optional().default([]),
   validationSteps: z.array(z.string()),
   scanRecommendations: z.array(reportMitigationScanRecommendationResponseSchema),
   assumptions: z.array(z.string()),
@@ -1121,6 +1144,8 @@ export const reportMitigationListItemResponseSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
   sourceReportId: z.string().uuid().nullable(),
+  sourceDocumentId: z.string().nullable().optional(),
+  sourceScanJobIds: z.array(z.string().uuid()),
   severity: z.string(),
   confidence: z.string(),
   executiveSummary: z.string(),
@@ -1705,6 +1730,8 @@ export type ReportListResponse = z.infer<typeof reportListResponseSchema>
 export type ReportMitigationExtractedIocResponse = z.infer<typeof reportMitigationExtractedIocResponseSchema>
 export type ReportMitigationClaimResponse = z.infer<typeof reportMitigationClaimResponseSchema>
 export type ReportMitigationActionResponse = z.infer<typeof reportMitigationActionResponseSchema>
+export type ReportMitigationPrimaryActionResponse = z.infer<typeof reportMitigationPrimaryActionResponseSchema>
+export type ReportMitigationTimelineStepResponse = z.infer<typeof reportMitigationTimelineStepResponseSchema>
 export type ReportMitigationScanRecommendationResponse = z.infer<typeof reportMitigationScanRecommendationResponseSchema>
 export type ReportMitigationPlanResponse = z.infer<typeof reportMitigationPlanResponseSchema>
 export type ReportMitigationResponse = z.infer<typeof reportMitigationResponseSchema>

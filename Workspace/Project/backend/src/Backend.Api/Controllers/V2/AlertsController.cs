@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Text.Json;
 
 namespace Backend.Api.Controllers.V2;
@@ -22,17 +23,20 @@ public sealed class AlertsController : ControllerBase
 
     private readonly CtiDbContext _dbContext;
     private readonly LegacyScanPipelineDbContext _legacyDbContext;
+    private readonly ILegacyScanPipelineService _legacyScanPipelineService;
     private readonly IAlertOwnerResolver _ownerResolver;
     private readonly IAlertEmailSender _emailSender;
 
     public AlertsController(
         CtiDbContext dbContext,
         LegacyScanPipelineDbContext legacyDbContext,
+        ILegacyScanPipelineService legacyScanPipelineService,
         IAlertOwnerResolver ownerResolver,
         IAlertEmailSender emailSender)
     {
         _dbContext = dbContext;
         _legacyDbContext = legacyDbContext;
+        _legacyScanPipelineService = legacyScanPipelineService;
         _ownerResolver = ownerResolver;
         _emailSender = emailSender;
     }
@@ -123,23 +127,31 @@ public sealed class AlertsController : ControllerBase
             alerts = alerts.Where(x => x.TargetId == parsedTargetId);
         }
 
-        var totalCount = await alerts.CountAsync(cancellationToken);
-        var items = await alerts
-            .OrderByDescending(x => x.LastDetectedAtUtc)
-            .Skip(skip)
-            .Take(pageSize)
-            .ToArrayAsync(cancellationToken);
-        var progressByAlertId = await BuildProgressByAlertIdAsync(items.Select(x => x.Id).ToArray(), cancellationToken);
-
-        return Ok(new AlertListResponse(
-            items.Select(item =>
+        try
+        {
+            var totalCount = await alerts.CountAsync(cancellationToken);
+            var items = await alerts
+                .OrderByDescending(x => x.LastDetectedAtUtc)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToArrayAsync(cancellationToken);
+            var progressByAlertId = await BuildProgressByAlertIdAsync(items.Select(x => x.Id).ToArray(), cancellationToken);
+            var responseItems = items.Select(item =>
             {
                 var progress = ResolveProgress(progressByAlertId, item.Id);
                 return item.ToAlertResponse(progress.TotalIocs, progress);
-            }).ToArray(),
-            totalCount,
-            page,
-            pageSize));
+            }).ToArray();
+
+            if (responseItems.Length > 0)
+            {
+                return Ok(new AlertListResponse(responseItems, totalCount, page, pageSize));
+            }
+        }
+        catch (Exception exception) when (LegacyCompatibilityFallbackPolicy.ShouldUseFallback(exception))
+        {
+        }
+
+        return Ok(await BuildLegacyAlertListResponseAsync(query, page, pageSize, cancellationToken));
     }
 
     [HttpGet("{alertId:guid}")]
@@ -482,14 +494,21 @@ public sealed class AlertsController : ControllerBase
 
     private async Task<AlertDetailResponse?> BuildAlertDetailAsync(Guid alertId, CancellationToken cancellationToken)
     {
-        var alert = await _dbContext.AlertsV2
-            .AsNoTracking()
-            .Where(x => x.Id == alertId)
-            .FirstOrDefaultAsync(cancellationToken);
+        Alert? alert = null;
+        try
+        {
+            alert = await _dbContext.AlertsV2
+                .AsNoTracking()
+                .Where(x => x.Id == alertId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        catch (Exception exception) when (LegacyCompatibilityFallbackPolicy.ShouldUseFallback(exception))
+        {
+        }
 
         if (alert is null)
         {
-            return null;
+            return await BuildLegacyAlertDetailAsync(alertId, cancellationToken);
         }
 
         var linkedIocLinks = await _dbContext.AlertIocs
@@ -582,6 +601,165 @@ public sealed class AlertsController : ControllerBase
 
         return detail;
     }
+
+    private async Task<AlertListResponse> BuildLegacyAlertListResponseAsync(
+        AlertSearchQuery query,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var rawPageSize = string.IsNullOrWhiteSpace(query.Status) ? pageSize : Math.Max(pageSize * 4, 250);
+        var findings = await _legacyScanPipelineService.ListIocFindingsAsync(
+            query.Family,
+            query.TargetId,
+            query.Severity,
+            query.FromUtc,
+            query.ToUtc,
+            query.Q,
+            painLevel: null,
+            page: 1,
+            pageSize: rawPageSize,
+            cancellationToken);
+
+        var filtered = findings.Items
+            .Select(ToLegacyAlertResponse)
+            .Where(alert => string.IsNullOrWhiteSpace(query.Status) || string.Equals(alert.Status, query.Status, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(alert => alert.LastDetectedAtUtc)
+            .ToArray();
+
+        var totalCount = filtered.Length;
+        var items = filtered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToArray();
+
+        return new AlertListResponse(items, totalCount, page, pageSize);
+    }
+
+    private async Task<AlertDetailResponse?> BuildLegacyAlertDetailAsync(Guid alertId, CancellationToken cancellationToken)
+    {
+        var detail = await _legacyScanPipelineService.GetIocFindingDetailAsync(alertId.ToString("D"), cancellationToken);
+        if (detail is null)
+        {
+            return null;
+        }
+
+        var progress = BuildLegacyProgress(detail.Status);
+        return new AlertDetailResponse(
+            alertId,
+            BuildLegacyAlertTitle(detail.ScannerFamily, detail.TargetDisplay),
+            BuildLegacyAlertSummary(detail.RuleName, detail.IndicatorValue, detail.TargetDisplay),
+            NormalizeLegacyAlertSeverity(detail.Severity),
+            MapLegacyAlertStatus(detail.Status),
+            "legacy-pipeline",
+            "Legacy pipeline",
+            null,
+            "Analyst",
+            NormalizeFamily(detail.ScannerFamily),
+            detail.TargetId,
+            detail.TargetDisplay,
+            detail.RuleName,
+            1,
+            progress,
+            detail.TimestampUtc,
+            detail.TimestampUtc,
+            detail.TimestampUtc,
+            detail.TimestampUtc,
+            detail.Target is null
+                ? null
+                : new AlertTargetSummaryResponse(
+                    detail.Target.Id,
+                    detail.Target.Display,
+                    detail.Target.Hostname,
+                    detail.Target.IpAddress,
+                    detail.Target.Status,
+                    detail.Target.TargetOsType),
+            [new AlertLinkedIocResponse(
+                detail.IocId,
+                NormalizeFamily(detail.ScannerFamily),
+                detail.RuleName,
+                detail.IndicatorValue,
+                detail.IndicatorKind,
+                NormalizeLegacyAlertSeverity(detail.Severity),
+                detail.Status,
+                detail.TimestampUtc,
+                "legacy-pipeline",
+                detail.TimestampUtc,
+                detail.RawPayload,
+                detail.YaraDetail is null ? null : new AlertLinkedIocYaraDetailResponse(detail.YaraDetail.FilePath, detail.YaraDetail.FileHash),
+                detail.SigmaDetail is null ? null : new AlertLinkedIocSigmaDetailResponse(detail.SigmaDetail.LogSource, detail.SigmaDetail.Severity, detail.SigmaDetail.CommandLine),
+                detail.NetworkDetail is null ? null : new AlertLinkedIocNetworkDetailResponse(detail.NetworkDetail.SourceIp, detail.NetworkDetail.DestIp, detail.NetworkDetail.Protocol, detail.NetworkDetail.Severity, detail.NetworkDetail.FlowId))],
+            detail.RelatedScan is null
+                ? []
+                : [new AlertLinkedScanResultResponse(
+                    detail.IocId,
+                    detail.RelatedScan.JobId,
+                    detail.RelatedScan.Status,
+                    1,
+                    detail.RelatedScan.StartedAtUtc,
+                    detail.RelatedScan.FinishedAtUtc)]);
+    }
+
+    private static AlertResponse ToLegacyAlertResponse(LegacyPipelineIocFindingResponse finding)
+    {
+        var progress = BuildLegacyProgress(finding.Status);
+        return new AlertResponse(
+            Guid.Parse(finding.IocId),
+            BuildLegacyAlertTitle(finding.ScannerFamily, finding.TargetDisplay),
+            BuildLegacyAlertSummary(finding.RuleName, finding.IndicatorValue, finding.TargetDisplay),
+            NormalizeLegacyAlertSeverity(finding.Severity),
+            MapLegacyAlertStatus(finding.Status),
+            "legacy-pipeline",
+            "Legacy pipeline",
+            null,
+            "Analyst",
+            NormalizeFamily(finding.ScannerFamily),
+            finding.TargetId,
+            finding.TargetDisplay,
+            finding.RuleName,
+            1,
+            progress,
+            finding.TimestampUtc,
+            finding.TimestampUtc,
+            finding.TimestampUtc,
+            finding.TimestampUtc);
+    }
+
+    private static AlertProgressResponse BuildLegacyProgress(string status)
+    {
+        var normalizedStatus = MapLegacyAlertStatus(status);
+        return normalizedStatus switch
+        {
+            "Resolved" or "Closed" => new AlertProgressResponse(1, 0, 0, 1, 100),
+            "Investigating" => new AlertProgressResponse(1, 0, 1, 0, 50),
+            _ => new AlertProgressResponse(1, 1, 0, 0, 0),
+        };
+    }
+
+    private static string BuildLegacyAlertTitle(string scannerFamily, string targetDisplay)
+        => $"{NormalizeFamily(scannerFamily).ToUpperInvariant()} finding on {targetDisplay}";
+
+    private static string BuildLegacyAlertSummary(string ruleName, string indicatorValue, string targetDisplay)
+        => $"{ruleName} matched {indicatorValue} on {targetDisplay}.";
+
+    private static string MapLegacyAlertStatus(string legacyStatus)
+        => legacyStatus.Trim() switch
+        {
+            "Contained" or "FalsePositive" or "AcceptedRisk" => "Resolved",
+            "InReview" => "Investigating",
+            "Closed" => "Closed",
+            _ => "Open",
+        };
+
+    private static string NormalizeLegacyAlertSeverity(string? severity)
+        => string.IsNullOrWhiteSpace(severity)
+            ? "Medium"
+            : severity.Trim() switch
+            {
+                var value when value.Equals("crit", StringComparison.OrdinalIgnoreCase) => "Critical",
+                var value when value.Equals("med", StringComparison.OrdinalIgnoreCase) => "Medium",
+                _ => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(severity.Trim().ToLowerInvariant()),
+            };
 
     private sealed record AlertIocProgressRow(Guid AlertId, AlertIocStatus Status);
 

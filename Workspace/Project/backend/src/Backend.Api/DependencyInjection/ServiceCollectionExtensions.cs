@@ -27,6 +27,9 @@ public static class ServiceCollectionExtensions
     {
         var skipHostedWorkers = configuration.GetValue<bool>("AppStartup:SkipHostedWorkers");
         var enableAiDecisionWorker = configuration.GetValue<bool>("AppStartup:EnableAiDecisionWorker");
+        var enableLegacyScanPipelineWorker = configuration.GetValue<bool>("AppStartup:EnableLegacyScanPipelineWorker");
+        var enableScanAnalystPocAutonomyWorker = configuration.GetValue<bool>("AppStartup:EnableScanAnalystPocAutonomyWorker");
+        var enableAegisMitigationAutonomyWorker = configuration.GetValue<bool>("AppStartup:EnableAegisMitigationAutonomyWorker");
 
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
@@ -150,6 +153,9 @@ public static class ServiceCollectionExtensions
             .Validate(options => options.MaxAlertsPerPass is >= 1 and <= 10, "AegisMitigation:MaxAlertsPerPass must be between 1 and 10.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.SystemActorUserId), "AegisMitigation:SystemActorUserId must be configured.")
             .ValidateOnStart();
+        services
+            .AddOptions<AgentNotificationEmailOptions>()
+            .Bind(configuration.GetSection(AgentNotificationEmailOptions.SectionName));
 
         services.AddScoped<IAuthSensitiveAuditService, AuthSensitiveAuditService>();
         services.AddScoped<IAlertRegistrySchemaInitializer, AlertRegistrySchemaInitializer>();
@@ -160,6 +166,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPowerBiVisualizationCatalogService, PowerBiVisualizationCatalogService>();
         services.AddScoped<IRuleRevisionValidationPipeline, RuleRevisionValidationPipeline>();
         services.AddScoped<IResultIngestionService, ResultIngestionService>();
+        services.AddScoped<AegisActivityNotifier>();
+        services.AddScoped<AegisMitigationPlanner>();
         services.AddSingleton<IAlertOwnerResolver, AlertOwnerResolver>();
         services.AddSingleton<IAlertEmailSender, SmtpAlertEmailSender>();
         services.AddSingleton<ILegacyScannerResultExtractor, LegacyScannerResultExtractor>();
@@ -188,8 +196,20 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<DiscoveryRunWorker>();
             services.AddHostedService<RuleDistributionWorker>();
             services.AddHostedService<ScanPlanExecutionWorker>();
+        }
+
+        if (!skipHostedWorkers || enableScanAnalystPocAutonomyWorker)
+        {
             services.AddHostedService<ScanAnalystPocAutonomyWorker>();
+        }
+
+        if (!skipHostedWorkers || enableAegisMitigationAutonomyWorker)
+        {
             services.AddHostedService<AegisMitigationAutonomyWorker>();
+        }
+
+        if (!skipHostedWorkers || enableLegacyScanPipelineWorker)
+        {
             services.AddHostedService<LegacyScanPipelineWorker>();
         }
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { CheckCircle2, ChevronDown, ChevronRight, Clock3, FolderSearch } from "lucide-react"
 import { ScannerFamilyBadge, ScannerFamilyMark } from "@/components/workbench/scanner-family-mark"
 import { Badge } from "@/components/ui/badge"
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
+import { gateway } from "@/shared/gateway"
 import {
   createLegacyCustomScan,
   listLegacyJobs,
@@ -51,6 +53,94 @@ const SCANNER_METADATA = {
 
 type ResolvedTargetOs = "windows" | "linux"
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim())
+}
+
+function buildLegacyAegisDocumentId(jobId: string) {
+  return `legacy-scan-job:${jobId}`
+}
+
+function resolveScanOrigin(triggerType: string | null | undefined) {
+  const normalized = triggerType?.trim().toLowerCase() ?? ""
+
+  if (normalized === "manual") {
+    return {
+      label: "Manual",
+      summary: "Started directly by a user.",
+      badgeClassName: "border-cyan-300/35 bg-cyan-500/10 text-cyan-100",
+    }
+  }
+
+  if (normalized === "plan" || normalized === "scheduled" || normalized === "schedule") {
+    return {
+      label: "Automatic",
+      summary: "Queued automatically from a saved plan or schedule.",
+      badgeClassName: "border-amber-300/35 bg-amber-500/10 text-amber-100",
+    }
+  }
+
+  if (normalized === "analyst" || normalized.includes("agent") || normalized.includes("zira")) {
+    return {
+      label: "Agent",
+      summary: "Queued by Zira or another agent-driven workflow.",
+      badgeClassName: "border-emerald-300/35 bg-emerald-500/10 text-emerald-100",
+    }
+  }
+
+  return {
+    label: "System",
+    summary: triggerType?.trim() ? `Backend trigger: ${triggerType.trim()}` : "Backend-created run.",
+    badgeClassName: "border-border/70 bg-background/45 text-foreground",
+  }
+}
+
+function buildLegacyAegisDocumentText(
+  job: {
+    id: string
+    scannerFamily: string
+    triggerType: string
+    status: string
+    summary: string
+    rulePath: string | null
+    executionMode: string | null
+    queuedAtUtc: string
+    startedAtUtc: string | null
+    finishedAtUtc: string | null
+    totalTargets: number
+    completedTargets: number
+    failedTargets: number
+    noFindingsTargets: number
+  },
+  results: Array<{
+    targetDisplay: string
+    status: string
+    findingsCount: number
+    startedAtUtc: string | null
+    finishedAtUtc: string | null
+  }>,
+) {
+  const lines = [
+    `Legacy scan job id: ${job.id}`,
+    `Scanner family: ${job.scannerFamily}`,
+    `Trigger type: ${job.triggerType}`,
+    `Status: ${job.status}`,
+    `Execution mode: ${job.executionMode ?? "Not recorded"}`,
+    `Rule path: ${job.rulePath?.trim() ? job.rulePath : "Not recorded"}`,
+    `Queued at UTC: ${job.queuedAtUtc}`,
+    `Started at UTC: ${job.startedAtUtc ?? "Not recorded"}`,
+    `Finished at UTC: ${job.finishedAtUtc ?? "Not recorded"}`,
+    `Summary: ${job.summary}`,
+    `Target counts: ${job.completedTargets}/${job.totalTargets} completed, ${job.failedTargets} failed, ${job.noFindingsTargets} no-findings.`,
+    "Per-target results:",
+    ...(results.length > 0
+      ? results.map((result) => `${result.targetDisplay} | ${result.status} | findings=${result.findingsCount} | finished=${result.finishedAtUtc ?? result.startedAtUtc ?? "running"}`)
+      : ["No per-target result rows were recorded for this legacy scan job."]),
+  ]
+
+  return lines.join("\n")
+}
+
 function normalizeTargetOs(value: string | null | undefined): ResolvedTargetOs | null {
   const normalized = value?.trim().toLowerCase()
   return normalized === "windows" || normalized === "linux" ? normalized : null
@@ -80,6 +170,7 @@ function toggleScannerFamilySelection(
 }
 
 export default function ScansPage() {
+  const router = useRouter()
   const { session, signOut } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? "system"
   const [refreshKey, setRefreshKey] = useState(0)
@@ -93,6 +184,9 @@ export default function ScansPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
   const [stoppingJobId, setStoppingJobId] = useState<string | null>(null)
+  const [aegisBusyJobId, setAegisBusyJobId] = useState<string | null>(null)
+  const [aegisBusyAction, setAegisBusyAction] = useState<"create" | "regenerate" | null>(null)
+  const [aegisError, setAegisError] = useState<string | null>(null)
   const [form, setForm] = useState({
     selectedFamilies: ["yara"] as string[],
     ruleInputMode: "hostPath" as "hostPath" | "upload",
@@ -115,6 +209,7 @@ export default function ScansPage() {
   const networksQuery = useWorkbenchQuery(["legacy-pipeline", "scan-networks"], (signal) => listLegacyNetworks(signal))
   const targetsQuery = useWorkbenchQuery(["legacy-pipeline", "scan-targets"], (signal) => listLegacyTargets(undefined, signal))
   const jobsQuery = useWorkbenchQuery(["legacy-pipeline", "scan-jobs", refreshKey], (signal) => listLegacyJobs(signal))
+  const aegisPlansQuery = useWorkbenchQuery(["legacy-pipeline", "aegis-plans"], (signal) => gateway.listReportMitigationPlans(signal))
   const resultsQuery = useWorkbenchQuery(
     [
       "legacy-pipeline",
@@ -134,6 +229,7 @@ export default function ScansPage() {
   const networks = networksQuery.data ?? []
   const targets = targetsQuery.data ?? []
   const jobs = jobsQuery.data ?? []
+  const aegisPlans = aegisPlansQuery.data?.items ?? []
   const results = resultsQuery.data ?? []
 
   const selectedTargets = useMemo(() => {
@@ -349,12 +445,64 @@ export default function ScansPage() {
     }
   }
 
-  if (networksQuery.isLoading || targetsQuery.isLoading || jobsQuery.isLoading || resultsQuery.isLoading) {
+  const navigateToAegisPlan = (planId: string) => {
+    const destination = `/agents/aegis?plan=${encodeURIComponent(planId)}`
+    if (typeof window !== "undefined") {
+      window.location.assign(destination)
+      return
+    }
+
+    router.push(destination)
+  }
+
+  const openExistingAegisPlan = (planId: string) => {
+    navigateToAegisPlan(planId)
+  }
+
+  const createAegisPlanForJob = async (jobId: string, regenerate: boolean) => {
+    setAegisBusyJobId(jobId)
+    setAegisBusyAction(regenerate ? "regenerate" : "create")
+    setAegisError(null)
+    try {
+      const job = jobs.find((candidate) => candidate.id === jobId)
+      if (!job) {
+        throw new Error("The selected scan job could not be found.")
+      }
+
+      const response = isUuid(jobId)
+        ? await gateway.generateReportMitigationFromScanJob(jobId, {
+            includeWorkspaceContext: true,
+            actorUserId,
+            regenerate,
+          })
+        : await gateway.generateReportMitigation({
+            sourceName: `${job.scannerFamily.toUpperCase()} legacy scan ${job.id}`,
+            sourceType: "bulletin",
+            documentId: buildLegacyAegisDocumentId(job.id),
+            documentText: buildLegacyAegisDocumentText(job, resultsByJobId.get(job.id) ?? []),
+            includeWorkspaceContext: true,
+            actorUserId,
+            regenerate,
+          })
+      if (!response.persistedMitigationReport) {
+        throw new Error("Aegis did not return a saved mitigation plan.")
+      }
+
+        navigateToAegisPlan(response.persistedMitigationReport.id)
+      } catch (error) {
+        setAegisError(classifyUiError(error).message)
+      } finally {
+      setAegisBusyJobId(null)
+      setAegisBusyAction(null)
+    }
+  }
+
+  if (networksQuery.isLoading || targetsQuery.isLoading || jobsQuery.isLoading || aegisPlansQuery.isLoading || resultsQuery.isLoading) {
     return <LoadingState label="Loading scans" />
   }
 
-  if (networksQuery.isError || targetsQuery.isError || jobsQuery.isError || resultsQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(networksQuery.error ?? targetsQuery.error ?? jobsQuery.error ?? resultsQuery.error)} fallbackTitle="Scans unavailable" />
+  if (networksQuery.isError || targetsQuery.isError || jobsQuery.isError || aegisPlansQuery.isError || resultsQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(networksQuery.error ?? targetsQuery.error ?? jobsQuery.error ?? aegisPlansQuery.error ?? resultsQuery.error)} fallbackTitle="Scans unavailable" />
   }
 
   const toggleExpandedJob = (jobId: string) =>
@@ -1032,6 +1180,12 @@ export default function ScansPage() {
           </Button>
         </div>
 
+        {aegisError ? (
+          <div className="mt-4 rounded-xl border border-rose-300/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+            {aegisError}
+          </div>
+        ) : null}
+
         {historyExpanded ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <select
@@ -1076,6 +1230,11 @@ export default function ScansPage() {
             {visibleJobs.map((job) => {
               const isExpanded = expandedJobIds.includes(job.id)
               const jobResults = resultsByJobId.get(job.id) ?? []
+              const legacyDocumentId = buildLegacyAegisDocumentId(job.id)
+              const existingAegisPlan = aegisPlans.find((item) =>
+                item.sourceScanJobIds.includes(job.id) || item.sourceDocumentId === legacyDocumentId) ?? null
+              const aegisBusy = aegisBusyJobId === job.id
+              const origin = resolveScanOrigin(job.triggerType)
               return (
                 <div key={job.id} className="rounded-xl border border-border/70 bg-surface-2/60">
                   <div className="flex items-start justify-between gap-4 p-4">
@@ -1091,12 +1250,16 @@ export default function ScansPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <ScannerFamilyBadge family={job.scannerFamily} />
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${origin.badgeClassName}`}>
+                            {origin.label}
+                          </span>
                           <Badge variant="outline">{job.triggerType}</Badge>
                           {job.executionMode ? <Badge variant="outline">{job.executionMode}</Badge> : null}
                           <Badge variant={job.status === "Completed" ? "secondary" : "outline"}>{job.status}</Badge>
                         </div>
                         <p className="mt-2 text-sm text-muted-foreground">{job.summary}</p>
                         <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          <span>{origin.summary}</span>
                           <span>{job.completedTargets}/{job.totalTargets} complete</span>
                           <span>{job.failedTargets} failed</span>
                           <span>{job.noFindingsTargets} no-findings</span>
@@ -1104,7 +1267,7 @@ export default function ScansPage() {
                         </div>
                       </div>
                     </button>
-                    <div className="text-right text-xs text-muted-foreground">
+                    <div className="min-w-[220px] text-right text-xs text-muted-foreground">
                       <p>{job.finishedAtUtc ? new Date(job.finishedAtUtc).toLocaleString() : new Date(job.queuedAtUtc).toLocaleString()}</p>
                       <p>{job.finishedAtUtc ? "Finished" : "Queued"}</p>
                       {(job.scannerFamily === "snort" || job.scannerFamily === "suricata") && job.executionMode === "quarantine" && job.status === "Running" ? (
@@ -1118,6 +1281,46 @@ export default function ScansPage() {
                           {stoppingJobId === job.id ? "Stopping..." : "Stop"}
                         </Button>
                       ) : null}
+                      <div className="mt-3 rounded-xl border border-border/60 bg-background/35 p-3 text-left">
+                        <p className="wb-kicker">Aegis</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {existingAegisPlan
+                            ? `${existingAegisPlan.severity} severity, ${existingAegisPlan.confidence} confidence.`
+                            : "Create a mitigation plan from this specific scan run."}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {existingAegisPlan ? (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openExistingAegisPlan(existingAegisPlan.id)}
+                                disabled={aegisBusy}
+                              >
+                                Open mitigation plan
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => void createAegisPlanForJob(job.id, true)}
+                                disabled={aegisBusy}
+                              >
+                                {aegisBusy && aegisBusyAction === "regenerate" ? "Regenerating..." : "Regenerate"}
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => void createAegisPlanForJob(job.id, false)}
+                              disabled={aegisBusy}
+                            >
+                              {aegisBusy && aegisBusyAction === "create" ? "Creating..." : "Create mitigation plan"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
 

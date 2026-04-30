@@ -49,11 +49,14 @@ import { useThemeMode } from "@/shared/theme/theme-provider"
 import { pageMotion } from "@/shared/ui/motion"
 import { CompactEmptyState, CompactErrorState, CompactLoadingState } from "@/shared/ui/state-panels"
 
+const WORKSPACE_BUILD_LABEL = "W2 Agents build"
+
 type NotificationItem = {
   id: string
   title: string
   description: string
   when: string
+  sortKey: number
 }
 
 type SidebarNavProps = {
@@ -228,7 +231,7 @@ function ShellNotifications({
         </div>
       ))}
       <p className="text-[11px] text-muted-foreground">
-        Additional notification sources will appear automatically as backend contracts are enabled.
+        Job activity and Aegis automation events appear here automatically as backend contracts are available.
       </p>
     </div>
   )
@@ -253,26 +256,68 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const canOpenScans = canAccessCanonicalRoute(roleSet, "/scans")
 
   const notificationsQuery = useWorkbenchQuery(["shell", "notifications"], async (signal) => {
-    const jobsResult = await Promise.allSettled([listLegacyJobs(signal)])
+    const [jobsResult, auditResult] = await Promise.allSettled([
+      listLegacyJobs(signal),
+      gateway.listAuditLogs({ actionType: "aegis.mitigation.auto", page: 1, pageSize: 6 }, signal),
+    ])
 
     const items: NotificationItem[] = []
-    const reducedCapability = true
+    const reducedCapability = jobsResult.status === "rejected" || auditResult.status === "rejected"
 
-    if (jobsResult[0].status === "fulfilled") {
-      for (const job of jobsResult[0].value.slice(0, 3)) {
+    if (jobsResult.status === "fulfilled") {
+      for (const job of jobsResult.value.slice(0, 3)) {
         const when = job.finishedAtUtc ?? job.startedAtUtc ?? job.queuedAtUtc
         items.push({
           id: `job-${job.id}`,
           title: `${job.scannerFamily} ${job.status.toLowerCase()}`,
           description: job.summary || "No additional details.",
           when: new Date(when).toLocaleString(),
+          sortKey: new Date(when).getTime(),
         })
       }
     }
 
+    if (auditResult.status === "fulfilled") {
+      for (const entry of auditResult.value.items) {
+        let sourceName = "Aegis activity"
+        let detail = "Aegis automation activity was recorded."
+        let firstAction = ""
+
+        try {
+          const parsed = JSON.parse(entry.payloadJson) as {
+            sourceName?: string
+            message?: string
+            reviewPath?: string
+            primaryActions?: Array<{ title?: string }>
+          }
+          sourceName = parsed.sourceName || sourceName
+          firstAction = parsed.primaryActions?.[0]?.title || ""
+          detail = parsed.message
+            || (firstAction
+              ? `Top action: ${firstAction}${parsed.reviewPath ? ` | ${parsed.reviewPath}` : ""}`
+              : parsed.reviewPath || detail)
+        } catch {
+          // Keep fallback values.
+        }
+
+        const started = entry.actionType.endsWith(".started")
+        items.push({
+          id: `audit-${entry.id}`,
+          title: started ? "Aegis started a mitigation plan" : "Aegis completed a mitigation plan",
+          description: started
+            ? `${sourceName}. ${detail}`
+            : `${sourceName}. ${firstAction ? `Top action: ${firstAction}. ` : ""}${detail}`,
+          when: new Date(entry.occurredAtUtc).toLocaleString(),
+          sortKey: new Date(entry.occurredAtUtc).getTime(),
+        })
+      }
+    }
+
+    items.sort((left, right) => right.sortKey - left.sortKey)
+
     return {
-      items,
-      hasPartialError: jobsResult[0].status === "rejected",
+      items: items.slice(0, 6),
+      hasPartialError: jobsResult.status === "rejected" || auditResult.status === "rejected",
       reducedCapability,
     }
   }, {
@@ -488,7 +533,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
           </AnimatePresence>
 
           <footer className="border-t border-border/70 px-3 py-3 text-[11px] text-muted-foreground sm:px-4 md:px-6">
-            Signed in as {session?.username ?? "unknown"} | Roles: {session?.roles.length ? roleLabels(session.roles) : "none"}
+            Signed in as {session?.username ?? "unknown"} | Roles: {session?.roles.length ? roleLabels(session.roles) : "none"} | Build:{" "}
+            <span className="font-medium text-foreground/90">{WORKSPACE_BUILD_LABEL}</span>
           </footer>
         </div>
       </div>

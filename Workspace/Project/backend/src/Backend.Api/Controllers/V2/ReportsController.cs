@@ -3,12 +3,14 @@ using Backend.Contracts.V2;
 using Backend.Domain.Common;
 using Backend.Domain.IocManager;
 using Backend.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -22,15 +24,18 @@ public sealed class ReportsController : ControllerBase
     private readonly CtiDbContext _dbContext;
     private readonly IAuthSensitiveAuditService _auditService;
     private readonly IPowerBiVisualizationCatalogService _powerBiCatalogService;
+    private readonly ILegacyScanPipelineService _legacyScanPipelineService;
 
     public ReportsController(
         CtiDbContext dbContext,
         IAuthSensitiveAuditService auditService,
-        IPowerBiVisualizationCatalogService powerBiCatalogService)
+        IPowerBiVisualizationCatalogService powerBiCatalogService,
+        ILegacyScanPipelineService legacyScanPipelineService)
     {
         _dbContext = dbContext;
         _auditService = auditService;
         _powerBiCatalogService = powerBiCatalogService;
+        _legacyScanPipelineService = legacyScanPipelineService;
     }
 
     [HttpGet]
@@ -43,118 +48,143 @@ public sealed class ReportsController : ControllerBase
         V2SearchHelpers.ValidateUtcRange(fromUtc, toUtc, nameof(query.FromUtc), nameof(query.ToUtc));
 
         var (page, pageSize, skip) = V2SearchHelpers.NormalizePaging(query.Page, query.PageSize);
-        var reports = _dbContext.ReportsV2.AsNoTracking().AsQueryable();
 
-        var q = V2SearchHelpers.NormalizeNullable(query.Q);
-        if (q is not null)
+        try
         {
-            var pattern = V2SearchHelpers.ToContainsPattern(q);
-            reports = reports.Where(x =>
-                EF.Functions.Like(x.Title, pattern)
-                || EF.Functions.Like(x.SummaryJson, pattern));
-        }
+            var reports = _dbContext.ReportsV2.AsNoTracking().AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(query.ReportType))
-        {
-            var reportType = V2Mappings.ParseEnum<ReportType>(query.ReportType, nameof(query.ReportType));
-            reports = reports.Where(x => x.ReportType == reportType);
-        }
-
-        if (fromUtc.HasValue)
-        {
-            reports = reports.Where(x => x.GeneratedAtUtc >= fromUtc.Value);
-        }
-
-        if (toUtc.HasValue)
-        {
-            reports = reports.Where(x => x.GeneratedAtUtc <= toUtc.Value);
-        }
-
-        var normalizedSeverity = V2SearchHelpers.NormalizeNullable(query.Severity);
-        AlertSeverity? severity = null;
-        if (normalizedSeverity is not null)
-        {
-            severity = V2Mappings.ParseSeverityOrPriority(normalizedSeverity);
-        }
-
-        var normalizedStatus = V2SearchHelpers.NormalizeNullable(query.Status);
-        AlertStatus? status = null;
-        if (normalizedStatus is not null)
-        {
-            status = V2Mappings.ParseAlertStatusFromCaseStatus(normalizedStatus);
-        }
-
-        var normalizedFamily = V2SearchHelpers.NormalizeNullable(query.Family);
-        if (normalizedFamily is not null)
-        {
-            if (!RuleFamilyCatalog.TryNormalize(normalizedFamily, out var parsedFamily))
+            var q = V2SearchHelpers.NormalizeNullable(query.Q);
+            if (q is not null)
             {
-                return BadRequest($"Invalid family '{query.Family}'.");
+                var pattern = V2SearchHelpers.ToContainsPattern(q);
+                reports = reports.Where(x =>
+                    EF.Functions.Like(x.Title, pattern)
+                    || EF.Functions.Like(x.SummaryJson, pattern));
             }
 
-            normalizedFamily = parsedFamily;
-        }
-
-        if (severity.HasValue || status.HasValue || query.ServerId.HasValue || normalizedFamily is not null)
-        {
-            var relatedReportIds = from reportAlert in _dbContext.ReportAlerts.AsNoTracking()
-                                   join alert in _dbContext.AlertsV2.AsNoTracking() on reportAlert.AlertId equals alert.Id
-                                   where (!severity.HasValue || alert.Severity == severity.Value)
-                                         && (!status.HasValue || alert.Status == status.Value)
-                                   select new
-                                   {
-                                       reportAlert.ReportId,
-                                       AlertId = alert.Id,
-                                   };
-
-            if (query.ServerId.HasValue || normalizedFamily is not null)
+            if (!string.IsNullOrWhiteSpace(query.ReportType))
             {
-                var serverId = query.ServerId;
-                var family = normalizedFamily;
-                relatedReportIds =
-                    from candidate in relatedReportIds
-                    where _dbContext.AlertScanResults.AsNoTracking()
-                        .Join(
-                            _dbContext.ScanResults.AsNoTracking(),
-                            alertLink => alertLink.ScanResultId,
-                            scanResult => scanResult.Id,
-                            (alertLink, scanResult) => new
-                            {
-                                alertLink.AlertId,
-                                scanResult.TargetServerId,
-                                scanResult.ScannerFamily,
-                            })
-                        .Any(result =>
-                            result.AlertId == candidate.AlertId
-                            && (!serverId.HasValue || result.TargetServerId == serverId.Value)
-                            && (family == null || result.ScannerFamily == family))
-                    select candidate;
+                var reportType = V2Mappings.ParseEnum<ReportType>(query.ReportType, nameof(query.ReportType));
+                reports = reports.Where(x => x.ReportType == reportType);
             }
 
-            reports = reports.Where(x => relatedReportIds.Select(link => link.ReportId).Distinct().Contains(x.Id));
+            if (fromUtc.HasValue)
+            {
+                reports = reports.Where(x => x.GeneratedAtUtc >= fromUtc.Value);
+            }
+
+            if (toUtc.HasValue)
+            {
+                reports = reports.Where(x => x.GeneratedAtUtc <= toUtc.Value);
+            }
+
+            var normalizedSeverity = V2SearchHelpers.NormalizeNullable(query.Severity);
+            AlertSeverity? severity = null;
+            if (normalizedSeverity is not null)
+            {
+                severity = V2Mappings.ParseSeverityOrPriority(normalizedSeverity);
+            }
+
+            var normalizedStatus = V2SearchHelpers.NormalizeNullable(query.Status);
+            AlertStatus? status = null;
+            if (normalizedStatus is not null)
+            {
+                status = V2Mappings.ParseAlertStatusFromCaseStatus(normalizedStatus);
+            }
+
+            var normalizedFamily = V2SearchHelpers.NormalizeNullable(query.Family);
+            if (normalizedFamily is not null)
+            {
+                if (!RuleFamilyCatalog.TryNormalize(normalizedFamily, out var parsedFamily))
+                {
+                    return BadRequest($"Invalid family '{query.Family}'.");
+                }
+
+                normalizedFamily = parsedFamily;
+            }
+
+            if (severity.HasValue || status.HasValue || query.ServerId.HasValue || normalizedFamily is not null)
+            {
+                var relatedReportIds = from reportAlert in _dbContext.ReportAlerts.AsNoTracking()
+                                       join alert in _dbContext.AlertsV2.AsNoTracking() on reportAlert.AlertId equals alert.Id
+                                       where (!severity.HasValue || alert.Severity == severity.Value)
+                                             && (!status.HasValue || alert.Status == status.Value)
+                                       select new
+                                       {
+                                           reportAlert.ReportId,
+                                           AlertId = alert.Id,
+                                       };
+
+                if (query.ServerId.HasValue || normalizedFamily is not null)
+                {
+                    var serverId = query.ServerId;
+                    var family = normalizedFamily;
+                    relatedReportIds =
+                        from candidate in relatedReportIds
+                        where _dbContext.AlertScanResults.AsNoTracking()
+                            .Join(
+                                _dbContext.ScanResults.AsNoTracking(),
+                                alertLink => alertLink.ScanResultId,
+                                scanResult => scanResult.Id,
+                                (alertLink, scanResult) => new
+                                {
+                                    alertLink.AlertId,
+                                    scanResult.TargetServerId,
+                                    scanResult.ScannerFamily,
+                                })
+                            .Any(result =>
+                                result.AlertId == candidate.AlertId
+                                && (!serverId.HasValue || result.TargetServerId == serverId.Value)
+                                && (family == null || result.ScannerFamily == family))
+                        select candidate;
+                }
+
+                reports = reports.Where(x => relatedReportIds.Select(link => link.ReportId).Distinct().Contains(x.Id));
+            }
+
+            var totalCount = await reports.CountAsync(cancellationToken);
+            var pageItems = await reports
+                .OrderByDescending(x => x.GeneratedAtUtc)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToArrayAsync(cancellationToken);
+
+            var reportIds = pageItems.Select(x => x.Id).ToArray();
+            var links = await _dbContext.ReportAlerts
+                .Where(x => reportIds.Contains(x.ReportId))
+                .ToListAsync(cancellationToken);
+
+            var linkLookup = links
+                .GroupBy(x => x.ReportId)
+                .ToDictionary(x => x.Key, x => (IReadOnlyList<Guid>)x.Select(y => y.AlertId).ToArray());
+
+            var items = pageItems
+                .Select(report => report.ToReportResponse(linkLookup.GetValueOrDefault(report.Id, Array.Empty<Guid>())))
+                .ToArray();
+
+            if (items.Length > 0)
+            {
+                return Ok(new ReportListResponse(items, totalCount, page, pageSize));
+            }
+        }
+        catch (Exception exception) when (exception is SqlException sqlException && sqlException.Number == 208 || LegacyCompatibilityFallbackPolicy.ShouldUseFallback(exception))
+        {
         }
 
-        var totalCount = await reports.CountAsync(cancellationToken);
-        var pageItems = await reports
-            .OrderByDescending(x => x.GeneratedAtUtc)
-            .Skip(skip)
-            .Take(pageSize)
-            .ToArrayAsync(cancellationToken);
-
-        var reportIds = pageItems.Select(x => x.Id).ToArray();
-        var links = await _dbContext.ReportAlerts
-            .Where(x => reportIds.Contains(x.ReportId))
-            .ToListAsync(cancellationToken);
-
-        var linkLookup = links
-            .GroupBy(x => x.ReportId)
-            .ToDictionary(x => x.Key, x => (IReadOnlyList<Guid>)x.Select(y => y.AlertId).ToArray());
-
-        var items = pageItems
-            .Select(report => report.ToReportResponse(linkLookup.GetValueOrDefault(report.Id, Array.Empty<Guid>())))
+        var legacyReports = await _legacyScanPipelineService.ListReportsAsync(cancellationToken);
+        var filteredLegacyReports = legacyReports
+            .Where(report => MatchesLegacyReportFilters(report, query, fromUtc, toUtc))
+            .OrderByDescending(report => report.CreatedAtUtc)
             .ToArray();
 
-        return Ok(new ReportListResponse(items, totalCount, page, pageSize));
+        var legacyTotalCount = filteredLegacyReports.Length;
+        var legacyItems = filteredLegacyReports
+            .Skip(skip)
+            .Take(pageSize)
+            .Select(ToLegacyReportResponse)
+            .ToArray();
+
+        return Ok(new ReportListResponse(legacyItems, legacyTotalCount, page, pageSize));
     }
 
     [HttpGet("{reportId:guid}")]
@@ -163,19 +193,26 @@ public sealed class ReportsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ReportResponse>> Get(Guid reportId, CancellationToken cancellationToken)
     {
-        var report = await _dbContext.ReportsV2.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId, cancellationToken);
-        if (report is null)
+        try
         {
-            return NotFound();
+            var report = await _dbContext.ReportsV2.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId, cancellationToken);
+            if (report is not null)
+            {
+                var alertIds = await _dbContext.ReportAlerts
+                    .AsNoTracking()
+                    .Where(x => x.ReportId == reportId)
+                    .Select(x => x.AlertId)
+                    .ToArrayAsync(cancellationToken);
+
+                return Ok(report.ToReportResponse(alertIds));
+            }
+        }
+        catch (Exception exception) when (LegacyCompatibilityFallbackPolicy.ShouldUseFallback(exception))
+        {
         }
 
-        var alertIds = await _dbContext.ReportAlerts
-            .AsNoTracking()
-            .Where(x => x.ReportId == reportId)
-            .Select(x => x.AlertId)
-            .ToArrayAsync(cancellationToken);
-
-        return Ok(report.ToReportResponse(alertIds));
+        var legacyDetail = await TryGetLegacyReportDetailAsync(reportId, cancellationToken);
+        return legacyDetail is null ? NotFound() : Ok(ToLegacyReportResponse(legacyDetail));
     }
 
     [HttpGet("power-bi")]
@@ -192,14 +229,27 @@ public sealed class ReportsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ExportSavedReportHtml(Guid reportId, CancellationToken cancellationToken)
     {
-        var report = await _dbContext.ReportsV2.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId, cancellationToken);
-        if (report is null)
+        try
+        {
+            var report = await _dbContext.ReportsV2.AsNoTracking().FirstOrDefaultAsync(x => x.Id == reportId, cancellationToken);
+            if (report is not null)
+            {
+                var html = BuildSavedReportHtml(report);
+                return File(Encoding.UTF8.GetBytes(html), "text/html; charset=utf-8", $"{SanitizeFileName(report.Title)}.html");
+            }
+        }
+        catch (Exception exception) when (LegacyCompatibilityFallbackPolicy.ShouldUseFallback(exception))
+        {
+        }
+
+        var legacyDetail = await TryGetLegacyReportDetailAsync(reportId, cancellationToken);
+        if (legacyDetail is null)
         {
             return NotFound();
         }
 
-        var html = BuildSavedReportHtml(report);
-        return File(Encoding.UTF8.GetBytes(html), "text/html; charset=utf-8", $"{SanitizeFileName(report.Title)}.html");
+        var legacyHtml = BuildLegacySavedReportHtml(legacyDetail);
+        return File(Encoding.UTF8.GetBytes(legacyHtml), "text/html; charset=utf-8", $"{SanitizeFileName(legacyDetail.Title)}.html");
     }
 
     [HttpPost("generate")]
@@ -1469,6 +1519,162 @@ public sealed class ReportsController : ControllerBase
 
     private static string ShortId(Guid? id)
         => id.HasValue ? id.Value.ToString("N")[..8] : "n/a";
+
+    private static bool MatchesLegacyReportFilters(
+        LegacyPipelineReportRecordResponse report,
+        ReportSearchQuery query,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc)
+    {
+        if (!string.IsNullOrWhiteSpace(query.Q)
+            && !(report.Title?.Contains(query.Q, StringComparison.OrdinalIgnoreCase) ?? false)
+            && !(report.Scope?.Contains(query.Q, StringComparison.OrdinalIgnoreCase) ?? false))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.ReportType)
+            && !string.Equals(report.ReportType, query.ReportType, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (fromUtc.HasValue && report.CreatedAtUtc < fromUtc.Value)
+        {
+            return false;
+        }
+
+        if (toUtc.HasValue && report.CreatedAtUtc > toUtc.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<LegacyPipelineReportDetailResponse?> TryGetLegacyReportDetailAsync(Guid reportId, CancellationToken cancellationToken)
+    {
+        var legacyReports = await _legacyScanPipelineService.ListReportsAsync(cancellationToken);
+        var legacyReport = legacyReports.FirstOrDefault(report => CreateLegacyReportGuid(report.Id) == reportId);
+        if (legacyReport is null)
+        {
+            return null;
+        }
+
+        return await _legacyScanPipelineService.GetReportDetailAsync(legacyReport.Id, cancellationToken);
+    }
+
+    private static ReportResponse ToLegacyReportResponse(LegacyPipelineReportRecordResponse report)
+        => new(
+            CreateLegacyReportGuid(report.Id),
+            report.Title,
+            report.ReportType,
+            JsonSerializer.Serialize(new
+            {
+                legacyReportId = report.Id,
+                scope = report.Scope,
+                status = report.Status,
+                htmlDownloadPath = report.HtmlDownloadPath,
+                sections = Array.Empty<object>(),
+            }),
+            report.CreatedAtUtc,
+            report.CreatedAtUtc,
+            report.CreatedAtUtc,
+            Array.Empty<Guid>());
+
+    private static ReportResponse ToLegacyReportResponse(LegacyPipelineReportDetailResponse report)
+        => new(
+            CreateLegacyReportGuid(report.Id),
+            report.Title,
+            report.ReportType,
+            BuildLegacyReportSummaryJson(report),
+            report.CreatedAtUtc,
+            report.CreatedAtUtc,
+            report.CreatedAtUtc,
+            Array.Empty<Guid>());
+
+    private static string BuildLegacyReportSummaryJson(LegacyPipelineReportDetailResponse report)
+        => JsonSerializer.Serialize(new
+        {
+            legacyReportId = report.Id,
+            scope = report.Scope,
+            status = report.Status,
+            htmlDownloadPath = report.HtmlDownloadPath,
+            query = new
+            {
+                targetServerId = report.Query.TargetId,
+                targetLabel = report.Scope,
+                scannerFamily = report.Query.ScannerFamily,
+                fromUtc = report.Query.FromUtc,
+                toUtc = report.Query.ToUtc,
+                severity = report.Query.Severity,
+                status = report.Query.Status,
+                source = "legacy-pipeline",
+            },
+            sections = report.Sections.Select(section => new
+            {
+                title = section.Title,
+                summary = section.Summary,
+                metrics = section.Metrics.Select(metric => new
+                {
+                    label = metric.Label,
+                    value = metric.Value,
+                    detail = metric.Detail,
+                }),
+                highlights = section.Highlights,
+                narrative = (string?)null,
+                tables = Array.Empty<object>(),
+            }),
+        });
+
+    private static string BuildLegacySavedReportHtml(LegacyPipelineReportDetailResponse report)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("<!doctype html>");
+        builder.AppendLine("<html><head><meta charset=\"utf-8\" />");
+        builder.AppendLine($"<title>{WebUtility.HtmlEncode(report.Title)}</title>");
+        builder.AppendLine("<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0b111a;color:#f3f6fb;margin:0;padding:32px;}h1,h2{margin:0 0 12px;}section{border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:20px;margin:16px 0;background:#111927;}ul{margin:8px 0 0 18px;}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:12px 0 0;}dt{font-size:12px;opacity:.7;text-transform:uppercase;}dd{margin:4px 0 0;}p.meta{opacity:.75}</style>");
+        builder.AppendLine("</head><body>");
+        builder.AppendLine($"<h1>{WebUtility.HtmlEncode(report.Title)}</h1>");
+        builder.AppendLine($"<p class=\"meta\">{WebUtility.HtmlEncode(report.ReportType)} | {WebUtility.HtmlEncode(report.Scope)} | {report.CreatedAtUtc:u}</p>");
+
+        foreach (var section in report.Sections)
+        {
+            builder.AppendLine("<section>");
+            builder.AppendLine($"<h2>{WebUtility.HtmlEncode(section.Title)}</h2>");
+            builder.AppendLine($"<p>{WebUtility.HtmlEncode(section.Summary)}</p>");
+
+            if (section.Metrics.Count > 0)
+            {
+                builder.AppendLine("<dl>");
+                foreach (var metric in section.Metrics)
+                {
+                    builder.AppendLine($"<div><dt>{WebUtility.HtmlEncode(metric.Label)}</dt><dd>{WebUtility.HtmlEncode(metric.Value)}</dd><dd>{WebUtility.HtmlEncode(metric.Detail)}</dd></div>");
+                }
+
+                builder.AppendLine("</dl>");
+            }
+
+            if (section.Highlights.Count > 0)
+            {
+                builder.AppendLine("<ul>");
+                foreach (var highlight in section.Highlights)
+                {
+                    builder.AppendLine($"<li>{WebUtility.HtmlEncode(highlight)}</li>");
+                }
+
+                builder.AppendLine("</ul>");
+            }
+
+            builder.AppendLine("</section>");
+        }
+
+        builder.AppendLine("</body></html>");
+        return builder.ToString();
+    }
+
+    private static Guid CreateLegacyReportGuid(string reportId)
+        => new(MD5.HashData(Encoding.UTF8.GetBytes($"legacy-report:{reportId}")));
 
     private sealed record ReportRuleBrief(
         Guid RuleRevisionId,

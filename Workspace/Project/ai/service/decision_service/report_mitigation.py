@@ -85,7 +85,15 @@ def _system_prompt() -> str:
         "Create a practical mitigation plan using only the supplied report facts, extracted IOCs, claims, and environment context. "
         "Do not invent assets, rule ids, CVEs, indicators, or completed actions. "
         "If environment context is thin, state assumptions and gaps clearly. "
-        "Prefer safe draft actions over destructive changes. "
+        "Prefer decisive containment and eradication recommendations over passive review language when the evidence points to a specific host, artifact, account, or network IOC. "
+        "Always begin the plan with exactly three direct actions the operator should take next. "
+        "Each direct action must name the target or case focus, include urgency, and explain why it matters. "
+        "The three direct actions must be concrete verbs such as isolate, restrict, quarantine, remove, block, disable, collect, or sweep; avoid generic titles like review, assess, consider, or prepare unless they are paired with a concrete containment or eradication task. "
+        "For YARA or endpoint artifact matches, prefer: contain the host or execution path, preserve and quarantine/remove the matched artifact, then sweep nearby hosts or persistence locations for the same indicator. "
+        "For Sigma or behavioral detections, prefer: contain the host or user session, collect the exact process/log evidence, then hunt peer systems for the same behavior and disable the repeated execution path if confirmed. "
+        "For Suricata or Snort detections, prefer: block the network IOC and isolate the affected host, collect packet/log/process context, then hunt adjacent assets and remove the egress path or persistence if the activity is confirmed. "
+        "If the indicator looks like a validation or test artifact, still give strong cleanup actions, but explicitly say to confirm whether it is approved before closing the case. "
+        "Also return a suggested execution timeline that shows when each action should start and how long it should take using hours or days. "
         "All blocking, quarantine, account disablement, firewall, and production changes must be policy_gated or manual_review. "
         "Scan recommendations may suggest scanner families and target hints, but must not pretend a scan has been created or run. "
         "Return only valid JSON matching the schema."
@@ -127,6 +135,43 @@ def _mitigation_schema() -> dict[str, Any]:
             "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
             "affectedAssetHypotheses": {"type": "array", "items": {"type": "string"}},
+            "primaryActions": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "rank": {"type": "integer", "enum": [1, 2, 3]},
+                        "title": {"type": "string"},
+                        "targetHint": {"type": "string"},
+                        "urgency": {"type": "string", "enum": ["now", "hours", "same_day", "next_day", "multi_day"]},
+                        "reasoning": {"type": "string"},
+                    },
+                    "required": ["rank", "title", "targetHint", "urgency", "reasoning"],
+                },
+            },
+            "timeline": {
+                "type": "array",
+                "minItems": 3,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "stepId": {"type": "string"},
+                        "title": {"type": "string"},
+                        "linkedPrimaryActionRank": {"type": ["integer", "null"], "minimum": 1, "maximum": 3},
+                        "targetHint": {"type": "string"},
+                        "lane": {"type": "string", "enum": ["containment", "validation", "recovery", "follow_up"]},
+                        "startsIn": {"type": "integer", "minimum": 0},
+                        "duration": {"type": "integer", "minimum": 1},
+                        "unit": {"type": "string", "enum": ["hours", "days"]},
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["stepId", "title", "linkedPrimaryActionRank", "targetHint", "lane", "startsIn", "duration", "unit", "rationale"],
+                },
+            },
             "immediateActions": {"type": "array", "items": action_schema},
             "detectionActions": {"type": "array", "items": action_schema},
             "hardeningActions": {"type": "array", "items": action_schema},
@@ -142,6 +187,8 @@ def _mitigation_schema() -> dict[str, Any]:
             "severity",
             "confidence",
             "affectedAssetHypotheses",
+            "primaryActions",
+            "timeline",
             "immediateActions",
             "detectionActions",
             "hardeningActions",
