@@ -477,7 +477,13 @@ public sealed class ScanAnalystPocService
         var effectivePreferredCapability = ResolvePreferredCapability(preferredScannerCapability, message);
         var context = await GetContextSnapshotAsync(subnetId, simulatedConditions, cancellationToken);
         var objective = BuildConversationObjective(message, sessionMessages);
-        var aiRequest = CreateAgentRequest(context, objective, action, effectivePreferredCapability, effectiveMaxTargetCount);
+        var aiRequest = CreateAgentRequest(
+            context,
+            objective,
+            action,
+            effectivePreferredCapability,
+            effectiveMaxTargetCount,
+            _options.AllowLocalPlannerWhenOpenAiMissing);
         var recommendation = await _agentAdapter.RecommendAsync(aiRequest, cancellationToken);
         var proposal = MergeWithEdits(MapProposal(recommendation.Proposal), editedPlan);
         proposal = ApplyMessageAdjustments(proposal, message, effectivePreferredCapability, effectiveMaxTargetCount);
@@ -1345,7 +1351,8 @@ public sealed class ScanAnalystPocService
         string objective,
         string action,
         string? preferredScannerCapability,
-        int maxTargetCount)
+        int maxTargetCount,
+        bool allowConfiguredLocalPlanner)
     {
         return new AiScanAnalystContextRequest(
             objective,
@@ -1362,7 +1369,7 @@ public sealed class ScanAnalystPocService
             context.RecentAlerts,
             context.ExternalServerFacts,
             context.ActiveTriggers,
-            AllowsLocalPlannerOverride(objective));
+            allowConfiguredLocalPlanner || AllowsLocalPlannerOverride(objective));
     }
 
     private static bool AllowsLocalPlannerOverride(string objective)

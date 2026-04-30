@@ -46,10 +46,24 @@ const ACTIONS: Array<{ value: SendScanAnalystChatTurnInput["action"]; label: str
 const CAPABILITIES: Array<ScannerCapability | "Auto"> = ["Auto", "Yara", "Sigma", "Snort", "Suricata"]
 
 const QUICK_PROMPTS = [
-  "Recommend the safest useful scan plan for the current live targets.",
-  "Create and run a bounded YARA scan for exactly one online Windows target.",
-  "Review recent alerts and failed scans, then propose the next autonomous task.",
+  {
+    label: "Safest scan",
+    description: "Recommend a useful low-risk plan.",
+    prompt: "Recommend the safest useful scan plan for the current live targets.",
+  },
+  {
+    label: "Run one YARA",
+    description: "Bounded run for one Windows target.",
+    prompt: "Create and run a bounded YARA scan for exactly one online Windows target.",
+  },
+  {
+    label: "Next task",
+    description: "Review alerts and failed scans.",
+    prompt: "Review recent alerts and failed scans, then propose the next autonomous task.",
+  },
 ]
+
+type ZiraWorkspaceSection = "ask" | "proposal" | "activity" | "guardrails"
 
 const MOCK_CONDITION_LABELS: Record<ScanAnalystSimulatedCondition, string> = {
   new_hosts_found: "New hosts found",
@@ -577,6 +591,7 @@ export function ScanAnalystPage() {
   const [draftPlan, setDraftPlan] = useState<ScanAnalystPlanProposalResponse | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [activeAction, setActiveAction] = useState<SendScanAnalystChatTurnInput["action"] | null>(null)
+  const [activeSection, setActiveSection] = useState<ZiraWorkspaceSection>("ask")
   const [lastActionFeedback, setLastActionFeedback] = useState<{
     title: string
     detail: string
@@ -698,6 +713,7 @@ export function ScanAnalystPage() {
     onSuccess: (response) => {
       setChatState(response)
       setDraftPlan(clonePlan(response.latestAnalysis.proposedPlan))
+      setActiveSection("proposal")
       setSubmitError(null)
       setActiveAction(null)
       const analysis = response.latestAnalysis
@@ -862,6 +878,30 @@ export function ScanAnalystPage() {
         </div>
       </motion.header>
 
+      <motion.nav className="grid gap-2 rounded-2xl border border-border/60 bg-surface-2/35 p-2 md:grid-cols-4" variants={panelMotion}>
+        {([
+          ["ask", "Ask", "Prompt and controls"],
+          ["proposal", "Proposal", currentAnalysis ? "Plan ready" : "No proposal"],
+          ["activity", "Activity", chatState ? "Session history" : "No session"],
+          ["guardrails", "Guardrails", status.parameters.enabled ? "Editable" : "Paused"],
+        ] as const).map(([value, label, helper]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setActiveSection(value)}
+            className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+              activeSection === value
+                ? "border-primary/45 bg-primary/15 text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-surface-2/55 hover:text-foreground"
+            }`}
+          >
+            <span className="block text-sm font-semibold">{label}</span>
+            <span className="mt-0.5 block text-xs">{helper}</span>
+          </button>
+        ))}
+      </motion.nav>
+
+      {activeSection === "ask" ? (
       <motion.article className="wb-panel space-y-4" variants={panelMotion}>
         <div className="grid gap-3 lg:grid-cols-[1.8fr_1fr_1fr_140px]">
           <label className="space-y-1 lg:col-span-4">
@@ -876,14 +916,17 @@ export function ScanAnalystPage() {
           <div className="flex flex-wrap gap-2 lg:col-span-4">
             {QUICK_PROMPTS.map((prompt) => (
               <Button
-                key={prompt}
+                key={prompt.label}
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setMessage(prompt)}
-                className="justify-start whitespace-normal text-left"
+                onClick={() => setMessage(prompt.prompt)}
+                className="h-auto min-w-[150px] justify-start whitespace-normal px-3 py-2 text-left"
               >
-                {prompt}
+                <span>
+                  <span className="block text-sm font-semibold">{prompt.label}</span>
+                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{prompt.description}</span>
+                </span>
               </Button>
             ))}
           </div>
@@ -1014,10 +1057,13 @@ export function ScanAnalystPage() {
           </div>
         ) : null}
       </motion.article>
+      ) : null}
 
-      <StatusOverview status={status} />
+      {activeSection === "activity" ? (
+        <>
+          <StatusOverview status={status} />
 
-      <motion.article className="grid gap-4 xl:grid-cols-[1.1fr_1fr]" variants={panelMotion}>
+      <motion.article className="grid gap-4" variants={panelMotion}>
         <div ref={conversationRef}>
           <CollapsibleSection
             eyebrow="Conversation"
@@ -1060,33 +1106,41 @@ export function ScanAnalystPage() {
           )}
           </CollapsibleSection>
         </div>
-
-        <CollapsibleSection
-          eyebrow="Zira posture"
-          title="Autonomy and guardrails"
-          badge={<StatusBadge value={status.parameters.enabled ? "Editable" : "Paused"} />}
-        >
-          <PostureEditor
-            actorUserId={actorUserId}
-            error={postureMutation.error}
-            isSaving={postureMutation.isPending}
-            onSave={(input) => postureMutation.mutateAsync(input)}
-            status={status}
-          />
-
-          <div className="rounded-xl border border-border/70 bg-surface-2/55 p-3 text-sm text-muted-foreground">
-            <p>{chatState?.agentStatusLine ?? "Zira is online and waiting for a session request."}</p>
-            {status.lastAutonomousActivity ? (
-              <p className="mt-2 text-xs">
-                Last autonomous pass: {status.lastAutonomousActivity.summary} at{" "}
-                {formatTimestamp(status.lastAutonomousActivity.occurredAtUtc)}.
-              </p>
-            ) : null}
-          </div>
-        </CollapsibleSection>
       </motion.article>
+        </>
+      ) : null}
 
-      {!currentAnalysis ? (
+      {activeSection === "guardrails" ? (
+        <motion.article variants={panelMotion}>
+          <CollapsibleSection
+            eyebrow="Zira posture"
+            title="Autonomy and guardrails"
+            defaultOpen
+            badge={<StatusBadge value={status.parameters.enabled ? "Editable" : "Paused"} />}
+          >
+            <PostureEditor
+              actorUserId={actorUserId}
+              error={postureMutation.error}
+              isSaving={postureMutation.isPending}
+              onSave={(input) => postureMutation.mutateAsync(input)}
+              status={status}
+            />
+
+            <div className="rounded-xl border border-border/70 bg-surface-2/55 p-3 text-sm text-muted-foreground">
+              <p>{chatState?.agentStatusLine ?? "Zira is online and waiting for a session request."}</p>
+              {status.lastAutonomousActivity ? (
+                <p className="mt-2 text-xs">
+                  Last autonomous pass: {status.lastAutonomousActivity.summary} at{" "}
+                  {formatTimestamp(status.lastAutonomousActivity.occurredAtUtc)}.
+                </p>
+              ) : null}
+            </div>
+          </CollapsibleSection>
+        </motion.article>
+      ) : null}
+
+      {activeSection === "proposal" ? (
+      !currentAnalysis ? (
         <motion.article variants={panelMotion}>
           <EmptyState
             title="No Zira proposal yet"
@@ -1383,7 +1437,7 @@ export function ScanAnalystPage() {
             </motion.article>
           ) : null}
         </>
-      )}
+      )) : null}
     </motion.section>
   )
 }

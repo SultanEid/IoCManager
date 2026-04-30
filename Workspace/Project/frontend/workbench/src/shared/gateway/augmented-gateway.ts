@@ -23,6 +23,7 @@ import type {
   AuditLogListQuery,
   CaseDetailVM,
   CreateRetentionPolicyInput,
+  CreateAlertOwnerDirectoryInput,
   CreateDistributionJobInput,
   CreateScanPlanInput,
   CoveragePainAnalysisScopeInput,
@@ -71,6 +72,7 @@ import type {
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
   UpdateAlertOwnerInput,
+  UpdateAlertOwnerDirectoryInput,
   UpdateManagedServerInput,
   UpsertManagedServerScannerAssignmentInput,
 } from "@/shared/gateway/types"
@@ -88,6 +90,22 @@ export class AugmentedGateway implements Gateway {
 
   listAlertOwners(signal?: AbortSignal) {
     return this.source.listAlertOwners(signal)
+  }
+
+  listSettingsAlertOwners(signal?: AbortSignal) {
+    return this.source.listSettingsAlertOwners(signal)
+  }
+
+  getSmtpNotificationStatus(signal?: AbortSignal) {
+    return this.source.getSmtpNotificationStatus(signal)
+  }
+
+  createSettingsAlertOwner(input: CreateAlertOwnerDirectoryInput) {
+    return this.source.createSettingsAlertOwner(input)
+  }
+
+  updateSettingsAlertOwner(key: string, input: UpdateAlertOwnerDirectoryInput) {
+    return this.source.updateSettingsAlertOwner(key, input)
   }
 
   getAlertDetail(alertId: string, signal?: AbortSignal) {

@@ -359,7 +359,7 @@ export function ManagedServerInventoryPage() {
     },
   })
 
-  const subnets = subnetsQuery.data ?? []
+  const subnets = useMemo(() => subnetsQuery.data ?? [], [subnetsQuery.data])
   const scanners = scannersQuery.data ?? []
   const subnetLabelById = useMemo(() => {
     return new Map(subnets.map((item) => [item.id, item.name]))

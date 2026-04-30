@@ -132,6 +132,8 @@ public static class ServiceCollectionExtensions
             .AddOptions<SmtpNotificationOptions>()
             .Bind(configuration.GetSection(SmtpNotificationOptions.SectionName))
             .Validate(options => options.Port > 0, "Notifications:Smtp:Port must be positive.")
+            .Validate(options => !options.Enabled || !string.IsNullOrWhiteSpace(options.Host), "Notifications:Smtp:Host is required when SMTP is enabled.")
+            .Validate(options => !options.Enabled || !string.IsNullOrWhiteSpace(options.FromEmail), "Notifications:Smtp:FromEmail is required when SMTP is enabled.")
             .ValidateOnStart();
         services
             .AddOptions<LegacyScanPipelineOptions>()
@@ -168,7 +170,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IResultIngestionService, ResultIngestionService>();
         services.AddScoped<AegisActivityNotifier>();
         services.AddScoped<AegisMitigationPlanner>();
-        services.AddSingleton<IAlertOwnerResolver, AlertOwnerResolver>();
+        services.AddScoped<AlertOwnerDirectoryService>();
+        services.AddScoped<IAlertOwnerResolver>(provider => provider.GetRequiredService<AlertOwnerDirectoryService>());
+        services.AddScoped<IAlertOwnerDirectoryService>(provider => provider.GetRequiredService<AlertOwnerDirectoryService>());
         services.AddSingleton<IAlertEmailSender, SmtpAlertEmailSender>();
         services.AddSingleton<ILegacyScannerResultExtractor, LegacyScannerResultExtractor>();
         services.AddSingleton<TargetServerConnectionSecretProtector>();

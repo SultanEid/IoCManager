@@ -5,6 +5,7 @@ import {
   alertResponseSchema,
   alertEmailUpdateResponseSchema,
   alertListResponseSchema,
+  alertOwnerDirectoryResponseSchema,
   alertOwnerResponseSchema,
   aiModelStatisticsSchema,
   v2AlertDetailResponseSchema,
@@ -51,6 +52,7 @@ import {
   feedbackResponseSchema,
   promoteDiscoveredHostResponseSchema,
   scannerResponseSchema,
+  smtpNotificationStatusResponseSchema,
   healthAdminSchema,
   healthInfoSchema,
   healthReadySchema,
@@ -78,6 +80,7 @@ import {
   type AlertListResponse,
   type AlertResponse,
   type AlertEmailUpdateResponse,
+  type AlertOwnerDirectoryResponse,
   type AlertOwnerResponse,
   type AiModelStatistics,
   type AiDecisionActionPlanOrPendingResponse,
@@ -117,6 +120,7 @@ import {
   type RuleDistributionJobResponse,
   type RuleDistributionTargetResponse,
   type ScannerResponse,
+  type SmtpNotificationStatusResponse,
   type DiscoveredHostResponse,
   type DiscoveryRunResponse,
   type DecisionResponse,
@@ -156,6 +160,7 @@ import type {
   ArchiveRuleInput,
   AuditLogListQuery,
   CreateDistributionJobInput,
+  CreateAlertOwnerDirectoryInput,
   CreateScanPlanInput,
   CoveragePainAnalysisScopeInput,
   CreateRetentionPolicyInput,
@@ -199,12 +204,14 @@ import type {
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
   UpdateAlertOwnerInput,
+  UpdateAlertOwnerDirectoryInput,
   UpdateManagedServerInput,
   UpsertManagedServerScannerAssignmentInput,
 } from "@/shared/gateway/types"
 
 const alertsSchema = z.array(alertResponseSchema)
 const alertOwnersSchema = z.array(alertOwnerResponseSchema)
+const alertOwnerDirectorySchema = z.array(alertOwnerDirectoryResponseSchema)
 const alertEmailUpdatesSchema = z.array(alertEmailUpdateResponseSchema)
 const evidenceSchema = z.array(evidenceResponseSchema)
 const decisionsSchema = z.array(decisionResponseSchema)
@@ -322,6 +329,39 @@ export class AspNetGateway {
 
   async listAlertOwners(signal?: AbortSignal): Promise<AlertOwnerResponse[]> {
     return requestJson("/api/v2/alerts/owners", alertOwnersSchema, { signal })
+  }
+
+  async listSettingsAlertOwners(signal?: AbortSignal): Promise<AlertOwnerDirectoryResponse[]> {
+    return requestJson("/api/v2/settings/alert-owners", alertOwnerDirectorySchema, { signal })
+  }
+
+  async getSmtpNotificationStatus(signal?: AbortSignal): Promise<SmtpNotificationStatusResponse> {
+    return requestJson("/api/v2/settings/notifications/smtp", smtpNotificationStatusResponseSchema, { signal })
+  }
+
+  async createSettingsAlertOwner(input: CreateAlertOwnerDirectoryInput): Promise<AlertOwnerDirectoryResponse> {
+    return requestJson("/api/v2/settings/alert-owners", alertOwnerDirectoryResponseSchema, {
+      method: "POST",
+      body: {
+        key: input.key,
+        displayName: input.displayName,
+        email: input.email,
+        isEnabled: input.isEnabled,
+        actorUserId: input.actorUserId,
+      },
+    })
+  }
+
+  async updateSettingsAlertOwner(key: string, input: UpdateAlertOwnerDirectoryInput): Promise<AlertOwnerDirectoryResponse> {
+    return requestJson(`/api/v2/settings/alert-owners/${encodeURIComponent(key)}`, alertOwnerDirectoryResponseSchema, {
+      method: "PATCH",
+      body: {
+        displayName: input.displayName,
+        email: input.email,
+        isEnabled: input.isEnabled,
+        actorUserId: input.actorUserId,
+      },
+    })
   }
 
   async listAlerts(signal?: AbortSignal): Promise<AlertResponse[]> {

@@ -953,6 +953,23 @@ public sealed class AlertEmailUpdateConfiguration : IEntityTypeConfiguration<Ale
     }
 }
 
+public sealed class AlertOwnerDirectoryEntryConfiguration : IEntityTypeConfiguration<AlertOwnerDirectoryEntry>
+{
+    public void Configure(EntityTypeBuilder<AlertOwnerDirectoryEntry> builder)
+    {
+        builder.ToTable("alert_owner_directory");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Key).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Email).HasMaxLength(320).IsRequired();
+        builder.Property(x => x.IsEnabled).HasDefaultValue(true).IsRequired();
+        builder.Property(x => x.CreatedByUserId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.UpdatedByUserId).HasMaxLength(128).IsRequired();
+        builder.HasIndex(x => x.Key).IsUnique();
+        builder.HasIndex(x => x.IsEnabled);
+    }
+}
+
 public sealed class AlertIocConfiguration : IEntityTypeConfiguration<AlertIoc>
 {
     public void Configure(EntityTypeBuilder<AlertIoc> builder)

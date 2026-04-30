@@ -16,6 +16,29 @@ public sealed record LinkAlertScanResultRequest(Guid ScanResultId, string ActorU
 public sealed record SendAlertEmailUpdateRequest(string Subject, string Body, IReadOnlyList<string>? CcEmails, string ActorUserId);
 
 public sealed record AlertOwnerResponse(string Key, string DisplayName, string Email);
+public sealed record AlertOwnerDirectoryResponse(
+    string Key,
+    string DisplayName,
+    string Email,
+    bool IsEnabled,
+    string Source,
+    DateTimeOffset? CreatedAtUtc,
+    DateTimeOffset? UpdatedAtUtc,
+    string? CreatedByUserId,
+    string? UpdatedByUserId);
+
+public sealed record CreateAlertOwnerDirectoryRequest(
+    string Key,
+    string DisplayName,
+    string Email,
+    bool IsEnabled,
+    string ActorUserId);
+
+public sealed record UpdateAlertOwnerDirectoryRequest(
+    string DisplayName,
+    string Email,
+    bool IsEnabled,
+    string ActorUserId);
 
 public sealed record AlertEmailUpdateResponse(
     Guid Id,

@@ -1,9 +1,14 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ComponentType } from "react"
 
 const mockedUseWorkbenchQuery = vi.hoisted(() => vi.fn())
+const gatewayMocks = vi.hoisted(() => ({
+  runModelRetraining: vi.fn(),
+  createSettingsAlertOwner: vi.fn(),
+  updateSettingsAlertOwner: vi.fn(),
+}))
 const authState = vi.hoisted(() => ({
   roles: ["Admin"] as string[],
   username: "don",
@@ -12,6 +17,12 @@ const authState = vi.hoisted(() => ({
 
 vi.mock("@/shared/query/use-workbench-query", () => ({
   useWorkbenchQuery: mockedUseWorkbenchQuery,
+}))
+
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({
+    invalidateQueries: vi.fn(),
+  }),
 }))
 
 vi.mock("framer-motion", () => ({
@@ -86,9 +97,7 @@ vi.mock("@/shared/auth/session", () => ({
 }))
 
 vi.mock("@/shared/gateway", () => ({
-  gateway: {
-    runModelRetraining: vi.fn(),
-  },
+  gateway: gatewayMocks,
   isMockMode: false,
   isModeConfigured: true,
 }))
@@ -180,6 +189,31 @@ function seedQueries() {
         ])
       case "archives":
         return success([])
+      case "alert-owners":
+        return success([
+          {
+            key: "soc",
+            displayName: "Security Operations Center",
+            email: "soc@local.test",
+            isEnabled: true,
+            source: "database",
+            createdAtUtc: "2026-04-20T00:00:00Z",
+            updatedAtUtc: "2026-04-20T00:00:00Z",
+            createdByUserId: "system",
+            updatedByUserId: "system",
+          },
+          {
+            key: "forensics",
+            displayName: "Digital Forensics",
+            email: "forensics@local.test",
+            isEnabled: false,
+            source: "database",
+            createdAtUtc: "2026-04-20T00:00:00Z",
+            updatedAtUtc: "2026-04-20T00:00:00Z",
+            createdByUserId: "system",
+            updatedByUserId: "system",
+          },
+        ])
       case "users":
         return success([
           {
@@ -240,6 +274,30 @@ describe.skip("SettingsPage", () => {
 
   beforeEach(async () => {
     mockedUseWorkbenchQuery.mockReset()
+    gatewayMocks.createSettingsAlertOwner.mockReset()
+    gatewayMocks.updateSettingsAlertOwner.mockReset()
+    gatewayMocks.createSettingsAlertOwner.mockResolvedValue({
+      key: "malware-lab",
+      displayName: "Malware Lab",
+      email: "malware-lab@local.test",
+      isEnabled: true,
+      source: "database",
+      createdAtUtc: "2026-04-20T00:00:00Z",
+      updatedAtUtc: "2026-04-20T00:00:00Z",
+      createdByUserId: "admin-1",
+      updatedByUserId: "admin-1",
+    })
+    gatewayMocks.updateSettingsAlertOwner.mockResolvedValue({
+      key: "soc",
+      displayName: "SOC Updated",
+      email: "soc-updated@local.test",
+      isEnabled: false,
+      source: "database",
+      createdAtUtc: "2026-04-20T00:00:00Z",
+      updatedAtUtc: "2026-04-20T01:00:00Z",
+      createdByUserId: "system",
+      updatedByUserId: "admin-1",
+    })
     seedQueries()
     authState.roles = ["Admin"]
     authState.username = "don"
@@ -278,6 +336,58 @@ describe.skip("SettingsPage", () => {
     render(<SettingsPage />)
 
     expect(screen.queryByText(/dbo\.User/i)).not.toBeInTheDocument()
+  })
+
+  it("renders the alert owner directory", () => {
+    render(<SettingsPage />)
+
+    expect(screen.getAllByText("Alert owner emails").length).toBeGreaterThan(0)
+    expect(screen.getByText("Security Operations Center")).toBeInTheDocument()
+    expect(screen.getByText("soc@local.test")).toBeInTheDocument()
+    expect(screen.getByText("forensics")).toBeInTheDocument()
+  })
+
+  it("validates and creates alert owners", async () => {
+    render(<SettingsPage />)
+
+    fireEvent.change(screen.getByLabelText("New alert owner key"), { target: { value: "Bad Key" } })
+    fireEvent.change(screen.getByLabelText("New alert owner display name"), { target: { value: "Bad Owner" } })
+    fireEvent.change(screen.getByLabelText("New alert owner email"), { target: { value: "bad-owner@local.test" } })
+    fireEvent.click(screen.getByRole("button", { name: "Create Owner" }))
+
+    expect(await screen.findByText("Owner key must be a lowercase slug using letters, numbers, and hyphens.")).toBeInTheDocument()
+    expect(gatewayMocks.createSettingsAlertOwner).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText("New alert owner key"), { target: { value: "malware-lab" } })
+    fireEvent.click(screen.getByRole("button", { name: "Create Owner" }))
+
+    await waitFor(() => {
+      expect(gatewayMocks.createSettingsAlertOwner).toHaveBeenCalledWith({
+        key: "malware-lab",
+        displayName: "Bad Owner",
+        email: "bad-owner@local.test",
+        isEnabled: true,
+        actorUserId: "admin-1",
+      })
+    })
+  })
+
+  it("updates alert owner email, display name, and enabled state", async () => {
+    render(<SettingsPage />)
+
+    fireEvent.change(screen.getByLabelText("Display name for soc"), { target: { value: "SOC Updated" } })
+    fireEvent.change(screen.getByLabelText("Email for soc"), { target: { value: "soc-updated@local.test" } })
+    fireEvent.click(screen.getAllByText("Enabled")[0])
+    fireEvent.click(screen.getByRole("button", { name: "Save soc owner" }))
+
+    await waitFor(() => {
+      expect(gatewayMocks.updateSettingsAlertOwner).toHaveBeenCalledWith("soc", {
+        displayName: "SOC Updated",
+        email: "soc-updated@local.test",
+        isEnabled: false,
+        actorUserId: "admin-1",
+      })
+    })
   })
 
   it("surfaces inline failures for admin subsections", () => {

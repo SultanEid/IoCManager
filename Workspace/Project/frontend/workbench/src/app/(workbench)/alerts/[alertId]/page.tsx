@@ -250,15 +250,24 @@ export default function AlertDetailPage() {
   }, [alertId, alertQuery.data?.updatedAtUtc])
 
   const detail = detailOverride ?? alertQuery.data ?? null
+  const detailId = detail?.id
+  const detailOwnerUserId = detail?.ownerUserId
   const canShowNonAlertPivots = !isItOnlyScope(session?.roles ?? [])
   const isLegacyCompatibilityAlert = detail?.ownerUserId === "legacy-pipeline"
   const existingAegisPlan = (aegisPlansQuery.data?.items ?? []).find((item) => item.alertIds.includes(alertId)) ?? null
+  const pendingOwnerSave = Boolean(detail && selectedOwner !== detail.ownerUserId)
+  const selectedAssignableOwner = (ownersQuery.data ?? []).find((owner) => owner.key === selectedOwner) ?? null
+  const emailRecipientPrompt = detail?.ownerEmail
+    ? detail.ownerEmail
+    : pendingOwnerSave && selectedAssignableOwner
+      ? "Save the selected owner before sending updates"
+      : "Assign an owner email before sending"
 
   useEffect(() => {
-    if (detail) {
-      setSelectedOwner(detail.ownerUserId || "unassigned")
+    if (detailId) {
+      setSelectedOwner(detailOwnerUserId || "unassigned")
     }
-  }, [detail?.id, detail?.ownerUserId])
+  }, [detailId, detailOwnerUserId])
 
   const updateStatus = async (nextStatus: string) => {
     if (!detail || statusUpdate) {
@@ -500,6 +509,7 @@ export default function AlertDetailPage() {
         />
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
           <select
+            aria-label="Alert owner"
             className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
             value={selectedOwner}
             onChange={(event) => setSelectedOwner(event.target.value)}
@@ -524,28 +534,51 @@ export default function AlertDetailPage() {
           description="Send a plain-text manual update to the assigned owner mailbox."
         />
         <div className="grid gap-3">
-          <Input
-            value={emailSubject}
-            onChange={(event) => setEmailSubject(event.target.value.slice(0, 200))}
-            placeholder="Subject"
-            disabled={!detail.ownerEmail || emailSending}
-          />
-          <Textarea
-            value={emailBody}
-            onChange={(event) => setEmailBody(event.target.value.slice(0, 8000))}
-            placeholder="Message"
-            className="min-h-32"
-            disabled={!detail.ownerEmail || emailSending}
-          />
-          <Input
-            value={emailCc}
-            onChange={(event) => setEmailCc(event.target.value)}
-            placeholder="CC addresses separated by comma, semicolon, or new line"
-            disabled={!detail.ownerEmail || emailSending}
-          />
+          <div className="grid gap-1.5">
+            <label htmlFor="alert-email-subject" className="text-xs font-medium text-muted-foreground">
+              Subject
+            </label>
+            <Input
+              id="alert-email-subject"
+              value={emailSubject}
+              onChange={(event) => setEmailSubject(event.target.value.slice(0, 200))}
+              placeholder="Update subject"
+              disabled={!detail.ownerEmail || emailSending}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <label htmlFor="alert-email-message" className="text-xs font-medium text-muted-foreground">
+              Message
+            </label>
+            <Textarea
+              id="alert-email-message"
+              value={emailBody}
+              onChange={(event) => setEmailBody(event.target.value.slice(0, 8000))}
+              placeholder="Plain-text message"
+              className="min-h-32"
+              disabled={!detail.ownerEmail || emailSending}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <label htmlFor="alert-email-cc" className="text-xs font-medium text-muted-foreground">
+              CC addresses
+            </label>
+            <Input
+              id="alert-email-cc"
+              value={emailCc}
+              onChange={(event) => setEmailCc(event.target.value)}
+              placeholder="Separate CC addresses by comma, semicolon, or new line"
+              disabled={!detail.ownerEmail || emailSending}
+            />
+          </div>
+          <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-3 py-2">
+            <p className="text-xs text-amber-100">
+              SMTP delivery is controlled by server configuration. If SMTP is not configured, this update is saved to the case history with NotConfigured status.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
-              To: {detail.ownerEmail ?? "Assign an owner email before sending"}
+              To: {emailRecipientPrompt}
             </p>
             <Button type="button" size="sm" onClick={() => void sendEmailUpdate()} disabled={!detail.ownerEmail || emailSending}>
               {emailSending ? "Sending..." : "Send update"}

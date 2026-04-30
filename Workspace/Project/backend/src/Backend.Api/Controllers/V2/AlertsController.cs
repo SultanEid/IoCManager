@@ -44,10 +44,10 @@ public sealed class AlertsController : ControllerBase
     [HttpGet("owners")]
     [EnableRateLimiting(RateLimitPolicies.Read)]
     [ProducesResponseType<IReadOnlyList<AlertOwnerResponse>>(StatusCodes.Status200OK)]
-    public ActionResult<IReadOnlyList<AlertOwnerResponse>> ListOwners()
+    public async Task<ActionResult<IReadOnlyList<AlertOwnerResponse>>> ListOwners(CancellationToken cancellationToken)
     {
-        return Ok(_ownerResolver
-            .ListConfiguredOwners()
+        var owners = await _ownerResolver.ListAssignableOwnersAsync(cancellationToken);
+        return Ok(owners
             .Select(owner => new AlertOwnerResponse(owner.Key, owner.DisplayName, owner.Email))
             .ToArray());
     }
@@ -169,7 +169,8 @@ public sealed class AlertsController : ControllerBase
     [ProducesResponseType<AlertResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<AlertResponse>> Create([FromBody] CreateAlertRequest request, CancellationToken cancellationToken)
     {
-        if (!_ownerResolver.TryResolve(request.OwnerUserId, out var owner))
+        var owner = await _ownerResolver.ResolveAsync(request.OwnerUserId, cancellationToken);
+        if (owner is null)
         {
             return BadRequest($"Invalid alert owner '{request.OwnerUserId}'.");
         }
@@ -228,7 +229,8 @@ public sealed class AlertsController : ControllerBase
             return BadRequest("Actor user id is required.");
         }
 
-        if (!_ownerResolver.TryResolve(request.OwnerUserId, out var owner))
+        var owner = await _ownerResolver.ResolveAsync(request.OwnerUserId, cancellationToken);
+        if (owner is null)
         {
             return BadRequest($"Invalid alert owner '{request.OwnerUserId}'.");
         }

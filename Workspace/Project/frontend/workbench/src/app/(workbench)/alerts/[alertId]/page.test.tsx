@@ -18,6 +18,12 @@ const gatewayState = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ alertId: "8afdfb88-f5c2-40ef-87ff-872e0e7248c1" }),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+  }),
 }))
 
 vi.mock("@/shared/query/use-workbench-query", () => ({
@@ -288,9 +294,9 @@ describe("AlertDetailPage", () => {
   it("sends a manual email update to the stored owner mailbox", async () => {
     render(<AlertDetailPage />)
 
-    fireEvent.change(screen.getByPlaceholderText("Subject"), { target: { value: "Owner update" } })
-    fireEvent.change(screen.getByPlaceholderText("Message"), { target: { value: "Review this alert." } })
-    fireEvent.change(screen.getByPlaceholderText("CC addresses separated by comma, semicolon, or new line"), {
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Owner update" } })
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Review this alert." } })
+    fireEvent.change(screen.getByLabelText("CC addresses"), {
       target: { value: "lead@local.test" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Send update" }))

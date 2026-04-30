@@ -1,4 +1,6 @@
 using Backend.Domain.Common;
+using System.ComponentModel.DataAnnotations;
+using System.Text.RegularExpressions;
 
 namespace Backend.Domain.IocManager;
 
@@ -167,6 +169,91 @@ public sealed class AlertEmailUpdate : AuditableEntity
 
         item.StampCreation(actorUserId.Trim(), nowUtc);
         return item;
+    }
+}
+
+public sealed class AlertOwnerDirectoryEntry : AuditableEntity
+{
+    private static readonly Regex KeyPattern = new("^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.Compiled);
+    private static readonly EmailAddressAttribute EmailValidator = new();
+
+    private AlertOwnerDirectoryEntry() { }
+
+    public string Key { get; private set; } = string.Empty;
+    public string DisplayName { get; private set; } = string.Empty;
+    public string Email { get; private set; } = string.Empty;
+    public bool IsEnabled { get; private set; } = true;
+
+    public static AlertOwnerDirectoryEntry Create(
+        string key,
+        string displayName,
+        string email,
+        bool isEnabled,
+        string actorUserId,
+        DateTimeOffset nowUtc)
+    {
+        var item = new AlertOwnerDirectoryEntry
+        {
+            Key = NormalizeKey(key),
+        };
+
+        item.Apply(displayName, email, isEnabled, actorUserId, nowUtc);
+        item.StampCreation(actorUserId.Trim(), nowUtc);
+        return item;
+    }
+
+    public void Update(string displayName, string email, bool isEnabled, string actorUserId, DateTimeOffset nowUtc)
+    {
+        Apply(displayName, email, isEnabled, actorUserId, nowUtc);
+        Touch(actorUserId.Trim(), nowUtc);
+    }
+
+    public static string NormalizeKey(string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        var trimmed = key.Trim();
+        var normalized = trimmed.ToLowerInvariant();
+        if (!string.Equals(trimmed, normalized, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Owner key must be lowercase.", nameof(key));
+        }
+
+        if (normalized.Length > 128)
+        {
+            throw new ArgumentException("Owner key must be 128 characters or fewer.", nameof(key));
+        }
+
+        if (!KeyPattern.IsMatch(normalized))
+        {
+            throw new ArgumentException("Owner key must be a lowercase slug using letters, numbers, and hyphens.", nameof(key));
+        }
+
+        return normalized;
+    }
+
+    private void Apply(string displayName, string email, bool isEnabled, string actorUserId, DateTimeOffset nowUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
+
+        var normalizedDisplayName = displayName.Trim();
+        if (normalizedDisplayName.Length > 200)
+        {
+            throw new ArgumentException("Display name must be 200 characters or fewer.", nameof(displayName));
+        }
+
+        var normalizedEmail = email.Trim();
+        if (normalizedEmail.Length > 320 || !EmailValidator.IsValid(normalizedEmail))
+        {
+            throw new ArgumentException("A valid owner email is required.", nameof(email));
+        }
+
+        DisplayName = normalizedDisplayName;
+        Email = normalizedEmail;
+        IsEnabled = isEnabled;
+        UpdatedAtUtc = nowUtc;
+        UpdatedByUserId = actorUserId.Trim();
     }
 }
 
