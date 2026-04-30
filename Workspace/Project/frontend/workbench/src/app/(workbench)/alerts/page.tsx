@@ -24,6 +24,41 @@ const FAMILY_OPTIONS = ["yara", "sigma", "snort", "suricata"] as const
 const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"] as const
 
+const STATUS_SUMMARY_CONFIG = [
+  {
+    status: "Open",
+    label: "Open",
+    border: "border-rose-300/35",
+    surface: "bg-rose-500/12",
+    text: "text-rose-100",
+    rail: "bg-rose-300",
+  },
+  {
+    status: "Investigating",
+    label: "Investigating",
+    border: "border-orange-300/35",
+    surface: "bg-orange-500/12",
+    text: "text-orange-100",
+    rail: "bg-orange-300",
+  },
+  {
+    status: "Resolved",
+    label: "Resolved",
+    border: "border-sky-300/35",
+    surface: "bg-sky-500/12",
+    text: "text-sky-100",
+    rail: "bg-sky-300",
+  },
+  {
+    status: "Closed",
+    label: "Closed",
+    border: "border-slate-300/25",
+    surface: "bg-slate-500/12",
+    text: "text-slate-200",
+    rail: "bg-slate-400",
+  },
+] as const
+
 type AlertFiltersState = {
   q: string
   status: string
@@ -256,7 +291,10 @@ export default function AlertsPage() {
   const pageSize = list?.pageSize ?? 25
   const canMoveNext = page * pageSize < total
   const filteredOut = total === 0 && Object.values(parsedFilters).some((value) => value !== "" && value !== 1)
-  const openAlerts = rows.filter((item) => item.status === "Open" || item.status === "Investigating").length
+  const statusCounts = STATUS_SUMMARY_CONFIG.map((statusItem) => ({
+    ...statusItem,
+    count: rows.filter((item) => item.status.toLowerCase() === statusItem.status.toLowerCase()).length,
+  }))
   const criticalAlerts = rows.filter((item) => item.severity === "Critical").length
   const unassignedAlerts = rows.filter((item) => item.ownerUserId === "unassigned").length
 
@@ -268,26 +306,35 @@ export default function AlertsPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Each case represents a scanner finding with linked IOC review progress.
         </p>
-        <div className="mt-4 grid gap-2 xl:grid-cols-2 2xl:grid-cols-4">
-          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
+        <div className="mt-4 grid gap-2 lg:grid-cols-3">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
             <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.primary.rail}`} aria-hidden="true" />
-            <p className="wb-kicker">Total Cases</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{total}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-primary">Total cases</p>
+            <p className="mt-3 text-2xl font-semibold leading-none tracking-tight">{total}</p>
           </div>
-          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
-            <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.cyan.rail}`} aria-hidden="true" />
-            <p className="wb-kicker">Active On Page</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{openAlerts}</p>
-          </div>
-          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
             <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.rose.rail}`} aria-hidden="true" />
-            <p className="wb-kicker">Critical On Page</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{criticalAlerts}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-primary">Critical</p>
+            <p className="mt-3 text-2xl font-semibold leading-none tracking-tight">{criticalAlerts}</p>
           </div>
-          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-2.5 pl-3.5">
+          <div className="relative overflow-hidden rounded-lg border border-border/70 bg-surface-2/65 p-3 pl-4">
             <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.slate.rail}`} aria-hidden="true" />
-            <p className="wb-kicker">Unassigned On Page</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{unassignedAlerts}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-primary">Unassigned</p>
+            <p className="mt-3 text-2xl font-semibold leading-none tracking-tight">{unassignedAlerts}</p>
+            <p className="mt-1.5 text-[11px] uppercase tracking-[0.05em] text-muted-foreground">Needs owner</p>
+          </div>
+        </div>
+
+        <div className="mt-2 rounded-lg border border-border/70 bg-surface-2/65 p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.06em] text-primary">Status on page</p>
+          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-4">
+            {statusCounts.map((item) => (
+              <div key={item.status} className={`relative overflow-hidden rounded-md border ${item.border} ${item.surface} px-3 py-2.5`}>
+                <span className={`absolute inset-y-2 left-0 w-0.5 rounded-r ${item.rail}`} aria-hidden="true" />
+                <p className={`truncate pl-1 text-xs font-semibold uppercase tracking-normal ${item.text}`}>{item.label}</p>
+                <p className="mt-2 pl-1 text-xl font-semibold leading-none tracking-tight">{item.count}</p>
+              </div>
+            ))}
           </div>
         </div>
       </motion.header>

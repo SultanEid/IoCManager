@@ -255,7 +255,7 @@ export function ScanPlanManagementPage() {
         { refetchInterval: 5000 },
     )
 
-    const plans = plansQuery.data ?? []
+    const plans = useMemo(() => plansQuery.data ?? [], [plansQuery.data])
     const targetServers = targetServersQuery.data ?? []
     const rules = rulesQuery.data?.items ?? []
     const jobs = jobsQuery.data ?? []

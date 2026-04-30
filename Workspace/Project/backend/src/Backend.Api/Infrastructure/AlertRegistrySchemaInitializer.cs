@@ -120,6 +120,23 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
             END;
             """,
             """
+            IF OBJECT_ID('dbo.alert_owner_directory', 'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.alert_owner_directory
+                (
+                    Id uniqueidentifier NOT NULL CONSTRAINT PK_alert_owner_directory PRIMARY KEY,
+                    [Key] nvarchar(128) NOT NULL,
+                    DisplayName nvarchar(200) NOT NULL,
+                    Email nvarchar(320) NOT NULL,
+                    IsEnabled bit NOT NULL CONSTRAINT DF_alert_owner_directory_IsEnabled DEFAULT(1),
+                    CreatedAtUtc datetimeoffset NOT NULL,
+                    UpdatedAtUtc datetimeoffset NOT NULL,
+                    CreatedByUserId nvarchar(128) NOT NULL,
+                    UpdatedByUserId nvarchar(128) NOT NULL
+                );
+            END;
+            """,
+            """
             IF OBJECT_ID('dbo.FK_alert_email_updates_alerts_v2_AlertId', 'F') IS NULL
             BEGIN
                 ALTER TABLE dbo.alert_email_updates
@@ -158,6 +175,14 @@ public sealed class AlertRegistrySchemaInitializer : IAlertRegistrySchemaInitial
             """
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alert_email_updates_DeliveryStatus' AND object_id = OBJECT_ID('dbo.alert_email_updates'))
                 CREATE INDEX IX_alert_email_updates_DeliveryStatus ON dbo.alert_email_updates (DeliveryStatus);
+            """,
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alert_owner_directory_Key' AND object_id = OBJECT_ID('dbo.alert_owner_directory'))
+                CREATE UNIQUE INDEX IX_alert_owner_directory_Key ON dbo.alert_owner_directory ([Key]);
+            """,
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_alert_owner_directory_IsEnabled' AND object_id = OBJECT_ID('dbo.alert_owner_directory'))
+                CREATE INDEX IX_alert_owner_directory_IsEnabled ON dbo.alert_owner_directory (IsEnabled);
             """,
         };
 

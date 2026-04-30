@@ -61,6 +61,8 @@ npm run test:run
 npm run build
 ```
 
+`npm test` and `npm run test:run` run the clean validation lane: lint plus TypeScript. The old Vitest lane is retired for this repo because it was not reliable enough for active validation. Use `npm run test:e2e` only when a Playwright browser pass is needed and no competing Next dev server is holding the project lock.
+
 ## Architecture
 
 - `src/shared/api`: typed fetch client + zod runtime schemas

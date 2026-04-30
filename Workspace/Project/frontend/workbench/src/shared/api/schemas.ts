@@ -66,6 +66,14 @@ export const alertOwnerResponseSchema = z.object({
   displayName: z.string(),
   email: z.string(),
 })
+export const alertOwnerDirectoryResponseSchema = alertOwnerResponseSchema.extend({
+  isEnabled: z.boolean(),
+  source: z.string(),
+  createdAtUtc: z.string().nullable(),
+  updatedAtUtc: z.string().nullable(),
+  createdByUserId: z.string().nullable(),
+  updatedByUserId: z.string().nullable(),
+})
 export const alertEmailUpdateResponseSchema = z.object({
   id: z.string().uuid(),
   alertId: z.string().uuid(),
@@ -78,6 +86,18 @@ export const alertEmailUpdateResponseSchema = z.object({
   sentAtUtc: z.string().nullable(),
   createdByUserId: z.string(),
   createdAtUtc: z.string(),
+})
+export const smtpNotificationStatusResponseSchema = z.object({
+  enabled: z.boolean(),
+  configured: z.boolean(),
+  willSendEmail: z.boolean(),
+  host: z.string(),
+  port: z.number().int(),
+  useSsl: z.boolean(),
+  userNameConfigured: z.boolean(),
+  fromEmail: z.string(),
+  fromDisplayName: z.string(),
+  missingRequirements: z.array(z.string()),
 })
 export const v2AlertTargetSummarySchema = z.object({
   id: z.string().nullable(),
@@ -1634,7 +1654,9 @@ export type AlertProgressResponse = z.infer<typeof alertProgressResponseSchema>
 export type V2AlertResponse = z.infer<typeof v2AlertResponseWithProgressSchema>
 export type AlertListResponse = z.infer<typeof alertListResponseSchema>
 export type AlertOwnerResponse = z.infer<typeof alertOwnerResponseSchema>
+export type AlertOwnerDirectoryResponse = z.infer<typeof alertOwnerDirectoryResponseSchema>
 export type AlertEmailUpdateResponse = z.infer<typeof alertEmailUpdateResponseSchema>
+export type SmtpNotificationStatusResponse = z.infer<typeof smtpNotificationStatusResponseSchema>
 export type V2AlertTargetSummary = z.infer<typeof v2AlertTargetSummarySchema>
 export type V2AlertLinkedIocYaraDetail = z.infer<typeof v2AlertLinkedIocYaraDetailSchema>
 export type V2AlertLinkedIocSigmaDetail = z.infer<typeof v2AlertLinkedIocSigmaDetailSchema>

@@ -24,6 +24,11 @@ function formatUtc(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : "Not recorded"
 }
 
+function shortenText(value: string, maxLength = 120) {
+  const trimmed = value.trim()
+  return trimmed.length <= maxLength ? trimmed : `${trimmed.slice(0, maxLength - 3).trimEnd()}...`
+}
+
 function toDataUrlBase64(dataUrl: string) {
   return dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl
 }
@@ -79,7 +84,7 @@ function readAegisResultFromReport(report: ReportResponse): ReportMitigationResp
 
 function ActionGroup({ title, actions }: { title: string; actions: ReportMitigationActionResponse[] }) {
   return (
-    <details className="wb-panel group space-y-4" open={actions.length > 0}>
+    <details className="wb-panel group space-y-4">
       <summary className="-m-1 flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-1 transition-colors hover:bg-surface-2/45 [&::-webkit-details-marker]:hidden">
         <span>
           <span className="wb-kicker">{title}</span>
@@ -150,7 +155,7 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
       <ActionGroup title="Detection actions" actions={plan.detectionActions} />
       <ActionGroup title="Hardening actions" actions={plan.hardeningActions} />
 
-      <details className="wb-panel space-y-4" open>
+      <details className="wb-panel space-y-4">
         <summary className="-m-1 flex cursor-pointer list-none items-center justify-between rounded-lg p-1 [&::-webkit-details-marker]:hidden">
           <span>
             <span className="wb-kicker">Zira Suggestions</span>
@@ -207,6 +212,8 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
   )
 }
 
+type AegisWorkspaceSection = "create" | "active" | "library"
+
 export default function AegisPage() {
   const searchParams = useSearchParams()
   const { session } = useAuth()
@@ -226,6 +233,7 @@ export default function AegisPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedScanJobId, setSelectedScanJobId] = useState("")
   const [scanBusyAction, setScanBusyAction] = useState<"create" | "regenerate" | null>(null)
+  const [activeSection, setActiveSection] = useState<AegisWorkspaceSection>("create")
   const planDetailsRef = useRef<HTMLDivElement | null>(null)
 
   const reportsQuery = useWorkbenchQuery(["aegis", "reports"], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
@@ -284,6 +292,7 @@ export default function AegisPage() {
         actorUserId,
       })
       setResult(response)
+      setActiveSection("active")
       setShouldFocusResult(true)
       setRefreshKey((value) => value + 1)
       setMessage("Aegis created and saved a mitigation plan.")
@@ -321,6 +330,7 @@ export default function AegisPage() {
     if (result?.persistedMitigationReport?.id === planId) {
       setResult(null)
       setClosedPlanId(planId)
+      setActiveSection("library")
       window.history.replaceState(null, "", "/agents/aegis")
       setMessage("Closed saved Aegis mitigation plan details.")
       setErrorText(null)
@@ -331,6 +341,7 @@ export default function AegisPage() {
       const nextResult = await loadPlanDetails(planId)
       setResult(nextResult)
       setClosedPlanId(null)
+      setActiveSection("active")
       setShouldFocusResult(true)
       window.history.replaceState(null, "", `/agents/aegis?plan=${encodeURIComponent(planId)}`)
       setMessage("Opened saved Aegis mitigation plan details.")
@@ -360,6 +371,7 @@ export default function AegisPage() {
 
       setResult(response)
       setClosedPlanId(null)
+      setActiveSection("active")
       setShouldFocusResult(true)
       setRefreshKey((value) => value + 1)
       window.history.replaceState(null, "", `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
@@ -385,6 +397,7 @@ export default function AegisPage() {
       .then((nextResult) => {
         setResult(nextResult)
         setClosedPlanId(null)
+        setActiveSection("active")
         setShouldFocusResult(true)
         setMessage("Opened saved Aegis mitigation plan details.")
         setErrorText(null)
@@ -439,12 +452,37 @@ export default function AegisPage() {
       {message ? <div className="rounded-2xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{message}</div> : null}
       {errorText ? <div className="rounded-2xl border border-rose-400/35 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{errorText}</div> : null}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <div className="grid gap-2 rounded-2xl border border-border/60 bg-surface-2/35 p-2 md:grid-cols-3">
+        {([
+          ["create", "Create plan", "Pick evidence or a scan run"],
+          ["active", "Active plan", result ? "Review current details" : "No plan selected"],
+          ["library", "Library", `${plans.length} saved plans`],
+        ] as const).map(([value, label, helper]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setActiveSection(value)}
+            className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+              activeSection === value
+                ? "border-primary/45 bg-primary/15 text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-surface-2/55 hover:text-foreground"
+            }`}
+          >
+            <span className="block text-sm font-semibold">{label}</span>
+            <span className="mt-0.5 block text-xs">{helper}</span>
+          </button>
+        ))}
+      </div>
+
+      {activeSection === "create" ? (
         <article className="wb-panel self-start space-y-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="wb-kicker">Input</p>
-              <h2 className="mt-1 text-xl font-semibold">Choose report evidence or a scan run</h2>
+              <p className="wb-kicker">Create plan</p>
+              <h2 className="mt-1 text-xl font-semibold">Choose evidence</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Use a recent scan run, saved report, file upload, or pasted IOC text.
+              </p>
             </div>
             <span className="wb-chip"><ShieldCheck className="h-3.5 w-3.5" /> Read-only</span>
           </div>
@@ -522,7 +560,7 @@ export default function AegisPage() {
             >
               <option value="">Use pasted text or file upload</option>
               {reports.map((report) => (
-                <option key={report.id} value={report.id}>{report.title}</option>
+                <option key={report.id} value={report.id}>{shortenText(report.title, 90)}</option>
               ))}
             </select>
           </label>
@@ -573,10 +611,12 @@ export default function AegisPage() {
           </label>
 
           <Button type="button" onClick={generate} disabled={!canGenerate || generating}>
-            {generating ? "Aegis is reviewing..." : "Create mitigation plan"}
+            {generating ? "Reviewing..." : "Create plan"}
           </Button>
         </article>
+      ) : null}
 
+      {activeSection === "active" ? (
         <div ref={planDetailsRef} className="scroll-mt-24 space-y-5">
           {result ? (
             <PlanView result={result} />
@@ -589,8 +629,9 @@ export default function AegisPage() {
             </article>
           )}
         </div>
-      </div>
+      ) : null}
 
+      {activeSection === "library" ? (
       <article className="wb-panel space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -604,18 +645,18 @@ export default function AegisPage() {
         ) : (
           <div className="grid gap-3">
             {plans.map((plan) => (
-              <div key={plan.id} className="rounded-2xl border border-border/60 bg-surface-2/35 p-4">
+              <div key={plan.id} className="rounded-xl border border-border/60 bg-surface-2/35 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-semibold">{plan.title}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{plan.executiveSummary}</p>
+                    <p className="mt-1 max-w-4xl text-sm text-muted-foreground">{shortenText(plan.executiveSummary, 180)}</p>
                     <p className="mt-2 text-xs text-muted-foreground">Created {formatUtc(plan.generatedAtUtc)}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <span className="wb-chip"><AlertTriangle className="h-3.5 w-3.5" /> {plan.severity}</span>
                     <span className="wb-chip">{plan.confidence} confidence</span>
                     <Button type="button" variant="outline" onClick={() => { void openPlanDetails(plan.id) }}>
-                      {result?.persistedMitigationReport?.id === plan.id ? "Close details" : "Open details"}
+                      {result?.persistedMitigationReport?.id === plan.id ? "Close" : "Open"}
                     </Button>
                     {plan.sourceReportId ? (
                       <Link
@@ -632,6 +673,7 @@ export default function AegisPage() {
           </div>
         )}
       </article>
+      ) : null}
 
       <div className="rounded-2xl border border-border/60 bg-surface-2/35 px-4 py-3 text-xs text-muted-foreground">
         <FileText className="mr-2 inline h-3.5 w-3.5" />

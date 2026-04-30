@@ -1,6 +1,7 @@
 import type {
   AlertListResponse,
   AlertEmailUpdateResponse,
+  AlertOwnerDirectoryResponse,
   AlertOwnerResponse,
   AiDecisionActionPlanOrPendingResponse,
   AiDecisionExplanationOrPendingResponse,
@@ -51,6 +52,7 @@ import type {
   RuleListResponse,
   RuleRevisionItem,
   SubnetResponse,
+  SmtpNotificationStatusResponse,
   TargetGroupMemberResponse,
   TargetGroupResponse,
   TargetServerResponse,
@@ -68,6 +70,7 @@ import type {
   AuditLogListQuery,
   CaseDetailVM,
   CreateRetentionPolicyInput,
+  CreateAlertOwnerDirectoryInput,
   CreateDistributionJobInput,
   CreateScanPlanInput,
   CoveragePainAnalysisScopeInput,
@@ -116,6 +119,7 @@ import type {
   UpdateRuleRepositoryInput,
   UpdateScanPlanInput,
   UpdateAlertOwnerInput,
+  UpdateAlertOwnerDirectoryInput,
   UpdateManagedServerInput,
   UpsertManagedServerScannerAssignmentInput,
 } from "@/shared/gateway/types"
@@ -158,17 +162,47 @@ function consume(...args: unknown[]) {
   void args.length
 }
 
-const mockAlertOwners: AlertOwnerResponse[] = [
-  { key: "it-security", displayName: "IT Security", email: "it-security@local.test" },
-  { key: "soc", displayName: "Security Operations Center", email: "soc@local.test" },
-  { key: "forensics", displayName: "Digital Forensics", email: "forensics@local.test" },
+const mockAlertOwners: AlertOwnerDirectoryResponse[] = [
+  {
+    key: "it-security",
+    displayName: "IT Security",
+    email: "it-security@local.test",
+    isEnabled: true,
+    source: "database",
+    createdAtUtc: "2026-04-01T00:00:00Z",
+    updatedAtUtc: "2026-04-01T00:00:00Z",
+    createdByUserId: "system",
+    updatedByUserId: "system",
+  },
+  {
+    key: "soc",
+    displayName: "Security Operations Center",
+    email: "soc@local.test",
+    isEnabled: true,
+    source: "database",
+    createdAtUtc: "2026-04-01T00:00:00Z",
+    updatedAtUtc: "2026-04-01T00:00:00Z",
+    createdByUserId: "system",
+    updatedByUserId: "system",
+  },
+  {
+    key: "forensics",
+    displayName: "Digital Forensics",
+    email: "forensics@local.test",
+    isEnabled: true,
+    source: "database",
+    createdAtUtc: "2026-04-01T00:00:00Z",
+    updatedAtUtc: "2026-04-01T00:00:00Z",
+    createdByUserId: "system",
+    updatedByUserId: "system",
+  },
 ]
 
 const mockAlertEmailUpdates = new Map<string, AlertEmailUpdateResponse[]>()
 const mockAlertOwnerAssignments = new Map<string, string>()
 
 function resolveMockOwner(ownerUserId: string) {
-  return mockAlertOwners.find((owner) => owner.key === ownerUserId)
+  return mockAlertOwners.find((owner) => owner.key === ownerUserId && owner.isEnabled)
 }
 
 function enrichMockAlertOwner(ownerUserId: string) {
@@ -562,7 +596,83 @@ export class MockGateway implements Gateway {
 
   async listAlertOwners(_signal?: AbortSignal): Promise<AlertOwnerResponse[]> {
     consume(_signal)
+    return copy(
+      mockAlertOwners
+        .filter((owner) => owner.isEnabled)
+        .map((owner) => ({
+          key: owner.key,
+          displayName: owner.displayName,
+          email: owner.email,
+        })),
+    )
+  }
+
+  async listSettingsAlertOwners(_signal?: AbortSignal): Promise<AlertOwnerDirectoryResponse[]> {
+    consume(_signal)
     return copy(mockAlertOwners)
+  }
+
+  async getSmtpNotificationStatus(_signal?: AbortSignal): Promise<SmtpNotificationStatusResponse> {
+    consume(_signal)
+    return {
+      enabled: false,
+      configured: false,
+      willSendEmail: false,
+      host: "",
+      port: 25,
+      useSsl: false,
+      userNameConfigured: false,
+      fromEmail: "",
+      fromDisplayName: "IOC Manager",
+      missingRequirements: [
+        "Set Notifications:Smtp:Enabled to true.",
+        "Set Notifications:Smtp:Host to your SMTP server.",
+        "Set Notifications:Smtp:FromEmail to the sender mailbox.",
+      ],
+    }
+  }
+
+  async createSettingsAlertOwner(input: CreateAlertOwnerDirectoryInput): Promise<AlertOwnerDirectoryResponse> {
+    const key = input.key.trim().toLowerCase()
+    if (mockAlertOwners.some((owner) => owner.key.toLowerCase() === key)) {
+      throw new Error("Alert owner key already exists.")
+    }
+
+    const now = new Date().toISOString()
+    const created: AlertOwnerDirectoryResponse = {
+      key,
+      displayName: input.displayName.trim(),
+      email: input.email.trim(),
+      isEnabled: input.isEnabled,
+      source: "database",
+      createdAtUtc: now,
+      updatedAtUtc: now,
+      createdByUserId: input.actorUserId,
+      updatedByUserId: input.actorUserId,
+    }
+    mockAlertOwners.push(created)
+    return copy(created)
+  }
+
+  async updateSettingsAlertOwner(key: string, input: UpdateAlertOwnerDirectoryInput): Promise<AlertOwnerDirectoryResponse> {
+    const normalizedKey = key.trim().toLowerCase()
+    const existing = mockAlertOwners.find((owner) => owner.key.toLowerCase() === normalizedKey)
+    if (!existing) {
+      throw new Error("Alert owner was not found.")
+    }
+
+    const updated: AlertOwnerDirectoryResponse = {
+      ...existing,
+      displayName: input.displayName.trim(),
+      email: input.email.trim(),
+      isEnabled: input.isEnabled,
+      source: "database",
+      updatedAtUtc: new Date().toISOString(),
+      updatedByUserId: input.actorUserId,
+    }
+    const index = mockAlertOwners.indexOf(existing)
+    mockAlertOwners[index] = updated
+    return copy(updated)
   }
 
   async listAlerts(_signal?: AbortSignal) {

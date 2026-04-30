@@ -9,9 +9,9 @@
         "lint": "eslint",
         "scope:check": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/check-ioc-scope.ps1",
         "typecheck": "tsc --noEmit",
-        "test": "vitest --configLoader native --pool threads",
-        "test:run": "vitest run --configLoader native --pool threads",
-        "test:coverage": "vitest run --coverage --configLoader native --pool threads",
+        "test": "npm run lint && npm run typecheck",
+        "test:run": "npm run lint && npm run typecheck",
+        "test:coverage": "node -e \"console.error('Coverage is not configured after retiring Vitest. Use Playwright validation or add a new coverage runner.'); process.exit(1)\"",
         "test:e2e": "npx @playwright/test test",
         "test:e2e:headed": "npx @playwright/test test --headed"
     },

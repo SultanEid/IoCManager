@@ -230,7 +230,7 @@ export default function ScansPage() {
   const targets = targetsQuery.data ?? []
   const jobs = jobsQuery.data ?? []
   const aegisPlans = aegisPlansQuery.data?.items ?? []
-  const results = resultsQuery.data ?? []
+  const results = useMemo(() => resultsQuery.data ?? [], [resultsQuery.data])
 
   const selectedTargets = useMemo(() => {
     const selectedNetworkIds = new Set(form.selectedNetworkIds)

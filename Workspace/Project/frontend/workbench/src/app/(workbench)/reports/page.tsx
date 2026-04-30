@@ -203,6 +203,149 @@ function summarizeMitigationActions(actions: Record<string, unknown>[]) {
   })
 }
 
+type ReportTone = {
+  border: string
+  surface: string
+  text: string
+  rail: string
+}
+
+const neutralReportTone: ReportTone = {
+  border: "border-border/55",
+  surface: "bg-surface-1/55",
+  text: "text-muted-foreground",
+  rail: "bg-border",
+}
+
+function normalizeReportToken(value: string) {
+  return value.trim().toLowerCase().replace(/[_-]/g, " ")
+}
+
+function reportToneForValue(value: string | null | undefined): ReportTone {
+  const normalized = normalizeReportToken(value ?? "")
+
+  if (["critical", "high", "open", "yes", "human review recommended"].includes(normalized)) {
+    return {
+      border: "border-rose-300/35",
+      surface: "bg-rose-500/10",
+      text: "text-rose-100",
+      rail: "bg-rose-300",
+    }
+  }
+
+  if (["medium", "investigating", "review soon", "partial", "safe to draft"].includes(normalized)) {
+    return {
+      border: "border-orange-300/35",
+      surface: "bg-orange-500/10",
+      text: "text-orange-100",
+      rail: "bg-orange-300",
+    }
+  }
+
+  if (["resolved", "operator can proceed", "no"].includes(normalized)) {
+    return {
+      border: "border-sky-300/35",
+      surface: "bg-sky-500/10",
+      text: "text-sky-100",
+      rail: "bg-sky-300",
+    }
+  }
+
+  if (["closed", "low"].includes(normalized)) {
+    return {
+      border: "border-slate-300/30",
+      surface: "bg-slate-500/10",
+      text: "text-slate-200",
+      rail: "bg-slate-400",
+    }
+  }
+
+  return neutralReportTone
+}
+
+function reportToneForMetric(label: string, value: string): ReportTone {
+  const normalizedLabel = normalizeReportToken(label)
+  const normalizedValue = normalizeReportToken(value)
+
+  if (normalizedLabel === "confidence") {
+    if (normalizedValue === "high") {
+      return {
+        border: "border-emerald-300/35",
+        surface: "bg-emerald-500/10",
+        text: "text-emerald-100",
+        rail: "bg-emerald-300",
+      }
+    }
+
+    if (normalizedValue === "medium") {
+      return {
+        border: "border-orange-300/35",
+        surface: "bg-orange-500/10",
+        text: "text-orange-100",
+        rail: "bg-orange-300",
+      }
+    }
+
+    if (normalizedValue === "low") {
+      return {
+        border: "border-rose-300/35",
+        surface: "bg-rose-500/10",
+        text: "text-rose-100",
+        rail: "bg-rose-300",
+      }
+    }
+  }
+
+  return reportToneForValue(value)
+}
+
+function splitLeadingReportToken(value: string) {
+  const match = value.match(/^([a-zA-Z][a-zA-Z0-9_ -]{1,32}):\s*(.+)$/)
+  if (!match) {
+    return null
+  }
+
+  return {
+    token: match[1].trim(),
+    body: match[2].trim(),
+  }
+}
+
+function ReportMetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  const isToneable = ["severity", "status", "human review", "review gate", "confidence"].includes(normalizeReportToken(label))
+  const tone = isToneable ? reportToneForMetric(label, value) : neutralReportTone
+
+  return (
+    <div className={`relative overflow-hidden rounded-[1.2rem] border ${tone.border} ${tone.surface} p-3 shadow-[var(--shadow-soft)]`}>
+      {isToneable ? <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${tone.rail}`} aria-hidden="true" /> : null}
+      <p className="wb-kicker">{label}</p>
+      <p className={`mt-1 text-lg font-semibold ${isToneable ? tone.text : ""}`}>{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  )
+}
+
+function ReportHighlightCard({ highlight }: { highlight: string }) {
+  const leading = splitLeadingReportToken(highlight)
+  const tone = leading ? reportToneForValue(leading.token) : neutralReportTone
+
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border ${tone.border} ${tone.surface} px-4 py-3 text-sm leading-6 text-muted-foreground`}>
+      {leading ? <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${tone.rail}`} aria-hidden="true" /> : null}
+      {leading ? (
+        <p>
+          <span className={`mr-2 inline-flex rounded-full border ${tone.border} ${tone.surface} px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${tone.text}`}>
+            {leading.token}
+          </span>
+          <span>{leading.body}</span>
+        </p>
+      ) : (
+        highlight
+      )}
+    </div>
+  )
+}
+
 function buildScope(query: SnapshotQuery) {
   return summarizeQuery(query)
 }
@@ -982,20 +1125,14 @@ export default function ReportsPage() {
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                   {section.metrics.map((metric) => (
-                    <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
-                      <p className="wb-kicker">{metric.label}</p>
-                      <p className="mt-1 text-lg font-semibold">{metric.value}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
-                    </div>
+                    <ReportMetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
                   ))}
                 </div>
 
                 {section.highlights.length > 0 ? (
                   <div className="mt-4 grid gap-2">
                     {section.highlights.map((highlight) => (
-                      <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm text-muted-foreground">
-                        {highlight}
-                      </div>
+                      <ReportHighlightCard key={highlight} highlight={highlight} />
                     ))}
                   </div>
                 ) : null}
@@ -1263,26 +1400,26 @@ export default function ReportsPage() {
                         ) : null}
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
-                          <p className="wb-kicker">Severity</p>
-                          <p className="mt-2 text-xl font-semibold">{reviewAegisPlan.severity || "Unknown"}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Aegis-assessed response priority for this case.</p>
-                        </div>
-                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
-                          <p className="wb-kicker">Confidence</p>
-                          <p className="mt-2 text-xl font-semibold">{reviewAegisPlan.confidence || "Unknown"}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Confidence based on available evidence and linked operational context.</p>
-                        </div>
-                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
-                          <p className="wb-kicker">Review Gate</p>
-                          <p className="mt-2 text-base font-semibold">{reviewAegisPlan.requiresHumanReview === false ? "Operator can proceed" : "Human review recommended"}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Aegis remains advisory and does not apply mitigations directly.</p>
-                        </div>
-                        <div className="rounded-[1.2rem] border border-border/60 bg-background/35 p-4 shadow-[var(--shadow-soft)]">
-                          <p className="wb-kicker">Affected Focus</p>
-                          <p className="mt-2 text-base font-semibold">{reviewAegisPlan.affectedAssetHypotheses?.[0] || "Workspace-wide case"}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Primary target or case hypothesis Aegis anchored the plan around.</p>
-                        </div>
+                        <ReportMetricCard
+                          label="Severity"
+                          value={reviewAegisPlan.severity || "Unknown"}
+                          detail="Aegis-assessed response priority for this case."
+                        />
+                        <ReportMetricCard
+                          label="Confidence"
+                          value={reviewAegisPlan.confidence || "Unknown"}
+                          detail="Confidence based on available evidence and linked operational context."
+                        />
+                        <ReportMetricCard
+                          label="Review Gate"
+                          value={reviewAegisPlan.requiresHumanReview === false ? "Operator can proceed" : "Human review recommended"}
+                          detail="Aegis remains advisory and does not apply mitigations directly."
+                        />
+                        <ReportMetricCard
+                          label="Affected Focus"
+                          value={reviewAegisPlan.affectedAssetHypotheses?.[0] || "Workspace-wide case"}
+                          detail="Primary target or case hypothesis Aegis anchored the plan around."
+                        />
                       </div>
                     </div>
                   </section>
@@ -1307,11 +1444,7 @@ export default function ReportsPage() {
                         {section.metrics.length > 0 ? (
                           <div className="mt-4 grid gap-3 sm:grid-cols-2">
                             {section.metrics.map((metric) => (
-                              <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
-                                <p className="wb-kicker">{metric.label}</p>
-                                <p className="mt-1 text-lg font-semibold">{metric.value}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
-                              </div>
+                              <ReportMetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
                             ))}
                           </div>
                         ) : null}
@@ -1319,9 +1452,7 @@ export default function ReportsPage() {
                         {section.highlights.length > 0 ? (
                           <div className="mt-4 grid gap-2">
                             {section.highlights.map((highlight) => (
-                              <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
-                                {highlight}
-                              </div>
+                              <ReportHighlightCard key={highlight} highlight={highlight} />
                             ))}
                           </div>
                         ) : null}
@@ -1384,20 +1515,14 @@ export default function ReportsPage() {
 
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                         {section.metrics.map((metric) => (
-                          <div key={metric.label} className="rounded-[1.2rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_85%,transparent),color-mix(in_srgb,var(--background)_82%,transparent))] p-3 shadow-[var(--shadow-soft)]">
-                            <p className="wb-kicker">{metric.label}</p>
-                            <p className="mt-1 text-lg font-semibold">{metric.value}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
-                          </div>
+                          <ReportMetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
                         ))}
                       </div>
 
                       {section.highlights.length > 0 ? (
                         <div className="mt-4 grid gap-2">
                           {section.highlights.map((highlight) => (
-                            <div key={highlight} className="rounded-2xl border border-border/55 bg-surface-1/55 px-4 py-3 text-sm text-muted-foreground">
-                              {highlight}
-                            </div>
+                            <ReportHighlightCard key={highlight} highlight={highlight} />
                           ))}
                         </div>
                       ) : null}

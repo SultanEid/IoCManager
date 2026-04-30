@@ -92,7 +92,7 @@ export default function ServersPage() {
     },
   )
   const networks = networksQuery.data ?? []
-  const targets = targetsQuery.data ?? []
+  const targets = useMemo(() => targetsQuery.data ?? [], [targetsQuery.data])
   const focusedTargetId = searchParams.get("targetId") ?? ""
   const focusedTarget = useMemo(
     () => (focusedTargetId ? targets.find((target) => target.id === focusedTargetId) ?? null : null),

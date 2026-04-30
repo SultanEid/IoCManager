@@ -1,6 +1,7 @@
 import type {
   AlertResponse,
   AlertEmailUpdateResponse,
+  AlertOwnerDirectoryResponse,
   AlertOwnerResponse,
   AiModelStatistics,
   AiDecisionActionPlanOrPendingResponse,
@@ -47,6 +48,7 @@ import type {
   ScanRuleSelectionMode,
   ScannerCapability,
   ScannerResponse,
+  SmtpNotificationStatusResponse,
   DiscoveredHostResponse,
   DiscoveryRunResponse,
   DecisionResponse,
@@ -673,6 +675,21 @@ export type SendAlertEmailUpdateInput = {
   actorUserId: string
 }
 
+export type CreateAlertOwnerDirectoryInput = {
+  key: string
+  displayName: string
+  email: string
+  isEnabled: boolean
+  actorUserId: string
+}
+
+export type UpdateAlertOwnerDirectoryInput = {
+  displayName: string
+  email: string
+  isEnabled: boolean
+  actorUserId: string
+}
+
 export type ReportListQuery = {
   q?: string
   reportType?: string
@@ -810,6 +827,10 @@ export type RetryDistributionJobInput = {
 export interface Gateway {
   login(username: string, password: string): Promise<TokenResponse>
   listAlertOwners(signal?: AbortSignal): Promise<AlertOwnerResponse[]>
+  listSettingsAlertOwners(signal?: AbortSignal): Promise<AlertOwnerDirectoryResponse[]>
+  getSmtpNotificationStatus(signal?: AbortSignal): Promise<SmtpNotificationStatusResponse>
+  createSettingsAlertOwner(input: CreateAlertOwnerDirectoryInput): Promise<AlertOwnerDirectoryResponse>
+  updateSettingsAlertOwner(key: string, input: UpdateAlertOwnerDirectoryInput): Promise<AlertOwnerDirectoryResponse>
   listAlertRegistry(query?: AlertListQuery, signal?: AbortSignal): Promise<AlertListResponse>
   getAlertDetail(alertId: string, signal?: AbortSignal): Promise<V2AlertDetailResponse>
   updateAlertStatus(alertId: string, status: string, actorUserId: string): Promise<V2AlertDetailResponse>
