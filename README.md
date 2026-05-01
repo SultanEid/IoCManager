@@ -14,14 +14,6 @@ The canonical active product stack is under `Workspace/Project/`:
 - Project docs: `Workspace/Project/docs`
 - Project scripts: `Workspace/Project/scripts`
 
-Use [Workspace/README.md](Workspace/README.md) for developer orientation and
-[AGENTS.md](AGENTS.md) for coding-agent guidance.
-
-## Validation
-
-Phase 1 establishes the validation entry points in
-`Workspace/Project/docs/validation.md`. Use that document for fast PR checks
-and the fuller local/CI validation path.
 
 ## Repository Boundaries
 
