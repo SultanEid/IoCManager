@@ -12,7 +12,7 @@ import { gateway, isModeConfigured } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { panelMotion, staggerMotion } from "@/shared/ui/motion"
-import { CompactEmptyState, LoadingState } from "@/shared/ui/state-panels"
+import { CompactEmptyState, LoadingState, UnavailableState } from "@/shared/ui/state-panels"
 
 const AUDIT_PREVIEW_SIZE = 5
 const RETENTION_DATA_TYPES = ["ScanResult", "Alert", "Report", "AuditLog", "IocFile"] as const
@@ -105,7 +105,13 @@ export default function SettingsPage() {
   const permissions = useMemo(() => permissionsQuery.data ?? [], [permissionsQuery.data])
   const rolePermissions = useMemo(() => rolePermissionsQuery.data ?? [], [rolePermissionsQuery.data])
   const scanners = useMemo(() => scannersQuery.data ?? [], [scannersQuery.data])
-  const readiness = readinessQuery.data ?? { status: "not_ready", components: [] }
+  const health = healthQuery.data ?? {
+    service: "Backend API",
+    status: "unknown",
+    utcNow: new Date().toISOString(),
+  }
+  const readiness = readinessQuery.data ?? { status: "unknown", components: [] }
+  const overviewUnavailable = healthQuery.isError || readinessQuery.isError
   const auditItems = Array.isArray(auditQuery.data?.items) ? auditQuery.data.items : []
   const selectedScanner = scanners.find((item) => item.id === selectedScannerId) ?? null
   const enabledAlertOwners = alertOwners.filter((owner) => owner.isEnabled).length
@@ -210,16 +216,8 @@ export default function SettingsPage() {
     return <ClassifiedFailureState failure={classifyUiError(null, { modeMisconfigured: true })} fallbackTitle="Settings unavailable" />
   }
 
-  if (healthQuery.isLoading || readinessQuery.isLoading) {
+  if ((healthQuery.isLoading || readinessQuery.isLoading) && !healthQuery.data && !readinessQuery.data) {
     return <LoadingState label="Loading settings" />
-  }
-
-  if (healthQuery.isError || !healthQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(healthQuery.error)} fallbackTitle="Settings unavailable" />
-  }
-
-  if (readinessQuery.isError || !readinessQuery.data) {
-    return <ClassifiedFailureState failure={classifyUiError(readinessQuery.error)} fallbackTitle="Settings unavailable" />
   }
 
   async function runModelRetraining() {
@@ -590,14 +588,24 @@ export default function SettingsPage() {
             <h3 className="text-sm font-semibold tracking-tight">Overview</h3>
             <p className="mt-1 text-xs text-muted-foreground">Live health, readiness, and session context for the current environment.</p>
           </div>
-          <StatusPill label={readiness.status === "ready" ? "Ready" : "Not ready"} />
+          <div className="flex flex-wrap items-center gap-2">
+            {overviewUnavailable ? <StatusPill label="Partial data" /> : null}
+            <StatusPill label={readiness.status === "ready" ? "Ready" : readiness.status === "unknown" ? "Unknown" : "Not ready"} />
+          </div>
         </div>
+
+        {overviewUnavailable ? (
+          <UnavailableState
+            title="Settings overview is partially unavailable"
+            description="One health endpoint failed, but editable settings sections remain available below."
+          />
+        ) : null}
 
         <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-4">
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Service</p>
-            <p className="mt-1 text-sm font-semibold">{healthQuery.data.service}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Reported {formatTimestamp(healthQuery.data.utcNow)}</p>
+            <p className="mt-1 text-sm font-semibold">{health.service}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Reported {formatTimestamp(health.utcNow)}</p>
           </div>
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Session</p>
@@ -609,7 +617,7 @@ export default function SettingsPage() {
           <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
             <p className="wb-kicker">Required Dependencies</p>
             <p className="mt-1 text-sm font-semibold">{requiredIssues.length === 0 ? "Healthy" : `${requiredIssues.length} issue(s)`}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{formatTimestamp(healthQuery.data.utcNow)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{formatTimestamp(health.utcNow)}</p>
           </div>
           {canAdmin ? (
             <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">

@@ -580,6 +580,7 @@ function PostureEditor({
 export function ScanAnalystPage() {
   const { session } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? ""
+  const operatorLabel = session?.username ?? "Unavailable"
   const conversationRef = useRef<HTMLDivElement | null>(null)
 
   const [message, setMessage] = useState("")
@@ -981,8 +982,8 @@ export function ScanAnalystPage() {
 
         <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
           <span>Focused subnet: {selectedSubnet ? `${selectedSubnet.name} (${selectedSubnet.cidrBlock})` : "All available inventory"}</span>
-          <span>Actor: {actorUserId || "Unavailable"}</span>
-          <span>Autonomy: {status.autonomyEnabled ? "Backend active" : "Disabled"}</span>
+          <span>Operator: {operatorLabel}</span>
+          <span>Zira: {status.autonomyEnabled ? "Autonomous passes enabled" : "Manual only"}</span>
           {submitError ? <span className="text-destructive">{submitError}</span> : null}
         </div>
 

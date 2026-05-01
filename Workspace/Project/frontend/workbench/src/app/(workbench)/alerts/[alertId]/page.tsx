@@ -22,6 +22,9 @@ import { EmptyState, LoadingState } from "@/shared/ui/state-panels"
 
 const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
 const IOC_STATUS_OPTIONS = ["Open", "InReview", "Contained", "FalsePositive", "AcceptedRisk"] as const
+const CASE_SECTIONS = ["triage", "communications", "evidence"] as const
+
+type CaseSection = (typeof CASE_SECTIONS)[number]
 
 function formatIocStatus(value: string) {
   return value
@@ -93,6 +96,17 @@ function SectionHeader({ title, description }: { title: string; description: str
       <p className="mt-1 text-xs text-muted-foreground">{description}</p>
     </div>
   )
+}
+
+function caseSectionLabel(section: CaseSection) {
+  switch (section) {
+    case "triage":
+      return "Triage"
+    case "communications":
+      return "Communications"
+    case "evidence":
+      return "Evidence"
+  }
 }
 
 function ScannerSpecificFields({ detail }: { detail: V2AlertDetailResponse["linkedIocs"][number] }) {
@@ -227,6 +241,7 @@ export default function AlertDetailPage() {
   const [emailCc, setEmailCc] = useState("")
   const [emailSending, setEmailSending] = useState(false)
   const [emailError, setEmailError] = useState<string | null>(null)
+  const [activeSection, setActiveSection] = useState<CaseSection>("triage")
 
   const alertQuery = useWorkbenchQuery(["alert", alertId, "detail"], (signal) => gateway.getAlertDetail(alertId, signal), {
     enabled: isModeConfigured,
@@ -254,9 +269,12 @@ export default function AlertDetailPage() {
   const detailOwnerUserId = detail?.ownerUserId
   const canShowNonAlertPivots = !isItOnlyScope(session?.roles ?? [])
   const isLegacyCompatibilityAlert = detail?.ownerUserId === "legacy-pipeline"
-  const existingAegisPlan = (aegisPlansQuery.data?.items ?? []).find((item) => item.alertIds.includes(alertId)) ?? null
+  const aegisPlans = aegisPlansQuery.isSuccess ? aegisPlansQuery.data.items : []
+  const owners = ownersQuery.isSuccess ? ownersQuery.data : []
+  const emailUpdates = emailUpdatesQuery.isSuccess ? emailUpdatesQuery.data : []
+  const existingAegisPlan = aegisPlans.find((item) => item.alertIds.includes(alertId)) ?? null
   const pendingOwnerSave = Boolean(detail && selectedOwner !== detail.ownerUserId)
-  const selectedAssignableOwner = (ownersQuery.data ?? []).find((owner) => owner.key === selectedOwner) ?? null
+  const selectedAssignableOwner = owners.find((owner) => owner.key === selectedOwner) ?? null
   const emailRecipientPrompt = detail?.ownerEmail
     ? detail.ownerEmail
     : pendingOwnerSave && selectedAssignableOwner
@@ -381,12 +399,12 @@ export default function AlertDetailPage() {
     return <ClassifiedFailureState failure={failure} fallbackTitle="Case detail unavailable" />
   }
 
-  if (alertQuery.isLoading || aegisPlansQuery.isLoading || ownersQuery.isLoading || emailUpdatesQuery.isLoading) {
+  if (alertQuery.isLoading) {
     return <LoadingState label="Loading alert detail" />
   }
 
-  if (alertQuery.isError || aegisPlansQuery.isError || ownersQuery.isError || emailUpdatesQuery.isError || !detail) {
-    const failure = classifyUiError(alertQuery.error ?? aegisPlansQuery.error ?? ownersQuery.error ?? emailUpdatesQuery.error)
+  if (alertQuery.isError || !detail) {
+    const failure = classifyUiError(alertQuery.error)
     return <ClassifiedFailureState failure={failure} fallbackTitle="Alert detail unavailable" />
   }
 
@@ -438,10 +456,29 @@ export default function AlertDetailPage() {
         </div>
       </motion.header>
 
+      <motion.nav className="wb-panel-muted flex flex-wrap gap-2 p-2" variants={panelMotion} aria-label="Case detail sections">
+        {CASE_SECTIONS.map((section) => (
+          <button
+            key={section}
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              activeSection === section
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+            }`}
+            onClick={() => setActiveSection(section)}
+          >
+            {caseSectionLabel(section)}
+          </button>
+        ))}
+      </motion.nav>
+
+      {activeSection === "triage" ? (
+      <>
       <motion.article className="wb-panel space-y-4" variants={panelMotion}>
         <SectionHeader
           title="Status Controls"
-          description="Update the stored case state without leaving the IOC evidence view."
+          description="Update the stored case state and launch mitigation review from one triage panel."
         />
         <div className="flex flex-wrap gap-2">
           {STATUS_OPTIONS.map((option) => (
@@ -467,22 +504,26 @@ export default function AlertDetailPage() {
             <div>
               <p className="wb-kicker">Aegis</p>
               <p className="mt-1 text-sm font-medium">
-                {isLegacyCompatibilityAlert
-                  ? "This compatibility-backed alert can be reviewed here, but Aegis actions require a promoted v2 alert."
-                  : existingAegisPlan
-                    ? "A mitigation plan already exists for this alert."
-                    : "Send this alert to Aegis for a mitigation plan."}
+                {aegisPlansQuery.isError
+                  ? "Mitigation plan lookup is temporarily unavailable."
+                  : isLegacyCompatibilityAlert
+                    ? "This compatibility-backed alert can be reviewed here, but Aegis actions require a promoted v2 alert."
+                    : existingAegisPlan
+                      ? "A mitigation plan already exists for this alert."
+                      : "Send this alert to Aegis for a mitigation plan."}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {isLegacyCompatibilityAlert
-                  ? "Legacy fallback keeps the alert visible and reviewable while the newer alert tables are unavailable."
-                  : existingAegisPlan
-                  ? `${existingAegisPlan.severity} severity, ${existingAegisPlan.confidence} confidence, created ${new Date(existingAegisPlan.generatedAtUtc).toLocaleString()}.`
-                  : "Use this for high-value alert review even when the case did not auto-trigger Aegis."}
+                {aegisPlansQuery.isError
+                  ? classifyUiError(aegisPlansQuery.error).message
+                  : isLegacyCompatibilityAlert
+                    ? "Legacy fallback keeps the alert visible and reviewable while the newer alert tables are unavailable."
+                    : existingAegisPlan
+                    ? `${existingAegisPlan.severity} severity, ${existingAegisPlan.confidence} confidence, created ${new Date(existingAegisPlan.generatedAtUtc).toLocaleString()}.`
+                    : "Use this for high-value alert review even when the case did not auto-trigger Aegis."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {isLegacyCompatibilityAlert ? null : existingAegisPlan ? (
+              {isLegacyCompatibilityAlert || aegisPlansQuery.isError ? null : existingAegisPlan ? (
                 <>
                   <Button type="button" size="sm" variant="outline" onClick={openExistingAegisPlan} disabled={aegisBusyAction !== null}>
                     Open mitigation plan
@@ -502,27 +543,64 @@ export default function AlertDetailPage() {
         </div>
       </motion.article>
 
+      <motion.article className="wb-panel grid gap-3 xl:grid-cols-2" variants={panelMotion}>
+        <section>
+          <SectionHeader
+            title="Related Target"
+            description="Legacy inventory context for the target associated with this alert."
+          />
+          {detail.target ? (
+            <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
+              <p className="text-sm font-medium">{detail.target.display}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {detail.target.ipAddress ?? "Unknown IP"} | {detail.target.targetOsType ?? "Unknown OS"} | {detail.target.status ?? "Unknown status"}
+              </p>
+              {canShowNonAlertPivots && detail.target.id ? (
+                <div className="mt-3">
+                  <Link href={`/servers?targetId=${detail.target.id}`} className="inline-flex">
+                    <Button type="button" size="sm">Open target</Button>
+                  </Link>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <EmptyState title="No related target" description="This alert is not linked to a target inventory row." />
+          )}
+        </section>
+
+        <CaseSource detail={detail} />
+      </motion.article>
+      </>
+      ) : null}
+
+      {activeSection === "communications" ? (
+      <>
       <motion.article className="wb-panel space-y-4" variants={panelMotion}>
         <SectionHeader
           title="Owner Routing"
           description="Assign the department mailbox used for manual alert updates."
         />
+        {ownersQuery.isError ? (
+          <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+            Owner directory unavailable: {classifyUiError(ownersQuery.error).message}
+          </div>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
           <select
             aria-label="Alert owner"
             className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
             value={selectedOwner}
             onChange={(event) => setSelectedOwner(event.target.value)}
-            disabled={ownerUpdate || ownersQuery.isLoading}
+            disabled={ownerUpdate || ownersQuery.isLoading || ownersQuery.isError}
           >
             <option value="unassigned">Unassigned</option>
-            {(ownersQuery.data ?? []).map((owner) => (
+            {owners.map((owner) => (
               <option key={owner.key} value={owner.key}>
                 {owner.displayName} - {owner.email}
               </option>
             ))}
           </select>
-          <Button type="button" size="sm" onClick={() => void updateOwner()} disabled={ownerUpdate || selectedOwner === detail.ownerUserId}>
+          <Button type="button" size="sm" onClick={() => void updateOwner()} disabled={ownerUpdate || ownersQuery.isError || selectedOwner === detail.ownerUserId}>
             {ownerUpdate ? "Saving..." : "Save owner"}
           </Button>
         </div>
@@ -589,10 +667,14 @@ export default function AlertDetailPage() {
 
         <div className="space-y-2">
           <p className="text-sm font-semibold tracking-tight">Email history</p>
-          {(emailUpdatesQuery.data ?? []).length === 0 ? (
+          {emailUpdatesQuery.isError ? (
+            <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              Email history unavailable: {classifyUiError(emailUpdatesQuery.error).message}
+            </div>
+          ) : emailUpdates.length === 0 ? (
             <EmptyState title="No email updates" description="Manual owner updates will appear here after they are sent or queued." />
           ) : (
-            (emailUpdatesQuery.data ?? []).map((update) => (
+            emailUpdates.map((update) => (
               <div key={update.id} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
@@ -614,35 +696,10 @@ export default function AlertDetailPage() {
           )}
         </div>
       </motion.article>
+      </>
+      ) : null}
 
-      <motion.article className="wb-panel grid gap-3 xl:grid-cols-2" variants={panelMotion}>
-        <section>
-          <SectionHeader
-            title="Related Target"
-            description="Legacy inventory context for the target associated with this alert."
-          />
-          {detail.target ? (
-            <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
-              <p className="text-sm font-medium">{detail.target.display}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {detail.target.ipAddress ?? "Unknown IP"} | {detail.target.targetOsType ?? "Unknown OS"} | {detail.target.status ?? "Unknown status"}
-              </p>
-              {canShowNonAlertPivots && detail.target.id ? (
-                <div className="mt-3">
-                  <Link href={`/servers?targetId=${detail.target.id}`} className="inline-flex">
-                    <Button type="button" size="sm">Open target</Button>
-                  </Link>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <EmptyState title="No related target" description="This alert is not linked to a target inventory row." />
-          )}
-        </section>
-
-        <CaseSource detail={detail} />
-      </motion.article>
-
+      {activeSection === "evidence" ? (
       <motion.article className="wb-panel" variants={panelMotion}>
         <SectionHeader
           title="Linked IOC Findings"
@@ -721,6 +778,7 @@ export default function AlertDetailPage() {
           </div>
         )}
       </motion.article>
+      ) : null}
     </motion.section>
   )
 }

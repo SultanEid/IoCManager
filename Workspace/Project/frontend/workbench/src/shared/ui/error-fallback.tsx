@@ -17,6 +17,15 @@ export function ClassifiedFailureState({
     )
   }
 
+  if (failure.kind === "rate-limited") {
+    return (
+      <UnavailableState
+        title="Temporarily rate limited"
+        description="The backend read budget was exhausted. Cached sections may still be usable; wait a moment or retry the section."
+      />
+    )
+  }
+
   if (failure.kind === "dependency-down") {
     return (
       <DependencyDownState

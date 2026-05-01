@@ -769,10 +769,10 @@ export default function IocsExplorerPage() {
     }
   }
 
-  if (targetsQuery.isError || findingsQuery.isError) {
+  if (findingsQuery.isError) {
     return (
       <ClassifiedFailureState
-        failure={classifyUiError(targetsQuery.error ?? findingsQuery.error)}
+        failure={classifyUiError(findingsQuery.error)}
         fallbackTitle="IOCs Explorer unavailable"
       />
     )
@@ -818,6 +818,15 @@ export default function IocsExplorerPage() {
       </header>
 
       <article className="wb-panel space-y-4">
+        {targetsQuery.isError ? (
+          <div className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+            Target list unavailable: {classifyUiError(targetsQuery.error).message}. Findings can still be searched without the target filter.
+          </div>
+        ) : targetsLoading ? (
+          <div className="rounded-lg border border-border/70 bg-surface-2/55 px-3 py-2 text-sm text-muted-foreground">
+            Loading target list. Other filters are ready.
+          </div>
+        ) : null}
         <form
           className="space-y-4"
           onSubmit={(event) => {
@@ -881,9 +890,11 @@ export default function IocsExplorerPage() {
                 className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
                 value={filters.targetId}
                 onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value }))}
-                disabled={targetsLoading}
+                disabled={targetsLoading || targetsQuery.isError}
               >
-                <option value="">{targetsLoading ? "Loading targets..." : "All targets"}</option>
+                <option value="">
+                  {targetsLoading ? "Loading targets..." : targetsQuery.isError ? "Targets unavailable" : "All targets"}
+                </option>
                 {targets.map((target) => (
                   <option key={target.id} value={target.id}>
                     {target.displayName ?? target.hostname ?? target.ipAddress}

@@ -232,6 +232,7 @@ export default function AegisPage() {
   const [errorText, setErrorText] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedScanJobId, setSelectedScanJobId] = useState("")
+  const [scanJobSearch, setScanJobSearch] = useState("")
   const [scanBusyAction, setScanBusyAction] = useState<"create" | "regenerate" | null>(null)
   const [activeSection, setActiveSection] = useState<AegisWorkspaceSection>("create")
   const planDetailsRef = useRef<HTMLDivElement | null>(null)
@@ -311,6 +312,24 @@ export default function AegisPage() {
     () => scanJobs.find((job) => job.id === selectedScanJobId) ?? null,
     [scanJobs, selectedScanJobId],
   )
+  const filteredScanJobs = useMemo(() => {
+    const search = scanJobSearch.trim().toLowerCase()
+    return scanJobs
+      .filter((job) => {
+        if (!search) {
+          return true
+        }
+
+        return [
+          job.id,
+          job.scannerFamily,
+          job.status,
+          job.summary,
+          job.rulePath ?? "",
+        ].join(" ").toLowerCase().includes(search)
+      })
+      .slice(0, 12)
+  }, [scanJobSearch, scanJobs])
   const existingScanPlan = useMemo(
     () => plans.find((plan) => selectedScanJobId && plan.sourceScanJobIds.includes(selectedScanJobId)) ?? null,
     [plans, selectedScanJobId],
@@ -499,21 +518,52 @@ export default function AegisPage() {
               {selectedScanJob ? <span className="wb-chip">{selectedScanJob.scannerFamily} | {selectedScanJob.status}</span> : null}
             </div>
 
-            <label className="mt-4 grid gap-2 text-sm">
-              <span className="text-muted-foreground">Scan run</span>
-              <select
-                value={selectedScanJobId}
-                onChange={(event) => setSelectedScanJobId(event.target.value)}
-                className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm outline-none"
-              >
-                <option value="">Select a recent scan run</option>
-                {scanJobs.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.scannerFamily} | {job.status} | {new Date(job.finishedAtUtc ?? job.queuedAtUtc).toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="mt-4 space-y-3">
+              <label className="grid gap-2 text-sm">
+                <span className="text-muted-foreground">Find scan run</span>
+                <Input
+                  value={scanJobSearch}
+                  onChange={(event) => setScanJobSearch(event.target.value)}
+                  placeholder="Filter by scanner, status, summary, or rule path"
+                />
+              </label>
+              <div className="grid max-h-[360px] gap-2 overflow-auto pr-1">
+                {filteredScanJobs.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border/70 bg-background/30 px-3 py-3 text-sm text-muted-foreground">
+                    No scan runs match this filter.
+                  </div>
+                ) : (
+                  filteredScanJobs.map((job) => {
+                    const selected = selectedScanJobId === job.id
+                    const when = job.finishedAtUtc ?? job.startedAtUtc ?? job.queuedAtUtc
+                    return (
+                      <button
+                        key={job.id}
+                        type="button"
+                        onClick={() => setSelectedScanJobId((current) => current === job.id ? "" : job.id)}
+                        className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                          selected
+                            ? "border-primary/45 bg-primary/12 text-foreground"
+                            : "border-border/60 bg-background/25 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-semibold">{job.scannerFamily.toUpperCase()} · {job.status}</span>
+                          <span className="text-xs">{formatUtc(when)}</span>
+                        </div>
+                        <p className="mt-1 truncate text-sm">{job.summary || "No summary recorded."}</p>
+                        <p className="mt-1 text-xs">
+                          {job.completedTargets}/{job.totalTargets} targets · {job.failedTargets} failed · {job.noFindingsTargets} clean
+                        </p>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+              {scanJobs.length > filteredScanJobs.length ? (
+                <p className="text-xs text-muted-foreground">Showing {filteredScanJobs.length} of {scanJobs.length}. Use the filter to narrow older scan runs.</p>
+              ) : null}
+            </div>
 
             {selectedScanJob ? (
               <div className="mt-4 rounded-2xl border border-border/60 bg-background/45 p-4 text-sm">
