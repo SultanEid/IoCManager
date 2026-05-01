@@ -294,7 +294,7 @@ function SecurityCommandPanel({
             return (
               <div key={item.severity} className={`relative overflow-hidden rounded-xl border ${tone.border} ${tone.surface} p-3`}>
                 <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${tone.rail}`} aria-hidden="true" />
-                <p className={`pl-1 text-[11px] uppercase tracking-[0.12em] ${tone.text}`}>{item.severity}</p>
+                <p className={`pl-1 text-xs uppercase tracking-[0.1em] ${tone.text}`}>{item.severity}</p>
                 <p className="mt-1 pl-1 text-2xl font-semibold tracking-tight">{item.count}</p>
                 <p className="pl-1 text-xs text-muted-foreground">Active alerts</p>
               </div>
@@ -318,7 +318,7 @@ function PressureTile({ icon: Icon, label, value, detail }: { icon: LucideIcon; 
     <div className="rounded-xl border border-border/70 bg-surface-1/70 p-3">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
           <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
         </div>
         <Icon className="h-4 w-4 text-primary" />
@@ -471,10 +471,11 @@ export default function OverviewPage() {
   const alertsQuery = useWorkbenchQuery(
     ["overview", "alerts"],
     (signal) => gateway.listAlertRegistry({ page: 1, pageSize: 100 }, signal),
-    { enabled: isModeConfigured },
+    { enabled: isModeConfigured, staleTime: 60_000 },
   )
   const summaryQuery = useWorkbenchQuery(["overview", "summary"], (signal) => getLegacyOverviewSummary(signal), {
     enabled: isModeConfigured,
+    staleTime: 2 * 60_000,
   })
 
   if (!isModeConfigured) {
@@ -521,6 +522,15 @@ export default function OverviewPage() {
         reportCount={reportCount}
         environmentStatus={environmentStatus}
       />
+
+      {summaryQuery.isError ? (
+        <motion.div
+          className="rounded-xl border border-amber-300/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+          variants={panelMotion}
+        >
+          Secondary totals are temporarily unavailable: {classifyUiError(summaryQuery.error).message}. Security posture still uses live alert data.
+        </motion.div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.85fr)]">
         <NextActionsPanel alerts={alerts} />

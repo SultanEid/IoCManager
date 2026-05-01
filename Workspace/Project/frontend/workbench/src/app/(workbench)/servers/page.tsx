@@ -370,8 +370,15 @@ export default function ServersPage() {
         </p>
       </header>
 
-      <article className="wb-panel space-y-5">
-        <div>
+      <details className="wb-panel group space-y-5">
+        <summary className="-m-1 flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-1 transition-colors hover:bg-surface-2/45 [&::-webkit-details-marker]:hidden">
+          <span>
+            <span className="wb-kicker">Create Subnet</span>
+            <span className="mt-1 block text-sm text-muted-foreground">Add new discovery scope and host-scan defaults.</span>
+          </span>
+          <span className="rounded-full border border-border/70 bg-surface-2/65 px-3 py-1 text-xs text-muted-foreground">Open form</span>
+        </summary>
+        <div className="pt-3">
           <p className="wb-kicker">Create Subnet</p>
           <p className="mt-1 text-sm text-muted-foreground">Add the subnet, define host-scan credentials, and keep discovery ranges ready for repeat sweeps.</p>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.15fr)_minmax(260px,1.2fr)_minmax(180px,0.8fr)_minmax(280px,1fr)_minmax(220px,0.95fr)_minmax(220px,1fr)]">
@@ -393,7 +400,7 @@ export default function ServersPage() {
           <Input placeholder="Optional discovery start IP" value={rangeStartIp} onChange={(event) => setRangeStartIp(event.target.value)} />
           <Input placeholder="Optional discovery end IP" value={rangeEndIp} onChange={(event) => setRangeEndIp(event.target.value)} />
         </div>
-      </article>
+      </details>
 
       <article className="wb-panel">
         <div className="flex items-center justify-between gap-3">
@@ -463,9 +470,19 @@ export default function ServersPage() {
                       <Button onClick={() => runDiscovery(network.id)} disabled={discoveringId === network.id}>
                         {discoveringId === network.id ? "Discovering..." : "Run Discovery"}
                       </Button>
-                      <Button variant="outline" onClick={() => beginEditNetwork(network)}>
-                        Edit Settings
-                      </Button>
+                      <details className="relative">
+                        <summary className="inline-flex h-9 cursor-pointer list-none items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted [&::-webkit-details-marker]:hidden">
+                          More
+                        </summary>
+                        <div className="absolute right-0 z-20 mt-2 grid w-48 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                          <button type="button" className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2" onClick={() => beginEditNetwork(network)}>
+                            Edit settings
+                          </button>
+                          <button type="button" className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10" onClick={() => requestDelete(network.id)}>
+                            Delete subnet
+                          </button>
+                        </div>
+                      </details>
                       {confirmingDeleteNetworkId === network.id ? (
                         <>
                           <Button
@@ -479,11 +496,7 @@ export default function ServersPage() {
                             Cancel
                           </Button>
                         </>
-                      ) : (
-                        <Button variant="destructive" onClick={() => requestDelete(network.id)}>
-                          Delete Subnet
-                        </Button>
-                      )}
+                      ) : null}
                     </div>
                   </>
                 )}

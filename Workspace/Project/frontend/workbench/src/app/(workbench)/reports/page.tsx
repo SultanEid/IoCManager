@@ -57,6 +57,9 @@ const REPORT_TEMPLATES = [
 
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"] as const
 const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
+const REPORT_WORKSPACES = ["builder", "library"] as const
+
+type ReportWorkspace = (typeof REPORT_WORKSPACES)[number]
 
 const REPORT_TYPE_LABELS: Record<string, string> = {
   ExecutiveSummary: "Executive Summary",
@@ -628,6 +631,7 @@ export default function ReportsPage() {
   const [closedReviewId, setClosedReviewId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
+  const [activeWorkspace, setActiveWorkspace] = useState<ReportWorkspace>("builder")
   const previewRef = useRef<HTMLElement | null>(null)
   const [form, setForm] = useState(() => {
     const range = defaultUtcRange()
@@ -838,6 +842,7 @@ export default function ReportsPage() {
 
   const targets = targetsQuery.data ?? []
   const reports = reportsQuery.data?.items ?? []
+  const visibleReports = reports.slice(0, 12)
   const aegisPlanBySourceReportId = new Map((aegisPlansQuery.data?.items ?? []).filter((plan) => plan.sourceReportId).map((plan) => [plan.sourceReportId, plan]))
   const generatedQuery: SnapshotQuery = {
     targetServerId: form.targetId || null,
@@ -884,6 +889,25 @@ export default function ReportsPage() {
         </div>
       </header>
 
+      <nav className="wb-panel-muted flex flex-wrap gap-2 p-2" aria-label="Reports workspace">
+        {REPORT_WORKSPACES.map((workspace) => (
+          <button
+            key={workspace}
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              activeWorkspace === workspace
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+            }`}
+            onClick={() => setActiveWorkspace(workspace)}
+          >
+            {workspace === "builder" ? "Builder" : `Library (${reports.length})`}
+          </button>
+        ))}
+      </nav>
+
+      {activeWorkspace === "builder" ? (
+      <>
       <article className="wb-panel space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/55 pb-4">
           <div className="space-y-1">
@@ -1179,12 +1203,18 @@ export default function ReportsPage() {
           </div>
         )}
       </article>
+      </>
+      ) : null}
 
+      {activeWorkspace === "library" ? (
+      <>
       <article className="wb-panel space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="wb-kicker">Saved Library</p>
-            <p className="text-sm text-muted-foreground">Saved snapshots can be previewed in the workspace and exported as standalone HTML files.</p>
+            <p className="text-sm text-muted-foreground">
+              Showing the latest {visibleReports.length} of {reports.length} saved snapshots. Older snapshots remain available through direct report links and future archive search.
+            </p>
           </div>
           <span className="wb-chip">
             <FolderOpen className="h-3.5 w-3.5" />
@@ -1285,54 +1315,66 @@ export default function ReportsPage() {
               </tbody>
             </table>
           </div>
-          <div className="grid gap-3">
-            {reports.map((report) => {
+          <div className="grid gap-2">
+            {visibleReports.map((report) => {
               const snapshot = parseReportSnapshot(report, targets)
               const deleting = deletingReportId === report.id
               const aegisPlan = aegisPlanBySourceReportId.get(report.id)
               const isAegisPlan = isAegisMitigationReport(report)
               const accent = reportTypeAccent(report.reportType)
               return (
-                <div key={report.id} className="relative overflow-hidden rounded-2xl border border-border/65 bg-surface-1/60 p-4 transition-colors hover:border-primary/25 hover:bg-surface-1/75">
+                <div key={report.id} className="relative overflow-hidden rounded-xl border border-border/65 bg-surface-1/60 p-3 transition-colors hover:border-primary/25 hover:bg-surface-1/75">
                   <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pl-2">
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
                       <p className="font-semibold text-foreground">{report.title}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className={`inline-flex rounded-md border px-2 py-0.5 ${accent.chip}`}>{formatReportType(report.reportType)}</span>
                         <span>{formatUtc(report.createdAtUtc)}</span>
+                        <span>{snapshot.scope}</span>
                       </div>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      {aegisPlan || isAegisPlan ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-2 py-1 text-xs font-medium text-emerald-200">
+                          <ShieldCheck className="h-3 w-3" />
+                          Aegis
+                        </span>
+                      ) : null}
+                      <Button type="button" size="sm" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
+                        Preview
+                      </Button>
+                      <details className="relative">
+                        <summary className="inline-flex h-8 cursor-pointer list-none items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted [&::-webkit-details-marker]:hidden">
+                          More
+                        </summary>
+                        <div className="absolute right-0 z-20 mt-2 grid w-52 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                          <a
+                            className="rounded-lg px-3 py-2 text-sm transition hover:bg-surface-2"
+                            href={reportHtmlHref(report.id)}
+                            download
+                          >
+                            Export HTML
+                          </a>
+                          {aegisPlan || isAegisPlan ? (
+                            <Link
+                              className="rounded-lg px-3 py-2 text-sm transition hover:bg-surface-2"
+                              href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
+                            >
+                              Open in Aegis
+                            </Link>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10"
+                            onClick={() => deleteSavedReport(report.id, report.title)}
+                            disabled={deleting}
+                          >
+                            {deleting ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      </details>
                     </div>
-                    {aegisPlan || isAegisPlan ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-2 py-1 text-[11px] font-medium text-emerald-200">
-                        <ShieldCheck className="h-3 w-3" />
-                        Aegis
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-3 text-sm text-muted-foreground">{snapshot.scope}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
-                      Preview
-                    </Button>
-                    <a
-                      className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                      href={reportHtmlHref(report.id)}
-                      download
-                    >
-                      Export HTML
-                    </a>
-                    {aegisPlan || isAegisPlan ? (
-                      <Link
-                        className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                        href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
-                      >
-                        Aegis
-                      </Link>
-                    ) : null}
-                    <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={deleting}>
-                      {deleting ? "Deleting..." : "Delete"}
-                    </Button>
                   </div>
                 </div>
               )
@@ -1341,6 +1383,8 @@ export default function ReportsPage() {
           </>
         )}
       </article>
+      </>
+      ) : null}
 
       {review ? (
         <div className="report-review-modal fixed inset-0 z-50 bg-background/88 p-4 backdrop-blur-xl md:p-8" role="dialog" aria-modal="true" aria-label="Report review">

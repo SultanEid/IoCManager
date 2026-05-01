@@ -32,6 +32,7 @@ const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "S
 type ScannerFamily = (typeof FAMILIES)[number]
 type ResolvedTargetOs = "windows" | "linux"
 type NetworkMode = "hunt" | "pcap"
+type ScanPlanWorkspaceSection = "create" | "library"
 
 const SCANNER_METADATA = {
   yara: {
@@ -255,6 +256,7 @@ export default function ScanPlanPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
   const [form, setForm] = useState(createEmptyForm())
+  const [activeWorkspace, setActiveWorkspace] = useState<ScanPlanWorkspaceSection>("library")
 
   const networksQuery = useWorkbenchQuery(["legacy-pipeline", "plan-networks"], (signal) => listLegacyNetworks(signal))
   const targetsQuery = useWorkbenchQuery(["legacy-pipeline", "plan-targets"], (signal) => listLegacyTargets(undefined, signal))
@@ -457,6 +459,7 @@ export default function ScanPlanPage() {
   const startEditing = (plan: LegacyPipelineScanPlan) => {
     setEditingId(plan.id)
     setForm(hydrateFormFromPlan(plan))
+    setActiveWorkspace("create")
   }
 
   if (networksQuery.isLoading || targetsQuery.isLoading || presetsQuery.isLoading || plansQuery.isLoading) {
@@ -481,6 +484,28 @@ export default function ScanPlanPage() {
         </p>
       </header>
 
+      <nav className="grid gap-2 rounded-2xl border border-border/60 bg-surface-2/35 p-2 md:grid-cols-2" aria-label="Scan plan workspace">
+        {([
+          ["library", "Plan library", `${plans.length} saved packs`],
+          ["create", editingId ? "Edit plan" : "Create plan", editingId ? "Update the selected pack" : "Build a reusable pack"],
+        ] as const).map(([value, label, helper]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setActiveWorkspace(value)}
+            className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+              activeWorkspace === value
+                ? "border-primary/45 bg-primary/15 text-foreground"
+                : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-surface-2/65 hover:text-foreground"
+            }`}
+          >
+            <span className="block text-sm font-semibold">{label}</span>
+            <span className="mt-1 block text-xs">{helper}</span>
+          </button>
+        ))}
+      </nav>
+
+      {activeWorkspace === "create" ? (
       <article className="wb-panel space-y-5">
         <div className="space-y-3 rounded-xl border border-border/70 bg-surface-2/55 p-4">
           <div>
@@ -1035,7 +1060,9 @@ export default function ScanPlanPage() {
           </div>
         </div>
       </article>
+      ) : null}
 
+      {activeWorkspace === "library" ? (
       <section className="wb-panel space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1050,28 +1077,30 @@ export default function ScanPlanPage() {
         {plans.length === 0 ? (
           <EmptyState
             title="No scan plans yet"
-            description="Create the first recurring pack above. Saved plans can be run now, paused, cloned, edited, or deleted."
+            description="Open Create plan to build the first recurring pack. Saved plans can be run, paused, cloned, edited, or deleted."
           />
         ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-3">
             {plans.map((plan) => (
-              <article key={plan.id} className="rounded-2xl border border-border/70 bg-surface-2/55 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
+              <details key={plan.id} className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-lg font-semibold tracking-tight">{plan.name}</h4>
+                      <h4 className="text-base font-semibold tracking-tight">{plan.name}</h4>
                       <Badge variant={plan.status === "Active" ? "secondary" : "outline"}>{plan.status}</Badge>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {formatScheduleSummary(plan.scheduleType, plan.schedule)}
                     </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
+                    </div>
+                    <div className="flex flex-wrap gap-2">
                     {plan.scannerFamilies.map((family) => (
                       <ScannerFamilyBadge key={`${plan.id}-${family}`} family={family} />
                     ))}
+                    </div>
                   </div>
-                </div>
+                </summary>
 
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   <div className="rounded-xl border border-border/60 bg-background/25 p-3">
@@ -1106,7 +1135,7 @@ export default function ScanPlanPage() {
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => runPlanAction(plan.id)} disabled={runningId === plan.id}>
-                    {runningId === plan.id ? "Queueing..." : "Run Now"}
+                    {runningId === plan.id ? "Queueing..." : "Run"}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => startEditing(plan)}>
                     Edit
@@ -1136,11 +1165,12 @@ export default function ScanPlanPage() {
                     {deletingId === plan.id ? "Deleting..." : "Delete"}
                   </Button>
                 </div>
-              </article>
+              </details>
             ))}
           </div>
         )}
       </section>
+      ) : null}
     </section>
   )
 }

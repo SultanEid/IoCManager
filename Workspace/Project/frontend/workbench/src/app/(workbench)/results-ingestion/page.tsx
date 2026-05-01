@@ -52,6 +52,7 @@ const SCANNER_METADATA = {
 } as const
 
 type ResolvedTargetOs = "windows" | "linux"
+type ScanWorkspace = "run" | "history"
 
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim())
@@ -187,6 +188,7 @@ export default function ScansPage() {
   const [aegisBusyJobId, setAegisBusyJobId] = useState<string | null>(null)
   const [aegisBusyAction, setAegisBusyAction] = useState<"create" | "regenerate" | null>(null)
   const [aegisError, setAegisError] = useState<string | null>(null)
+  const [activeWorkspace, setActiveWorkspace] = useState<ScanWorkspace>("run")
   const [form, setForm] = useState({
     selectedFamilies: ["yara"] as string[],
     ruleInputMode: "hostPath" as "hostPath" | "upload",
@@ -497,13 +499,10 @@ export default function ScansPage() {
     }
   }
 
-  if (networksQuery.isLoading || targetsQuery.isLoading || jobsQuery.isLoading || aegisPlansQuery.isLoading || resultsQuery.isLoading) {
-    return <LoadingState label="Loading scans" />
-  }
-
-  if (networksQuery.isError || targetsQuery.isError || jobsQuery.isError || aegisPlansQuery.isError || resultsQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(networksQuery.error ?? targetsQuery.error ?? jobsQuery.error ?? aegisPlansQuery.error ?? resultsQuery.error)} fallbackTitle="Scans unavailable" />
-  }
+  const runWorkspaceLoading = networksQuery.isLoading || targetsQuery.isLoading
+  const runWorkspaceUnavailable = networksQuery.isError || targetsQuery.isError
+  const historyWorkspaceLoading = jobsQuery.isLoading || resultsQuery.isLoading || aegisPlansQuery.isLoading
+  const historyWorkspaceUnavailable = jobsQuery.isError || resultsQuery.isError || aegisPlansQuery.isError
 
   const toggleExpandedJob = (jobId: string) =>
     setExpandedJobIds((current) => (current.includes(jobId) ? current.filter((value) => value !== jobId) : [...current, jobId]))
@@ -518,7 +517,34 @@ export default function ScansPage() {
         </p>
       </header>
 
+      <nav className="wb-panel-muted flex flex-wrap gap-2 p-2" aria-label="Scan workspace">
+        {(["run", "history"] as const).map((workspace) => (
+          <button
+            key={workspace}
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              activeWorkspace === workspace
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+            }`}
+            onClick={() => setActiveWorkspace(workspace)}
+          >
+            {workspace === "run" ? "Run scan" : "History"}
+          </button>
+        ))}
+      </nav>
+
+      {activeWorkspace === "run" ? (
       <article className="wb-panel space-y-5">
+        {runWorkspaceLoading ? (
+          <LoadingState label="Loading scan scope" />
+        ) : runWorkspaceUnavailable ? (
+          <ClassifiedFailureState
+            failure={classifyUiError(networksQuery.error ?? targetsQuery.error)}
+            fallbackTitle="Scan runner unavailable"
+          />
+        ) : (
+        <>
         <div className="space-y-3 rounded-xl border border-border/70 bg-surface-2/55 p-4">
           <div>
             <p className="wb-kicker">Scanner Families</p>
@@ -1162,9 +1188,22 @@ export default function ScansPage() {
             {errorText ? <p className="text-sm text-rose-300">{errorText}</p> : null}
           </div>
         </div>
+        </>
+        )}
       </article>
+      ) : null}
 
+      {activeWorkspace === "history" ? (
       <article className="wb-panel">
+        {historyWorkspaceLoading ? (
+          <LoadingState label="Loading scan history" />
+        ) : historyWorkspaceUnavailable ? (
+          <ClassifiedFailureState
+            failure={classifyUiError(jobsQuery.error ?? resultsQuery.error ?? aegisPlansQuery.error)}
+            fallbackTitle="Scan history unavailable"
+          />
+        ) : (
+        <>
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="wb-kicker">Scan History</p>
@@ -1361,7 +1400,10 @@ export default function ScansPage() {
             })}
           </div>
         )}
+        </>
+        )}
       </article>
+      ) : null}
     </section>
   )
 }

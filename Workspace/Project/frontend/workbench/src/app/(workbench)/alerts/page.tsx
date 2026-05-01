@@ -321,7 +321,7 @@ export default function AlertsPage() {
             <span className={`absolute inset-y-2 left-0 w-1 rounded-r ${ACCENT_TONES.slate.rail}`} aria-hidden="true" />
             <p className="text-xs font-semibold uppercase tracking-[0.06em] text-primary">Unassigned</p>
             <p className="mt-3 text-2xl font-semibold leading-none tracking-tight">{unassignedAlerts}</p>
-            <p className="mt-1.5 text-[11px] uppercase tracking-[0.05em] text-muted-foreground">Needs owner</p>
+            <p className="mt-1.5 text-xs uppercase tracking-[0.05em] text-muted-foreground">Needs owner</p>
           </div>
         </div>
 

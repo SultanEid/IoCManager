@@ -3,7 +3,6 @@
 import Link from "next/link"
 import { Bot, CheckCircle2, CircleAlert, CircleDot, Loader2, PauseCircle } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { StatusBadge } from "@/components/workbench/status-badge"
 import { cn } from "@/lib/utils"
 import { gateway } from "@/shared/gateway"
 import { listLegacyJobs, type LegacyPipelineScanJob } from "@/shared/gateway/legacy-scan-pipeline"
@@ -181,10 +180,12 @@ export function ZiraStatusWidget({ className }: { className?: string }) {
   const [localState, setLocalState] = useState<ZiraWidgetState | null>(() => readZiraWidgetState())
 
   const statusQuery = useWorkbenchQuery(["shell", "zira", "status"], (signal) => gateway.getScanAnalystStatus(signal), {
-    refetchInterval: 6000,
+    refetchInterval: 30_000,
+    staleTime: 30_000,
   })
   const jobsQuery = useWorkbenchQuery(["shell", "zira", "legacy-jobs"], (signal) => listLegacyJobs(signal), {
-    refetchInterval: 5000,
+    refetchInterval: 45_000,
+    staleTime: 30_000,
   })
 
   useEffect(() => {
@@ -210,9 +211,9 @@ export function ZiraStatusWidget({ className }: { className?: string }) {
     if (statusQuery.isError) {
       return {
         label: "Dependency down",
-        title: "Zira status unreachable",
-        detail: "The backend did not return agent status.",
-        tone: "down",
+        title: "Zira status unavailable",
+        detail: "Agent status is not available. Open Zira for diagnostics.",
+        tone: "attention",
         updatedAtUtc: null,
         mode: "Unknown",
       }
@@ -309,13 +310,11 @@ export function ZiraStatusWidget({ className }: { className?: string }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="font-semibold text-foreground">Zira</span>
-          <span className="hidden xl:inline-flex">
-            <StatusBadge value={liveState.label} />
-          </span>
+          <span className="hidden rounded-full border border-current/20 px-1.5 py-0.5 text-xs xl:inline-flex">{liveState.label}</span>
         </span>
-        <span className="hidden truncate text-[11px] text-muted-foreground 2xl:block">{liveState.title}</span>
+        <span className="hidden truncate text-xs text-muted-foreground 2xl:block">{liveState.title}</span>
       </span>
-      <span className="hidden shrink-0 flex-col items-end text-[10px] text-muted-foreground 2xl:flex">
+      <span className="hidden shrink-0 flex-col items-end text-xs text-muted-foreground 2xl:flex">
         <span>{liveState.mode}</span>
         <span>{liveState.updatedAtUtc ? formatTime(liveState.updatedAtUtc) : <PauseCircle className="h-3 w-3" />}</span>
       </span>

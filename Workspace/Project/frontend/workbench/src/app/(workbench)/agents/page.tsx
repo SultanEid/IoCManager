@@ -109,22 +109,25 @@ export default function AgentsPage() {
         </article>
       </div>
 
-      <details className="wb-panel group space-y-5" open={hasReportedModelData}>
+      <details className="wb-panel-muted group space-y-5" open={hasReportedModelData}>
         <summary className="-m-1 flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 rounded-lg p-1 transition-colors hover:bg-surface-2/45 [&::-webkit-details-marker]:hidden">
           <div>
-            <p className="wb-kicker">Model Status</p>
-            <h2 className="mt-2 text-xl font-semibold">Active AI decision model</h2>
+            <p className="wb-kicker">Diagnostics</p>
+            <h2 className="mt-2 text-base font-semibold">Decision model telemetry</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
               {modelStats.isError
-                ? "Telemetry is unavailable because the AI sidecar did not return active model metadata."
+                ? "Telemetry is unavailable. Agent entry points remain usable."
                 : modelStats.isLoading
-                  ? "Loading model registry metrics..."
-                  : `${modelStats.data?.modelVersion ?? "Unknown model"} on ${modelStats.data?.datasetVersion ?? "unknown dataset"}.`}
+                  ? "Checking optional model registry metrics."
+                  : hasReportedModelData
+                    ? `${modelStats.data?.modelVersion ?? "Unversioned model"} on ${modelStats.data?.datasetVersion ?? "unversioned dataset"}.`
+                    : "No production model metrics are reported yet. Expand only for diagnostics."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="wb-chip">{modelStats.data?.status ?? "Loading"}</span>
-            <span className="wb-chip">{modelStats.data?.readinessStatus ?? "unknown"}</span>
+            {modelStats.isLoading ? <span className="wb-chip">Checking</span> : null}
+            {modelStats.data?.status ? <span className="wb-chip">{modelStats.data.status}</span> : null}
+            {modelStats.data?.readinessStatus ? <span className="wb-chip">{modelStats.data.readinessStatus}</span> : null}
             <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
           </div>
         </summary>

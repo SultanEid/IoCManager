@@ -2,6 +2,7 @@ import { ApiError } from "@/shared/api/error"
 
 export type UiErrorKind =
   | "permission-restricted"
+  | "rate-limited"
   | "unavailable-missing-feature"
   | "dependency-down"
   | "unavailable-configuration"
@@ -59,6 +60,15 @@ export function classifyUiError(error: unknown, options: ClassifyOptions = {}): 
     if (error.status === 401 || error.status === 403) {
       return {
         kind: "permission-restricted",
+        isContractMismatch: isSchemaMismatch,
+        status: error.status,
+        message: apiErrorMessage(error),
+      }
+    }
+
+    if (error.status === 429) {
+      return {
+        kind: "rate-limited",
         isContractMismatch: isSchemaMismatch,
         status: error.status,
         message: apiErrorMessage(error),

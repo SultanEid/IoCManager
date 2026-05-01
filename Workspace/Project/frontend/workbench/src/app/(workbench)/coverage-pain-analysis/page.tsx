@@ -332,7 +332,7 @@ export default function PyramidOfPainPage() {
                   </span>
                   <span className={cn("w-[5.75rem] justify-self-end text-right tabular-nums", meta.accent)}>
                     <span className="block text-3xl font-semibold leading-none">{formatCount(level.count)}</span>
-                    <span className="mt-1 block text-[11px] uppercase tracking-[0.14em]">{formatPercent(level.share, level.count)}</span>
+                    <span className="mt-1 block text-xs uppercase tracking-[0.12em]">{formatPercent(level.share, level.count)}</span>
                   </span>
                 </motion.button>
               )
@@ -355,11 +355,11 @@ export default function PyramidOfPainPage() {
 
           <div className="mt-5 grid grid-cols-2 gap-2">
             <div className="rounded-xl border border-border/70 bg-surface-2/45 p-3">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Findings</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Findings</p>
               <p className="mt-1 text-2xl font-semibold">{formatCount(activeLevelSummary.count)}</p>
             </div>
             <div className="rounded-xl border border-border/70 bg-surface-2/45 p-3">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Share</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Share</p>
               <p className="mt-1 text-2xl font-semibold">{formatPercent(activeLevelSummary.share, activeLevelSummary.count)}</p>
             </div>
           </div>
@@ -390,7 +390,7 @@ export default function PyramidOfPainPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge value={finding.scannerFamily} />
                       <StatusBadge value={finding.severity} />
-                      <span className="text-[11px] text-muted-foreground">{formatTimestamp(finding.timestampUtc)}</span>
+                      <span className="text-xs text-muted-foreground">{formatTimestamp(finding.timestampUtc)}</span>
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{finding.ruleName}</p>
@@ -401,7 +401,16 @@ export default function PyramidOfPainPage() {
               </div>
             ) : (
               <div className="grid min-h-36 place-items-center rounded-xl border border-dashed border-border/70 bg-surface-2/30 px-5 text-center">
-                <p className="text-sm text-muted-foreground">No recent IOCs are categorized in this tier for the selected window.</p>
+                <div>
+                  <p className="text-sm text-muted-foreground">No recent IOCs are categorized in this tier for the selected window.</p>
+                  <Link
+                    href={`/ioc-ingestion?painLevel=${encodeURIComponent(activeLevelSummary.level)}&fromUtc=${encodeURIComponent(range.fromUtc)}&toUtc=${encodeURIComponent(range.toUtc)}`}
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-2/55 px-3 py-1.5 text-xs text-foreground transition hover:bg-surface-2/80"
+                  >
+                    Open IOC Explorer
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
               </div>
             )}
           </div>

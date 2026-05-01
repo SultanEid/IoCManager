@@ -122,6 +122,7 @@ function SidebarNav({ collapsed, pathname, roles, onNavigate }: SidebarNavProps)
 function SidebarWorkArea({ collapsed, alertsEnabled, pinned, onTogglePin }: SidebarWorkAreaProps) {
   const alertsQuery = useWorkbenchQuery(["shell", "sidebar", "alerts"], (signal) => gateway.listAlerts(signal), {
     enabled: alertsEnabled,
+    staleTime: 2 * 60_000,
   })
 
   const pinnedRows = useMemo(() => {
@@ -159,7 +160,7 @@ function SidebarWorkArea({ collapsed, alertsEnabled, pinned, onTogglePin }: Side
               <div key={item.alertId} className="flex items-center gap-1.5 rounded-md border border-border/70 bg-surface-2/55 px-2 py-1.5">
                 <Link href={item.href} className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-medium">{item.title}</p>
-                  <p className="truncate text-[10px] text-muted-foreground">{item.subtitle}</p>
+                  <p className="truncate text-xs text-muted-foreground">{item.subtitle}</p>
                 </Link>
                 <button
                   type="button"
@@ -200,11 +201,13 @@ function ShellNotifications({
   isLoading,
   hasPartialError,
   reducedCapability,
+  onRetry,
 }: {
   items: NotificationItem[]
   isLoading: boolean
   hasPartialError: boolean
   reducedCapability: boolean
+  onRetry: () => void
 }) {
   if (isLoading) {
     return <CompactLoadingState label="Loading notifications" />
@@ -212,10 +215,20 @@ function ShellNotifications({
 
   return (
     <div className="space-y-2 px-4 pb-4">
-      {hasPartialError ? <CompactErrorState label="Some feeds unavailable. Showing partial notifications." /> : null}
+      {hasPartialError ? (
+        <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-amber-100">Some notification feeds are unavailable.</p>
+            <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={onRetry}>
+              Retry
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-amber-100/80">Showing the latest cached job and Aegis activity that returned successfully.</p>
+        </div>
+      ) : null}
       {reducedCapability ? (
-        <div className="rounded-md border border-border/70 bg-surface-2/55 px-2 py-2 text-[11px] text-muted-foreground">
-          Notification coverage is currently limited to job activity returned by the backend.
+        <div className="rounded-md border border-border/70 bg-surface-2/55 px-2 py-2 text-xs text-muted-foreground">
+          Coverage is limited to available backend job and audit activity.
         </div>
       ) : null}
       {items.length === 0 ? (
@@ -226,12 +239,12 @@ function ShellNotifications({
       {items.map((item) => (
         <div key={item.id} className="rounded-lg border border-border/70 bg-surface-2/65 px-3 py-2">
           <p className="text-xs font-semibold tracking-tight">{item.title}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{item.description}</p>
-          <p className="mt-1 text-[10px] text-muted-foreground">{item.when}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{item.when}</p>
         </div>
       ))}
-      <p className="text-[11px] text-muted-foreground">
-        Job activity and Aegis automation events appear here automatically as backend contracts are available.
+      <p className="text-xs text-muted-foreground">
+        Last refresh: {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </p>
     </div>
   )
@@ -322,6 +335,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     }
   }, {
     enabled: canOpenScans,
+    staleTime: 90_000,
   })
 
   useEffect(() => {
@@ -358,12 +372,12 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
           <div className={cn("px-3", collapsed ? "flex flex-col items-center gap-2 py-3" : "flex h-16 items-center justify-between")}>
             <div className={cn("flex items-center gap-2", collapsed && "w-full justify-center")}>
               <div className="grid h-9 w-9 place-items-center rounded-xl border border-primary/35 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--primary)_18%,transparent),color-mix(in_srgb,var(--surface-2)_74%,transparent))] text-primary shadow-[var(--shadow-soft)]">
-                <span className="text-[11px] font-semibold tracking-[0.14em]">IOC</span>
+                <span className="text-xs font-semibold tracking-[0.12em]">IOC</span>
               </div>
               {!collapsed ? (
                 <div>
                   <p className="text-sm font-semibold tracking-tight">IoC Manager</p>
-                  <p className="text-[11px] text-muted-foreground">Operational IOC management</p>
+                  <p className="text-xs text-muted-foreground">Operational IOC management</p>
                 </div>
               ) : null}
             </div>
@@ -438,7 +452,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
               >
                 <Search className="h-3.5 w-3.5" />
                 <span className="flex-1">Search workspace</span>
-                <kbd className="rounded border border-border/80 bg-surface-1/80 px-1.5 py-0.5 text-[10px]">Ctrl+K</kbd>
+                <kbd className="rounded border border-border/80 bg-surface-1/80 px-1.5 py-0.5 text-xs">Ctrl+K</kbd>
               </button>
 
               <Button
@@ -471,6 +485,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                     isLoading={notificationsQuery.isLoading}
                     hasPartialError={hasPartialNotificationError}
                     reducedCapability={reducedNotificationCapability}
+                    onRetry={() => { void notificationsQuery.refetch() }}
                   />
                 </SheetContent>
               </Sheet>
@@ -501,7 +516,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
 
             <div className="border-t border-border/70 px-3 py-2 sm:px-4 md:px-6">
               <div className="flex flex-wrap items-center gap-2">
-                <nav className="flex items-center gap-1 text-[11px] text-muted-foreground" data-testid="shell-breadcrumbs">
+                <nav className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="shell-breadcrumbs">
                   {resolvedRoute.breadcrumbs.map((item, index) => (
                     <span key={`${item.label}:${index}`} className="inline-flex items-center gap-1">
                       {index > 0 ? <ChevronRight className="h-3 w-3" /> : null}
@@ -532,7 +547,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             </motion.main>
           </AnimatePresence>
 
-          <footer className="border-t border-border/70 px-3 py-3 text-[11px] text-muted-foreground sm:px-4 md:px-6">
+          <footer className="border-t border-border/70 px-3 py-3 text-xs text-muted-foreground sm:px-4 md:px-6">
             Signed in as {session?.username ?? "unknown"} | Roles: {session?.roles.length ? roleLabels(session.roles) : "none"} | Build:{" "}
             <span className="font-medium text-foreground/90">{WORKSPACE_BUILD_LABEL}</span>
           </footer>
