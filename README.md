@@ -38,17 +38,17 @@ The system is built as a multi-component application:
 
 ## 📸 Product Preview
 
-Screenshots will be added under `docs/assets/readme/`. The README is already structured for a polished product gallery once final images are captured.
+Screenshots will be added under `Workspace/Project/docs/assets/readme/`. The README is already structured for a polished product gallery once final images are captured.
 
 | Area | Screenshot Slot | What To Capture |
 | --- | --- | --- |
-| 🧭 Command dashboard | `docs/assets/readme/overview.png` | Security posture, active alerts, detections, reports, and recent activity. |
-| 🚨 Alert queue | `docs/assets/readme/alerts.png` | Alert filtering, severity/status chips, owner/progress fields. |
-| 🛰️ Scanner workflow | `docs/assets/readme/scans.png` | Scan plans, scanner jobs, target selection, and execution status. |
-| 📦 Rule management | `docs/assets/readme/rules.png` | Rule repository, validation, review, rollout, or rollback screens. |
-| 🤖 Zira assistant | `docs/assets/readme/zira.png` | Scan-planning assistant workflow. |
-| 🛡️ Aegis assistant | `docs/assets/readme/aegis.png` | Mitigation-planning assistant workflow from report evidence. |
-| 📊 Reporting | `docs/assets/readme/reporting.png` | Report builder, report archive, or Power BI analytics panel. |
+| 🧭 Command dashboard | `Workspace/Project/docs/assets/readme/overview.png` | Security posture, active alerts, detections, reports, and recent activity. |
+| 🚨 Alert queue | `Workspace/Project/docs/assets/readme/alerts.png` | Alert filtering, severity/status chips, owner/progress fields. |
+| 🛰️ Scanner workflow | `Workspace/Project/docs/assets/readme/scans.png` | Scan plans, scanner jobs, target selection, and execution status. |
+| 📦 Rule management | `Workspace/Project/docs/assets/readme/rules.png` | Rule repository, validation, review, rollout, or rollback screens. |
+| 🤖 Zira assistant | `Workspace/Project/docs/assets/readme/zira.png` | Scan-planning assistant workflow. |
+| 🛡️ Aegis assistant | `Workspace/Project/docs/assets/readme/aegis.png` | Mitigation-planning assistant workflow from report evidence. |
+| 📊 Reporting | `Workspace/Project/docs/assets/readme/reporting.png` | Report builder, report archive, or Power BI analytics panel. |
 
 ---
 
@@ -66,6 +66,22 @@ Screenshots will be added under `docs/assets/readme/`. The README is already str
 - Normalize scanner output into a consistent internal result format.
 - Queue long-running scan, discovery, and rule-distribution work outside direct frontend requests.
 - Track scanner jobs, execution state, diagnostics, and result ingestion.
+
+<p align="center">
+  <img alt="YARA" src="https://img.shields.io/badge/YARA-Rule%20Scanning-6E40C9?style=for-the-badge&logo=target&logoColor=white" />
+  <img alt="Sigma" src="https://img.shields.io/badge/Sigma-SIEM%20Rules-0052CC?style=for-the-badge&logo=elastic&logoColor=white" />
+  <img alt="Snort" src="https://img.shields.io/badge/Snort-IDS%20Rules-CB1B16?style=for-the-badge&logo=securityscorecard&logoColor=white" />
+  <img alt="Suricata" src="https://img.shields.io/badge/Suricata-IDS%20%2F%20NSM-F97316?style=for-the-badge&logo=wireshark&logoColor=white" />
+</p>
+
+| Scanner Path | What IOC Manager Supports | Operational Value |
+| --- | --- | --- |
+| 🧬 **YARA** | Host/file-oriented rule execution and normalized result capture. | Helps analysts review file and malware-pattern detections from the same workbench as network findings. |
+| Σ **Sigma** | Rule metadata, severity context, and event-style payload normalization. | Keeps SIEM-style detections connected to scan jobs, rules, and alert review. |
+| 🐷 **Snort** | IDS rule execution output, envelope parsing, and scanner-family normalization. | Brings network IDS findings into the same result ingestion pipeline. |
+| 🐾 **Suricata** | IDS/NSM result handling with shared parser and normalizer flow. | Supports multi-engine network detection review without separate dashboards. |
+| 🧭 **Network Sweep** | PowerShell-driven discovery of reachable hosts and target inventory updates. | Gives operators a practical way to maintain scan targets in the lab environment. |
+| 📦 **Rule Distribution** | Queued distribution jobs, retry handling, and execution tracking. | Reduces manual rule copying and preserves traceability across targets and scanners. |
 
 ### 🧭 Operator Workbench
 
