@@ -490,7 +490,7 @@ export default function AegisPage() {
           job.rulePath ?? "",
         ].join(" ").toLowerCase().includes(search)
       })
-      .slice(0, 12)
+      .slice(0, search ? 12 : 3)
   }, [scanJobSearch, scanJobs])
   const existingScanPlan = useMemo(
     () => plans.find((plan) => selectedScanJobId && plan.sourceScanJobIds.includes(selectedScanJobId)) ?? null,
@@ -762,7 +762,7 @@ export default function AegisPage() {
                   placeholder="Filter by scanner, status, summary, or rule path"
                 />
               </label>
-              <div className="grid max-h-[360px] gap-2 overflow-auto pr-1">
+              <div className="grid max-h-[260px] gap-2 overflow-auto pr-1">
                 {filteredScanJobs.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-border/70 bg-background/30 px-3 py-3 text-sm text-muted-foreground">
                     No scan runs match this filter.
@@ -796,7 +796,9 @@ export default function AegisPage() {
                 )}
               </div>
               {scanJobs.length > filteredScanJobs.length ? (
-                <p className="text-xs text-muted-foreground">Showing {filteredScanJobs.length} of {scanJobs.length}. Use the filter to narrow older scan runs.</p>
+                <p className="text-xs text-muted-foreground">
+                  Showing {filteredScanJobs.length} of {scanJobs.length}. Search to inspect older scan runs without crowding the create flow.
+                </p>
               ) : null}
             </div>
 

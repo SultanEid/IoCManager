@@ -34,6 +34,7 @@ const SCOPE_TYPES: ScanRuleScopeType[] = ["Global", "Environment", "Subnet", "Se
 const CADENCE_TYPES: ScanCadenceType[] = ["Manual", "Interval", "Daily", "Weekly"]
 const PLAN_STATUSES: ScanPlanStatus[] = ["Draft", "Active", "Paused", "Retired"]
 const JOB_STATUSES = ["Queued", "Running", "Completed", "Failed", "Cancelled", "PartiallyCompleted"]
+const PLAN_LIBRARY_PAGE_SIZE = 20
 const WEEKDAY_OPTIONS = [
     { value: "0", label: "Sunday" },
     { value: "1", label: "Monday" },
@@ -214,6 +215,8 @@ export function ScanPlanManagementPage() {
 
     const [filters, setFilters] = useState(parsedFilters)
     const [editingPlanId, setEditingPlanId] = useState<string | null>(null)
+    const [planLibraryPage, setPlanLibraryPage] = useState(1)
+    const [openPlanActionsId, setOpenPlanActionsId] = useState<string | null>(null)
     const [jobStatusFilter, setJobStatusFilter] = useState("")
     const [jobPlanFilter, setJobPlanFilter] = useState("")
     const [formState, setFormState] = useState<FormState>(emptyForm())
@@ -265,6 +268,12 @@ export function ScanPlanManagementPage() {
     const filteredPlans = useMemo(
         () => plans.filter((plan) => matchesPlan(plan, parsedFilters)),
         [plans, parsedFilters],
+    )
+    const planLibraryTotalPages = Math.max(1, Math.ceil(filteredPlans.length / PLAN_LIBRARY_PAGE_SIZE))
+    const boundedPlanLibraryPage = Math.min(planLibraryPage, planLibraryTotalPages)
+    const visiblePlans = filteredPlans.slice(
+        (boundedPlanLibraryPage - 1) * PLAN_LIBRARY_PAGE_SIZE,
+        boundedPlanLibraryPage * PLAN_LIBRARY_PAGE_SIZE,
     )
 
     const selectedPlan = editingPlanId ? planById.get(editingPlanId) ?? null : null
@@ -437,6 +446,8 @@ export function ScanPlanManagementPage() {
             lastResultStatus: "",
         }
         setFilters(cleared)
+        setPlanLibraryPage(1)
+        setOpenPlanActionsId(null)
         router.replace(pathname)
     }
 
@@ -562,9 +573,14 @@ export function ScanPlanManagementPage() {
 
             <article className="wb-panel space-y-3">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold tracking-tight">Plan list</h3>
+                    <div>
+                        <h3 className="text-sm font-semibold tracking-tight">Plan library</h3>
+                        <p className="text-xs text-muted-foreground">
+                            Showing {visiblePlans.length} of {filteredPlans.length} filtered plans. Secondary actions stay inside the row menu.
+                        </p>
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                        Showing {filteredPlans.length} of {plans.length}
+                        Page {boundedPlanLibraryPage} of {planLibraryTotalPages}
                     </p>
                 </div>
 
@@ -603,7 +619,7 @@ export function ScanPlanManagementPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredPlans.map((plan) => (
+                                {visiblePlans.map((plan) => (
                                     <TableRow key={plan.id}>
                                         <TableCell>
                                             <div className="space-y-1">
@@ -651,42 +667,57 @@ export function ScanPlanManagementPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell>
-                                            <div className="flex flex-wrap justify-end gap-1">
+                                            <div className="relative flex justify-end">
                                                 <Button
                                                     type="button"
                                                     size="xs"
                                                     variant="outline"
-                                                    onClick={() => {
-                                                        setEditingPlanId(plan.id)
-                                                        setFormState(mapPlanToForm(plan))
-                                                        setJobPlanFilter(plan.id)
-                                                        setMessage("Plan loaded into the editor.")
-                                                    }}
+                                                    aria-expanded={openPlanActionsId === plan.id}
+                                                    onClick={() => setOpenPlanActionsId((current) => current === plan.id ? null : plan.id)}
                                                 >
-                                                    Edit
+                                                    More
                                                 </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="xs"
-                                                    variant="outline"
-                                                    onClick={() => {
-                                                        setEditingPlanId(plan.id)
-                                                        setFormState(mapPlanToForm(plan))
-                                                        setJobPlanFilter(plan.id)
-                                                        setMessage("Schedule settings loaded in the editor.")
-                                                    }}
-                                                >
-                                                    Schedule
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="xs"
-                                                    variant="outline"
-                                                    disabled={!canManage || runPlanMutation.isPending}
-                                                    onClick={() => runPlanMutation.mutate(plan.id)}
-                                                >
-                                                    Run Now
-                                                </Button>
+                                                {openPlanActionsId === plan.id ? (
+                                                    <div className="absolute right-0 top-9 z-20 grid w-40 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                                                        <button
+                                                            type="button"
+                                                            className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+                                                            onClick={() => {
+                                                                setEditingPlanId(plan.id)
+                                                                setFormState(mapPlanToForm(plan))
+                                                                setJobPlanFilter(plan.id)
+                                                                setOpenPlanActionsId(null)
+                                                                setMessage("Plan loaded into the editor.")
+                                                            }}
+                                                        >
+                                                            Edit details
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+                                                            onClick={() => {
+                                                                setEditingPlanId(plan.id)
+                                                                setFormState(mapPlanToForm(plan))
+                                                                setJobPlanFilter(plan.id)
+                                                                setOpenPlanActionsId(null)
+                                                                setMessage("Schedule settings loaded in the editor.")
+                                                            }}
+                                                        >
+                                                            Schedule
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                            disabled={!canManage || runPlanMutation.isPending}
+                                                            onClick={() => {
+                                                                setOpenPlanActionsId(null)
+                                                                runPlanMutation.mutate(plan.id)
+                                                            }}
+                                                        >
+                                                            Run now
+                                                        </button>
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </TableCell>
                                     </TableRow>
@@ -695,6 +726,39 @@ export function ScanPlanManagementPage() {
                         </Table>
                     </div>
                 )}
+                {filteredPlans.length > PLAN_LIBRARY_PAGE_SIZE ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
+                        <span>
+                            Plans {(boundedPlanLibraryPage - 1) * PLAN_LIBRARY_PAGE_SIZE + 1}-{Math.min(boundedPlanLibraryPage * PLAN_LIBRARY_PAGE_SIZE, filteredPlans.length)} of {filteredPlans.length}
+                        </span>
+                        <div className="flex gap-2">
+                            <Button
+                                type="button"
+                                size="xs"
+                                variant="outline"
+                                disabled={boundedPlanLibraryPage <= 1}
+                                onClick={() => {
+                                    setOpenPlanActionsId(null)
+                                    setPlanLibraryPage((page) => Math.max(1, page - 1))
+                                }}
+                            >
+                                Previous
+                            </Button>
+                            <Button
+                                type="button"
+                                size="xs"
+                                variant="outline"
+                                disabled={boundedPlanLibraryPage >= planLibraryTotalPages}
+                                onClick={() => {
+                                    setOpenPlanActionsId(null)
+                                    setPlanLibraryPage((page) => Math.min(planLibraryTotalPages, page + 1))
+                                }}
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    </div>
+                ) : null}
             </article>
 
             <article className="wb-panel space-y-3">

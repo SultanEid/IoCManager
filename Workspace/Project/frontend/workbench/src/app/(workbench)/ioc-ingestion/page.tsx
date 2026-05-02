@@ -7,14 +7,13 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ExternalLink,
-  Eye,
   FileJson,
   FileSpreadsheet,
   Search,
   X,
 } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { ACCENT_TONES, severityAccent } from "@/components/workbench/accent-tone"
+import { ACCENT_TONES } from "@/components/workbench/accent-tone"
 import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
@@ -39,7 +38,6 @@ import {
   listLegacyIocFindings,
   listLegacyTargets,
 } from "@/shared/gateway/legacy-scan-pipeline"
-import type { LegacyPipelineIocFinding } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { EmptyState, LoadingState, SearchEmptyState } from "@/shared/ui/state-panels"
@@ -56,8 +54,8 @@ type IocExplorerFilters = {
   pageSize: number
 }
 
-const DEFAULT_PAGE_SIZE = 50
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 250]
+const DEFAULT_PAGE_SIZE = 25
+const PAGE_SIZE_OPTIONS = [25, 50, 100]
 const IOC_DECISION_POLL_INTERVAL_MS = 2500
 const IOC_DECISION_POLL_MAX_ATTEMPTS = 12
 
@@ -388,65 +386,6 @@ function PaginationControls({
         </div>
       </div>
     </div>
-  )
-}
-
-function FindingMobileCard({
-  finding,
-  selected,
-  onToggleSelected,
-  onOpen,
-}: {
-  finding: LegacyPipelineIocFinding
-  selected: boolean
-  onToggleSelected: () => void
-  onOpen: () => void
-}) {
-  const accent = severityAccent(finding.severity)
-
-  return (
-    <article
-      className={`relative overflow-hidden rounded-xl border p-3 pl-4 transition-colors ${
-        selected ? "border-primary/45 bg-primary/10" : "border-border/70 bg-surface-2/55"
-      }`}
-    >
-      <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <ScannerFamilyBadge family={finding.scannerFamily} size="sm" />
-            <StatusBadge value={finding.severity} />
-          </div>
-          <p className="mt-2 line-clamp-2 text-sm font-semibold tracking-tight">{finding.ruleName}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{finding.targetDisplay}</p>
-        </div>
-        <input
-          type="checkbox"
-          checked={selected}
-          aria-label={`Select finding ${finding.iocId}`}
-          onChange={onToggleSelected}
-          className="mt-1"
-        />
-      </div>
-
-      <div className="mt-3 rounded-lg border border-border/55 bg-surface-1/65 p-2">
-        <p
-          className="max-h-10 overflow-hidden break-words text-xs leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
-          title={finding.indicatorValue}
-        >
-          {finding.indicatorValue}
-        </p>
-        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{finding.indicatorKind}</p>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{formatTimestamp(finding.timestampUtc)}</span>
-        <Button type="button" size="sm" variant="outline" onClick={onOpen}>
-          <Eye className="h-3.5 w-3.5" />
-          Open
-        </Button>
-      </div>
-    </article>
   )
 }
 
@@ -972,26 +911,28 @@ export default function IocsExplorerPage() {
             <span className="text-xs text-muted-foreground">
               {selectedRows.length === 0 ? "No rows selected" : `${formatCount(selectedRows.length)} selected`}
             </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => exportLegacyIocFindingsCsv(selectedRows)}
-              disabled={selectedRows.length === 0}
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              Export CSV
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => exportLegacyIocFindingsJson(selectedRows)}
-              disabled={selectedRows.length === 0}
-            >
-              <FileJson className="h-3.5 w-3.5" />
-              Export JSON
-            </Button>
+            {selectedRows.length > 0 ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => exportLegacyIocFindingsCsv(selectedRows)}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  Export CSV
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => exportLegacyIocFindingsJson(selectedRows)}
+                >
+                  <FileJson className="h-3.5 w-3.5" />
+                  Export JSON
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -1047,7 +988,7 @@ export default function IocsExplorerPage() {
           )
         ) : (
           <>
-            <div className="hidden overflow-hidden rounded-xl border border-border/75 bg-surface-1/90 2xl:block">
+            <div className="overflow-hidden rounded-xl border border-border/75 bg-surface-1/90">
               <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-surface-2/85 backdrop-blur supports-[backdrop-filter]:bg-surface-2/75">
                 <TableRow className="hover:bg-transparent">
@@ -1065,7 +1006,6 @@ export default function IocsExplorerPage() {
                   <TableHead className="w-[27%]">Indicator Value</TableHead>
                   <TableHead className="w-[7rem]">Severity</TableHead>
                   <TableHead className="w-[10rem]">Timestamp</TableHead>
-                  <TableHead className="w-11 px-2">Open</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1125,40 +1065,11 @@ export default function IocsExplorerPage() {
                       <TableCell className="truncate" title={formatTimestamp(finding.timestampUtc)}>
                         {formatTimestamp(finding.timestampUtc)}
                       </TableCell>
-                      <TableCell className="px-2">
-                        <Button
-                          type="button"
-                          size="icon-xs"
-                          variant="ghost"
-                          aria-label={`Open finding ${finding.ruleName}`}
-                          title="Open finding detail"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setSelectedIocId(finding.iocId)
-                          }}
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
                     </TableRow>
                   )
                 })}
               </TableBody>
               </Table>
-            </div>
-            <div className="grid gap-3 2xl:hidden">
-              {findings.map((finding) => {
-                const selected = selectedIds.includes(finding.iocId)
-                return (
-                  <FindingMobileCard
-                    key={finding.iocId}
-                    finding={finding}
-                    selected={selected}
-                    onToggleSelected={() => toggleSelected(finding.iocId)}
-                    onOpen={() => setSelectedIocId(finding.iocId)}
-                  />
-                )
-              })}
             </div>
           </>
         )}

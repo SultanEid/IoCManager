@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
@@ -59,6 +58,7 @@ const REPORT_TEMPLATES = [
 const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"] as const
 const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
 const REPORT_WORKSPACES = ["builder", "library"] as const
+const REPORT_LIBRARY_PAGE_SIZE = 12
 
 type ReportWorkspace = (typeof REPORT_WORKSPACES)[number]
 
@@ -630,6 +630,10 @@ export default function ReportsPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [errorText, setErrorText] = useState<string | null>(null)
   const [activeWorkspace, setActiveWorkspace] = useState<ReportWorkspace>("builder")
+  const [librarySearch, setLibrarySearch] = useState("")
+  const [libraryTypeFilter, setLibraryTypeFilter] = useState("")
+  const [libraryPage, setLibraryPage] = useState(1)
+  const [openLibraryActionsId, setOpenLibraryActionsId] = useState<string | null>(null)
   const [reviewLanguage, setReviewLanguage] = useState<"en" | "ar">("en")
   const [translatedReviewAegisPlan, setTranslatedReviewAegisPlan] = useState<ReportMitigationPlanResponse | null>(null)
   const [reviewTranslationBusy, setReviewTranslationBusy] = useState(false)
@@ -914,7 +918,24 @@ export default function ReportsPage() {
 
   const targets = targetsQuery.data ?? []
   const reports = reportsQuery.data?.items ?? []
-  const visibleReports = reports.slice(0, 12)
+  const filteredReports = reports.filter((report) => {
+    const search = librarySearch.trim().toLowerCase()
+    const matchesSearch = !search || [
+      report.title,
+      report.reportType,
+      report.createdAtUtc,
+      report.generatedAtUtc,
+    ].join(" ").toLowerCase().includes(search)
+    const matchesType = !libraryTypeFilter || report.reportType === libraryTypeFilter
+    return matchesSearch && matchesType
+  })
+  const libraryTotalPages = Math.max(1, Math.ceil(filteredReports.length / REPORT_LIBRARY_PAGE_SIZE))
+  const boundedLibraryPage = Math.min(libraryPage, libraryTotalPages)
+  const visibleReports = filteredReports.slice(
+    (boundedLibraryPage - 1) * REPORT_LIBRARY_PAGE_SIZE,
+    boundedLibraryPage * REPORT_LIBRARY_PAGE_SIZE,
+  )
+  const reportTypeOptions = Array.from(new Set(reports.map((report) => report.reportType).filter(Boolean))).sort()
   const aegisPlanBySourceReportId = new Map((aegisPlansQuery.data?.items ?? []).filter((plan) => plan.sourceReportId).map((plan) => [plan.sourceReportId, plan]))
   const generatedQuery: SnapshotQuery = {
     targetServerId: form.targetId || null,
@@ -1287,12 +1308,12 @@ export default function ReportsPage() {
           <div className="space-y-1">
             <p className="wb-kicker">Saved Library</p>
             <p className="text-sm text-muted-foreground">
-              Showing the latest {visibleReports.length} of {reports.length} saved snapshots. Older snapshots remain available through direct report links and future archive search.
+              Search and page saved snapshots without flooding the workspace with repeated actions.
             </p>
           </div>
           <span className="wb-chip">
             <FolderOpen className="h-3.5 w-3.5" />
-            Snapshot Archive
+            {reports.length} snapshots
           </span>
         </div>
 
@@ -1300,101 +1321,60 @@ export default function ReportsPage() {
           <EmptyState title="No saved reports" description="Saved report snapshots will appear here after preview generation with saving enabled." />
         ) : (
           <>
-          <div className="hidden overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
-              <thead className="text-left text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                <tr>
-                  <th className="pb-3">Title</th>
-                  <th className="pb-3">Type</th>
-                  <th className="pb-3">Scope</th>
-                  <th className="pb-3">Created</th>
-                  <th className="pb-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reports.map((report) => {
-                  const snapshot = parseReportSnapshot(report, targets)
-                  const deleting = deletingReportId === report.id
-                  const aegisBusy = aegisBusyReportId === report.id
-                  const aegisPlan = aegisPlanBySourceReportId.get(report.id)
-                  const isAegisPlan = isAegisMitigationReport(report)
-                  return (
-                    <tr key={report.id} className="border-t border-border/50 align-top">
-                      <td className="py-3">
-                        <div>
-                          <p className="font-medium text-foreground">{report.title}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">Report #{report.id}</p>
-                          {aegisPlan || isAegisPlan ? (
-                            <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-400/10 px-2 py-1 text-[11px] font-medium text-emerald-200">
-                              <ShieldCheck className="h-3 w-3" />
-                              {isAegisPlan ? "Aegis mitigation plan" : "Aegis plan available"}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="py-3">{formatReportType(report.reportType)}</td>
-                      <td className="py-3 text-muted-foreground">{snapshot.scope}</td>
-                      <td className="py-3 text-muted-foreground">{formatUtc(report.createdAtUtc)}</td>
-                      <td className="py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Button type="button" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
-                            Preview
-                          </Button>
-                          <a
-                            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                            href={reportHtmlHref(report.id)}
-                            download
-                          >
-                            Export HTML
-                          </a>
-                          {aegisPlan || isAegisPlan ? (
-                            <>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => openAegisPlan(aegisPlan?.id ?? report.id)}
-                                disabled={deleting || aegisBusy}
-                              >
-                                Open in Aegis
-                              </Button>
-                              {!isAegisPlan ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => void createAegisPlanForReport(report.id, true)}
-                                  disabled={deleting || aegisBusy}
-                                >
-                                  {aegisBusy ? "Regenerating..." : "Regenerate"}
-                                </Button>
-                              ) : null}
-                            </>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => void createAegisPlanForReport(report.id, false)}
-                              disabled={deleting || aegisBusy}
-                            >
-                              {aegisBusy ? "Creating..." : "Create mitigation plan"}
-                            </Button>
-                          )}
-                          <Button type="button" variant="outline" onClick={() => deleteSavedReport(report.id, report.title)} disabled={deleting}>
-                            {deleting ? "Deleting..." : "Delete"}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto]">
+            <Input
+              value={librarySearch}
+              onChange={(event) => {
+                setLibrarySearch(event.target.value)
+                setLibraryPage(1)
+                setOpenLibraryActionsId(null)
+              }}
+              placeholder="Search saved reports by title, type, or timestamp"
+            />
+            <select
+              value={libraryTypeFilter}
+              onChange={(event) => {
+                setLibraryTypeFilter(event.target.value)
+                setLibraryPage(1)
+                setOpenLibraryActionsId(null)
+              }}
+              className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+            >
+              <option value="">All report types</option>
+              {reportTypeOptions.map((type) => (
+                <option key={type} value={type}>{formatReportType(type)}</option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setLibrarySearch("")
+                setLibraryTypeFilter("")
+                setLibraryPage(1)
+                setOpenLibraryActionsId(null)
+              }}
+              disabled={!librarySearch && !libraryTypeFilter}
+            >
+              Clear
+            </Button>
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
+            <span>
+              Showing {visibleReports.length} of {filteredReports.length} matching snapshots
+            </span>
+            <span>Page {boundedLibraryPage} of {libraryTotalPages}</span>
+          </div>
+          {filteredReports.length === 0 ? (
+            <EmptyState title="No saved reports matched" description="Clear the search or report type filter to reopen the full report library." />
+          ) : (
           <div className="grid gap-2">
             {visibleReports.map((report) => {
               const snapshot = parseReportSnapshot(report, targets)
               const deleting = deletingReportId === report.id
               const aegisPlan = aegisPlanBySourceReportId.get(report.id)
               const isAegisPlan = isAegisMitigationReport(report)
+              const aegisBusy = aegisBusyReportId === report.id
               const accent = reportTypeAccent(report.reportType)
               return (
                 <div key={report.id} className="relative overflow-hidden rounded-xl border border-border/65 bg-surface-1/60 p-3 transition-colors hover:border-primary/25 hover:bg-surface-1/75">
@@ -1418,11 +1398,17 @@ export default function ReportsPage() {
                       <Button type="button" size="sm" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
                         Preview
                       </Button>
-                      <details className="relative">
-                        <summary className="inline-flex h-8 cursor-pointer list-none items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted [&::-webkit-details-marker]:hidden">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="inline-flex h-8 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                          aria-expanded={openLibraryActionsId === report.id}
+                          onClick={() => setOpenLibraryActionsId((current) => current === report.id ? null : report.id)}
+                        >
                           More
-                        </summary>
-                        <div className="absolute right-0 z-20 mt-2 grid w-52 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                        </button>
+                        {openLibraryActionsId === report.id ? (
+                        <div className="absolute right-0 z-20 mt-2 grid w-56 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
                           <a
                             className="rounded-lg px-3 py-2 text-sm transition hover:bg-surface-2"
                             href={reportHtmlHref(report.id)}
@@ -1431,29 +1417,96 @@ export default function ReportsPage() {
                             Export HTML
                           </a>
                           {aegisPlan || isAegisPlan ? (
-                            <Link
-                              className="rounded-lg px-3 py-2 text-sm transition hover:bg-surface-2"
-                              href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
+                            <button
+                              type="button"
+                              className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+                              onClick={() => {
+                                setOpenLibraryActionsId(null)
+                                openAegisPlan(aegisPlan?.id ?? report.id)
+                              }}
                             >
                               Open in Aegis
-                            </Link>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => {
+                                setOpenLibraryActionsId(null)
+                                void createAegisPlanForReport(report.id, false)
+                              }}
+                              disabled={deleting || aegisBusy}
+                            >
+                              {aegisBusy ? "Creating..." : "Create mitigation plan"}
+                            </button>
+                          )}
+                          {aegisPlan && !isAegisPlan ? (
+                            <button
+                              type="button"
+                              className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => {
+                                setOpenLibraryActionsId(null)
+                                void createAegisPlanForReport(report.id, true)
+                              }}
+                              disabled={deleting || aegisBusy}
+                            >
+                              {aegisBusy ? "Regenerating..." : "Regenerate Aegis plan"}
+                            </button>
                           ) : null}
                           <button
                             type="button"
                             className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10"
-                            onClick={() => deleteSavedReport(report.id, report.title)}
+                            onClick={() => {
+                              setOpenLibraryActionsId(null)
+                              void deleteSavedReport(report.id, report.title)
+                            }}
                             disabled={deleting}
                           >
                             {deleting ? "Deleting..." : "Delete"}
                           </button>
                         </div>
-                      </details>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>
               )
             })}
           </div>
+          )}
+          {filteredReports.length > REPORT_LIBRARY_PAGE_SIZE ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
+              <span>
+                Reports {(boundedLibraryPage - 1) * REPORT_LIBRARY_PAGE_SIZE + 1}-{Math.min(boundedLibraryPage * REPORT_LIBRARY_PAGE_SIZE, filteredReports.length)} of {filteredReports.length}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={boundedLibraryPage <= 1}
+                  onClick={() => {
+                    setOpenLibraryActionsId(null)
+                    setLibraryPage((page) => Math.max(1, page - 1))
+                  }}
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={boundedLibraryPage >= libraryTotalPages}
+                  onClick={() => {
+                    setOpenLibraryActionsId(null)
+                    setLibraryPage((page) => Math.min(libraryTotalPages, page + 1))
+                  }}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
           </>
         )}
       </article>

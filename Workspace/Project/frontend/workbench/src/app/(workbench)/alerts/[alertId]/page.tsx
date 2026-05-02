@@ -433,7 +433,14 @@ export default function AlertDetailPage() {
   }
 
   if (alertQuery.isLoading) {
-    return <LoadingState label="Loading alert detail" />
+    return (
+      <section className="wb-page">
+        <LoadingState
+          label={`Opening case ${alertId.slice(0, 8)}`}
+          description="Loading the selected case summary, owner routing, communication history, and IOC evidence."
+        />
+      </section>
+    )
   }
 
   if (alertQuery.isError || !detail) {

@@ -28,6 +28,7 @@ const FAMILIES = ["yara", "sigma", "snort", "suricata"] as const
 const PLAN_STATUSES = ["Draft", "Active", "Paused"] as const
 const SCHEDULE_TYPES = ["Manual", "Interval", "Daily", "Weekly"] as const
 const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const
+const PLAN_LIBRARY_PAGE_SIZE = 20
 
 type ScannerFamily = (typeof FAMILIES)[number]
 type ResolvedTargetOs = "windows" | "linux"
@@ -257,6 +258,8 @@ export default function ScanPlanPage() {
   const [errorText, setErrorText] = useState<string | null>(null)
   const [form, setForm] = useState(createEmptyForm())
   const [activeWorkspace, setActiveWorkspace] = useState<ScanPlanWorkspaceSection>("library")
+  const [planLibraryPage, setPlanLibraryPage] = useState(1)
+  const [openPlanActionsId, setOpenPlanActionsId] = useState<string | null>(null)
 
   const networksQuery = useWorkbenchQuery(["legacy-pipeline", "plan-networks"], (signal) => listLegacyNetworks(signal))
   const targetsQuery = useWorkbenchQuery(["legacy-pipeline", "plan-targets"], (signal) => listLegacyTargets(undefined, signal))
@@ -473,6 +476,12 @@ export default function ScanPlanPage() {
   const networks = networksQuery.data ?? []
   const targets = targetsQuery.data ?? []
   const plans = plansQuery.data ?? []
+  const planLibraryTotalPages = Math.max(1, Math.ceil(plans.length / PLAN_LIBRARY_PAGE_SIZE))
+  const boundedPlanLibraryPage = Math.min(planLibraryPage, planLibraryTotalPages)
+  const visiblePlans = plans.slice(
+    (boundedPlanLibraryPage - 1) * PLAN_LIBRARY_PAGE_SIZE,
+    boundedPlanLibraryPage * PLAN_LIBRARY_PAGE_SIZE,
+  )
 
   return (
     <section className="wb-page">
@@ -1069,9 +1078,10 @@ export default function ScanPlanPage() {
             <p className="wb-kicker">Stored Plans</p>
             <h3 className="mt-1 text-base font-semibold tracking-tight">Recurring scan packs ready to run or schedule</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Plans keep scanner families, per-family host rule paths, UTC cadence, and target scope together.
+              Showing {visiblePlans.length} of {plans.length} saved packs. Secondary actions stay inside the active row menu.
             </p>
           </div>
+          <span className="wb-chip">Page {boundedPlanLibraryPage} / {planLibraryTotalPages}</span>
         </div>
 
         {plans.length === 0 ? (
@@ -1081,7 +1091,7 @@ export default function ScanPlanPage() {
           />
         ) : (
           <div className="grid gap-3">
-            {plans.map((plan) => (
+            {visiblePlans.map((plan) => (
               <details key={plan.id} className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
                 <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1133,42 +1143,111 @@ export default function ScanPlanPage() {
                   {plan.notes ? <p className="mt-2 text-muted-foreground">{plan.notes}</p> : null}
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => runPlanAction(plan.id)} disabled={runningId === plan.id}>
-                    {runningId === plan.id ? "Queueing..." : "Run"}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => startEditing(plan)}>
-                    Edit
-                  </Button>
+                <div className="relative mt-4 flex justify-end">
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => togglePlanStatus(plan)}
-                    disabled={statusUpdatingId === plan.id}
+                    aria-expanded={openPlanActionsId === plan.id}
+                    onClick={() => setOpenPlanActionsId((current) => current === plan.id ? null : plan.id)}
                   >
-                    {statusUpdatingId === plan.id ? "Updating..." : plan.status === "Active" ? "Pause" : "Activate"}
+                    More
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => clonePlanAction(plan.id)}
-                    disabled={cloningId === plan.id}
-                  >
-                    {cloningId === plan.id ? "Cloning..." : "Clone"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => deletePlanAction(plan)}
-                    disabled={deletingId === plan.id}
-                  >
-                    {deletingId === plan.id ? "Deleting..." : "Delete"}
-                  </Button>
+                  {openPlanActionsId === plan.id ? (
+                    <div className="absolute right-0 top-10 z-20 grid w-44 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                      <button
+                        type="button"
+                        className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => {
+                          setOpenPlanActionsId(null)
+                          void runPlanAction(plan.id)
+                        }}
+                        disabled={runningId === plan.id}
+                      >
+                        {runningId === plan.id ? "Queueing..." : "Run now"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+                        onClick={() => {
+                          setOpenPlanActionsId(null)
+                          startEditing(plan)
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => {
+                          setOpenPlanActionsId(null)
+                          void togglePlanStatus(plan)
+                        }}
+                        disabled={statusUpdatingId === plan.id}
+                      >
+                        {statusUpdatingId === plan.id ? "Updating..." : plan.status === "Active" ? "Pause" : "Activate"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => {
+                          setOpenPlanActionsId(null)
+                          void clonePlanAction(plan.id)
+                        }}
+                        disabled={cloningId === plan.id}
+                      >
+                        {cloningId === plan.id ? "Cloning..." : "Clone"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => {
+                          setOpenPlanActionsId(null)
+                          void deletePlanAction(plan)
+                        }}
+                        disabled={deletingId === plan.id}
+                      >
+                        {deletingId === plan.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </details>
             ))}
           </div>
         )}
+        {plans.length > PLAN_LIBRARY_PAGE_SIZE ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-2/45 px-3 py-2 text-xs text-muted-foreground">
+            <span>
+              Plans {(boundedPlanLibraryPage - 1) * PLAN_LIBRARY_PAGE_SIZE + 1}-{Math.min(boundedPlanLibraryPage * PLAN_LIBRARY_PAGE_SIZE, plans.length)} of {plans.length}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={boundedPlanLibraryPage <= 1}
+                onClick={() => {
+                  setOpenPlanActionsId(null)
+                  setPlanLibraryPage((page) => Math.max(1, page - 1))
+                }}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={boundedPlanLibraryPage >= planLibraryTotalPages}
+                onClick={() => {
+                  setOpenPlanActionsId(null)
+                  setPlanLibraryPage((page) => Math.min(planLibraryTotalPages, page + 1))
+                }}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </section>
       ) : null}
     </section>

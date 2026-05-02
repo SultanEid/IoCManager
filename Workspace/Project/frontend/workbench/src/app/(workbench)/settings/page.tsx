@@ -651,15 +651,22 @@ export default function SettingsPage() {
 
         {optionalIssues.length > 0 ? (
           <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2">
-            <p className="text-xs font-semibold tracking-tight text-amber-100">Optional services are degraded</p>
+            <p className="text-xs font-semibold tracking-tight text-amber-100">Auxiliary capabilities need attention</p>
             <p className="mt-1 text-xs text-amber-100/90">
-              {optionalIssues.map((component) => `${component.name}: ${component.message}`).join(" | ")}
+              Some analytics or automation helpers are unavailable. Core settings remain editable.
             </p>
           </div>
         ) : null}
 
         {canAdmin ? (
-          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <details className="rounded-lg border border-border/70 bg-surface-2/45 p-3">
+            <summary className="cursor-pointer list-none text-xs font-semibold tracking-tight [&::-webkit-details-marker]:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <span>Operational activity and admin jobs</span>
+                <StatusPill label={`${auditItems.length} recent audit events`} />
+              </div>
+            </summary>
+          <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="space-y-4">
               <div className="rounded-lg border border-border/70 bg-surface-2/65 p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -723,6 +730,7 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          </details>
         ) : null}
       </motion.article>
 
