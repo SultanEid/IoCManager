@@ -360,8 +360,10 @@ public sealed partial class LegacyScanPipelineService
             }
 
             var outputPath = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}{Path.GetExtension(file.FileName)}");
-            await using var output = File.Create(outputPath);
-            await file.CopyToAsync(output, cancellationToken);
+            await using (var output = File.Create(outputPath))
+            {
+                await file.CopyToAsync(output, cancellationToken);
+            }
             extractedFiles.Add(outputPath);
         }
 

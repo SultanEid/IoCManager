@@ -50,7 +50,8 @@ public sealed partial class LegacyScanPipelineService
             && (File.Exists(effectiveRulePath) || (normalizedFamily == "sigma" && Directory.Exists(effectiveRulePath)));
         if (!rulePathExists)
         {
-            throw new FileNotFoundException("No effective rule file was available for execution.");
+            var rulePathState = string.IsNullOrWhiteSpace(effectiveRulePath) ? "empty" : "missing";
+            throw new FileNotFoundException($"No effective {normalizedFamily.ToUpperInvariant()} rule file was available for execution ({rulePathState} rule path).");
         }
 
         var startInfo = new System.Diagnostics.ProcessStartInfo
@@ -295,12 +296,20 @@ public sealed partial class LegacyScanPipelineService
 
         return normalized switch
         {
-            "yara" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-YaraScan.ps1"),
-            "sigma" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-SigmaScan.ps1"),
-            "snort" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-SnortScan.ps1"),
-            "suricata" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-SuricataScan.ps1"),
+            "yara" => ResolveExistingScriptPath("../scripts/Invoke-YaraScan.ps1", "Workspace/scripts/Invoke-YaraScan.ps1"),
+            "sigma" => ResolveExistingScriptPath("../scripts/Invoke-SigmaScan.ps1", "Workspace/scripts/Invoke-SigmaScan.ps1"),
+            "snort" => ResolveExistingScriptPath("../scripts/Invoke-SnortScan.ps1", "Workspace/scripts/Invoke-SnortScan.ps1"),
+            "suricata" => ResolveExistingScriptPath("../scripts/Invoke-SuricataScan.ps1", "Workspace/scripts/Invoke-SuricataScan.ps1"),
             _ => throw new ArgumentException($"Unsupported scanner family '{scannerFamily}'."),
         };
+    }
+
+    private static string ResolveExistingScriptPath(string preferredPath, string legacyPath)
+    {
+        var resolvedPreferredPath = LegacyScanPipelineHelpers.ResolvePath(preferredPath);
+        return File.Exists(resolvedPreferredPath)
+            ? resolvedPreferredPath
+            : LegacyScanPipelineHelpers.ResolvePath(legacyPath);
     }
 
     private IReadOnlyList<LegacyPipelinePersistedIoc> ParseLegacyScannerOutput(string scannerFamily, string rawOutput, LegacyPipelineTargetEntity target)

@@ -904,9 +904,13 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             tempDirectory ??= Path.Combine(LegacyScanPipelineHelpers.EnsureDirectory(_pipelineOptions.CurrentValue.TempRuleRootDirectory), Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
             stagedPcapPath = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}{Path.GetExtension(pcapFile.FileName)}");
-            await using var pcapOutput = File.Create(stagedPcapPath);
-            await pcapFile.CopyToAsync(pcapOutput, cancellationToken);
+            await using (var pcapOutput = File.Create(stagedPcapPath))
+            {
+                await pcapFile.CopyToAsync(pcapOutput, cancellationToken);
+            }
         }
+
+        ValidateEffectiveRulePaths(normalizedFamilies, ruleInputMode, stagedPathsByFamily, tempDirectory);
 
         foreach (var family in normalizedFamilies)
         {
@@ -952,6 +956,32 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         }
 
         return new LegacyPipelineCustomScanResponse(batchId.ToString("D"), jobs);
+    }
+
+    private static void ValidateEffectiveRulePaths(
+        IReadOnlyList<string> scannerFamilies,
+        string ruleInputMode,
+        IReadOnlyDictionary<string, string?> stagedPathsByFamily,
+        string? tempDirectory)
+    {
+        foreach (var family in scannerFamilies)
+        {
+            stagedPathsByFamily.TryGetValue(family, out var effectivePath);
+            var isDirectoryRuleSet = family.Equals("sigma", StringComparison.OrdinalIgnoreCase);
+            var exists = !string.IsNullOrWhiteSpace(effectivePath)
+                && (File.Exists(effectivePath) || (isDirectoryRuleSet && Directory.Exists(effectivePath)));
+            if (exists)
+            {
+                continue;
+            }
+
+            if (!string.Equals(ruleInputMode, "hostPath", StringComparison.OrdinalIgnoreCase))
+            {
+                LegacyScanPipelineHelpers.CleanupTempDirectory(tempDirectory);
+            }
+
+            throw new ArgumentException($"The {family.ToUpperInvariant()} rule file was accepted but could not be staged for execution.");
+        }
     }
 
     public async Task<IReadOnlyList<LegacyPipelineScanJobResponse>> ListJobsAsync(CancellationToken cancellationToken)
