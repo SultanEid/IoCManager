@@ -4,7 +4,7 @@ public sealed class LegacyScanPipelineOptions
 {
     public const string SectionName = "LegacyScanPipeline";
 
-    public string TempRuleRootDirectory { get; set; } = Path.Combine(Path.GetTempPath(), "ioc-manager-legacy-pipeline");
+    public string TempRuleRootDirectory { get; set; } = "C:/Tools/IoCManager/temp-rules";
 
     public string ReportsDirectory { get; set; } = Path.Combine(AppContext.BaseDirectory, "reports");
 

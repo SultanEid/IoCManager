@@ -62,6 +62,22 @@ def recommend_mitigation_plan(request: ReportMitigationRequest, settings: Servic
             },
         },
     )
+    output_text = _extract_response_output_text(response_body)
+    if not isinstance(output_text, str) or not output_text.strip():
+        raise ValueError("OpenAI response did not include output_text.")
+
+    plan = ReportMitigationPlanResponse.model_validate_json(output_text)
+    return ReportMitigationResponse(
+        report_id=extraction.report_id,
+        source_type=extraction.source_type,
+        planner_model=settings.openai_planner_model,
+        extracted_iocs=extraction.extracted_iocs,
+        claims=extraction.claims,
+        campaign_hints=extraction.campaign_hints,
+        malware_family_hints=extraction.malware_family_hints,
+        mitigation_plan=plan,
+        generated_at=datetime.now(timezone.utc),
+    )
 
 
 def translate_mitigation_plan(
@@ -106,22 +122,6 @@ def translate_mitigation_plan(
         raise ValueError("OpenAI response did not include output_text.")
 
     return ReportMitigationPlanResponse.model_validate_json(output_text)
-    output_text = _extract_response_output_text(response_body)
-    if not isinstance(output_text, str) or not output_text.strip():
-        raise ValueError("OpenAI response did not include output_text.")
-
-    plan = ReportMitigationPlanResponse.model_validate_json(output_text)
-    return ReportMitigationResponse(
-        report_id=extraction.report_id,
-        source_type=extraction.source_type,
-        planner_model=settings.openai_planner_model,
-        extracted_iocs=extraction.extracted_iocs,
-        claims=extraction.claims,
-        campaign_hints=extraction.campaign_hints,
-        malware_family_hints=extraction.malware_family_hints,
-        mitigation_plan=plan,
-        generated_at=datetime.now(timezone.utc),
-    )
 
 
 def _system_prompt() -> str:
