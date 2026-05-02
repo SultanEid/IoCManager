@@ -38,6 +38,7 @@ import {
   reportResponseSchema,
   reportMitigationListResponseSchema,
   reportMitigationResponseSchema,
+  reportMitigationTranslationResponseSchema,
   reportListResponseSchema,
   scanJobResponseSchema,
   scanJobTargetExecutionResponseSchema,
@@ -110,6 +111,7 @@ import {
   type ReportResponse,
   type ReportMitigationListResponse,
   type ReportMitigationResponse,
+  type ReportMitigationTranslationResponse,
   type ScanJobResponse,
   type ScanJobTargetExecutionResponse,
   type ScanAnalystAgentStatusResponse,
@@ -189,6 +191,7 @@ import type {
   GenerateReportMitigationInput,
   GenerateReportMitigationFromAlertInput,
   GenerateReportMitigationFromScanJobInput,
+  TranslateReportMitigationInput,
   ReportListQuery,
   ReviewRuleProposalInput,
   SettingsAdminVM,
@@ -531,6 +534,17 @@ export class AspNetGateway {
         actorUserId: input.actorUserId,
         regenerate: input.regenerate ?? false,
       },
+    })
+  }
+
+  async translateReportMitigationPlan(reportId: string, input: TranslateReportMitigationInput, signal?: AbortSignal): Promise<ReportMitigationTranslationResponse> {
+    return requestJson(`/api/v2/ai/report-mitigation/reports/${encodeURIComponent(reportId)}/translate`, reportMitigationTranslationResponseSchema, {
+      method: "POST",
+      body: {
+        targetLanguage: input.targetLanguage,
+        actorUserId: input.actorUserId,
+      },
+      signal,
     })
   }
 
@@ -1164,6 +1178,7 @@ export class AspNetGateway {
         maxTargetCount: input.maxTargetCount ?? null,
         editedPlan: input.editedPlan ?? null,
         simulatedConditions: input.simulatedConditions ?? null,
+        uploadedRuleFiles: input.uploadedRuleFiles ?? null,
       },
     })
   }

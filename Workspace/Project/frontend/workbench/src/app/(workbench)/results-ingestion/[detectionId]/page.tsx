@@ -25,6 +25,7 @@ import {
 } from "@/shared/api/schemas"
 import { explainDecisionConfidence } from "@/shared/ai/confidence-explanation"
 import { classifyUiError } from "@/shared/api/error-classification"
+import { writeAegisWidgetState } from "@/shared/aegis/widget-state"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
@@ -843,6 +844,14 @@ export default function DetectionDecisionPage() {
       return
     }
 
+    writeAegisWidgetState({
+      phase: "completed",
+      title: "Aegis mitigation plan ready",
+      sourceName: `${detection.fingerprint}${detection.serverHostname ? ` on ${detection.serverHostname}` : ""}`,
+      reviewPath: `/agents/aegis?plan=${encodeURIComponent(existingAegisPlan.id)}`,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
     router.push(`/agents/aegis?plan=${encodeURIComponent(existingAegisPlan.id)}`)
   }
 
@@ -853,6 +862,14 @@ export default function DetectionDecisionPage() {
 
     setAegisBusyAction(regenerate ? "regenerate" : "create")
     setAegisError(null)
+    writeAegisWidgetState({
+      phase: regenerate ? "drafting" : "reviewing",
+      title: regenerate ? "Aegis is regenerating a mitigation plan" : "Aegis is reviewing the selected detection",
+      sourceName: `${detection.fingerprint}${detection.serverHostname ? ` on ${detection.serverHostname}` : ""}`,
+      reviewPath: null,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
     try {
       const response = await gateway.generateReportMitigationFromScanJob(detection.scanJobId, {
         includeWorkspaceContext: true,
@@ -862,8 +879,24 @@ export default function DetectionDecisionPage() {
       if (!response.persistedMitigationReport) {
         throw new Error("Aegis did not return a saved mitigation plan.")
       }
+      writeAegisWidgetState({
+        phase: "completed",
+        title: "Aegis mitigation plan ready",
+        sourceName: response.persistedMitigationReport.title,
+        reviewPath: `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
       router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
     } catch (error) {
+      writeAegisWidgetState({
+        phase: "blocked",
+        title: "Aegis was blocked while reviewing the selected detection",
+        sourceName: `${detection.fingerprint}${detection.serverHostname ? ` on ${detection.serverHostname}` : ""}`,
+        reviewPath: null,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
       setAegisError(readErrorMessage(error))
     } finally {
       setAegisBusyAction(null)

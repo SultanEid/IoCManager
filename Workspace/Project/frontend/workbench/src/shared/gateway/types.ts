@@ -32,6 +32,7 @@ import type {
   ReportResponse,
   ReportMitigationListResponse,
   ReportMitigationResponse,
+  ReportMitigationTranslationResponse,
   RuleDistributionAttemptResponse,
   RuleDistributionJobResponse,
   RuleDistributionTargetResponse,
@@ -624,6 +625,12 @@ export type ScanJobFilters = {
 
 export type ScanAnalystSimulatedCondition = "new_hosts_found" | "failed_recent_job" | "stale_coverage" | "recent_alert_detected"
 
+export type ScanAnalystUploadedRuleFileInput = {
+  fileName: string
+  contentBase64: string
+  scannerFamily?: ScannerCapability
+}
+
 export type SendScanAnalystChatTurnInput = {
   sessionId?: string
   actorUserId: string
@@ -634,6 +641,7 @@ export type SendScanAnalystChatTurnInput = {
   maxTargetCount?: number
   editedPlan?: ScanAnalystPlanProposalResponse | null
   simulatedConditions?: ScanAnalystSimulatedCondition[]
+  uploadedRuleFiles?: ScanAnalystUploadedRuleFileInput[]
 }
 
 export type UpdateScanAnalystPostureInput = {
@@ -750,6 +758,11 @@ export type GenerateReportMitigationFromScanJobInput = {
   regenerate?: boolean
 }
 
+export type TranslateReportMitigationInput = {
+  targetLanguage: "ar"
+  actorUserId: string
+}
+
 export type AuditLogListQuery = {
   q?: string
   actorUserId?: string
@@ -844,6 +857,7 @@ export interface Gateway {
   generateReportMitigation(input: GenerateReportMitigationInput): Promise<ReportMitigationResponse>
   generateReportMitigationFromAlert(alertId: string, input: GenerateReportMitigationFromAlertInput): Promise<ReportMitigationResponse>
   generateReportMitigationFromScanJob(scanJobId: string, input: GenerateReportMitigationFromScanJobInput): Promise<ReportMitigationResponse>
+  translateReportMitigationPlan(reportId: string, input: TranslateReportMitigationInput, signal?: AbortSignal): Promise<ReportMitigationTranslationResponse>
   listReportMitigationPlans(signal?: AbortSignal): Promise<ReportMitigationListResponse>
   deleteReport(reportId: string): Promise<void>
   getPowerBiVisualizationCatalog(signal?: AbortSignal): Promise<PowerBiVisualizationCatalogResponse>

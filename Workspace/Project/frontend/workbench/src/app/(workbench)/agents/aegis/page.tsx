@@ -9,10 +9,11 @@ import { AegisMitigationTimeline, AegisPrimaryActions } from "@/components/workb
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
-import type { ReportMitigationActionResponse, ReportMitigationResponse, ReportResponse } from "@/shared/api/schemas"
+import type { ReportMitigationActionResponse, ReportMitigationPlanResponse, ReportMitigationResponse, ReportResponse } from "@/shared/api/schemas"
+import { writeAegisWidgetState } from "@/shared/aegis/widget-state"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
-import { listLegacyJobs } from "@/shared/gateway/legacy-scan-pipeline"
+import { listLegacyJobs, listLegacyResults } from "@/shared/gateway/legacy-scan-pipeline"
 import type { GenerateReportMitigationInput } from "@/shared/gateway/types"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
@@ -82,6 +83,60 @@ function readAegisResultFromReport(report: ReportResponse): ReportMitigationResp
   }
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim())
+}
+
+function buildLegacyAegisDocumentId(jobId: string) {
+  return `legacy-scan-job:${jobId}`
+}
+
+function buildLegacyAegisDocumentText(
+  job: {
+    id: string
+    scannerFamily: string
+    triggerType: string
+    status: string
+    summary: string
+    rulePath: string | null
+    executionMode: string | null
+    queuedAtUtc: string
+    startedAtUtc: string | null
+    finishedAtUtc: string | null
+    totalTargets: number
+    completedTargets: number
+    failedTargets: number
+    noFindingsTargets: number
+  },
+  results: Array<{
+    targetDisplay: string
+    status: string
+    findingsCount: number
+    startedAtUtc: string | null
+    finishedAtUtc: string | null
+  }>,
+) {
+  const lines = [
+    `Legacy scan job id: ${job.id}`,
+    `Scanner family: ${job.scannerFamily}`,
+    `Trigger type: ${job.triggerType}`,
+    `Status: ${job.status}`,
+    `Execution mode: ${job.executionMode ?? "Not recorded"}`,
+    `Rule path: ${job.rulePath?.trim() ? job.rulePath : "Not recorded"}`,
+    `Queued at UTC: ${job.queuedAtUtc}`,
+    `Started at UTC: ${job.startedAtUtc ?? "Not recorded"}`,
+    `Finished at UTC: ${job.finishedAtUtc ?? "Not recorded"}`,
+    `Summary: ${job.summary}`,
+    `Target counts: ${job.completedTargets}/${job.totalTargets} completed, ${job.failedTargets} failed, ${job.noFindingsTargets} no-findings.`,
+    "Per-target results:",
+    ...(results.length > 0
+      ? results.map((result) => `${result.targetDisplay} | ${result.status} | findings=${result.findingsCount} | finished=${result.finishedAtUtc ?? result.startedAtUtc ?? "running"}`)
+      : ["No per-target result rows were recorded for this legacy scan job."]),
+  ]
+
+  return lines.join("\n")
+}
+
 function ActionGroup({ title, actions }: { title: string; actions: ReportMitigationActionResponse[] }) {
   return (
     <details className="wb-panel group space-y-4">
@@ -113,10 +168,50 @@ function ActionGroup({ title, actions }: { title: string; actions: ReportMitigat
   )
 }
 
-function PlanView({ result }: { result: ReportMitigationResponse }) {
-  const plan = result.mitigationPlan
+function PlanView({ result, actorUserId }: { result: ReportMitigationResponse; actorUserId: string }) {
+  const reportId = result.persistedMitigationReport?.id ?? null
+  const [language, setLanguage] = useState<"en" | "ar">("en")
+  const [translatedPlan, setTranslatedPlan] = useState<ReportMitigationPlanResponse | null>(null)
+  const [translating, setTranslating] = useState(false)
+  const [translationError, setTranslationError] = useState<string | null>(null)
+  const plan = language === "ar" && translatedPlan ? translatedPlan : result.mitigationPlan
+  const isArabic = language === "ar" && translatedPlan !== null
+
+  useEffect(() => {
+    setLanguage("en")
+    setTranslatedPlan(null)
+    setTranslationError(null)
+  }, [reportId])
+
+  const showArabic = async () => {
+    if (!reportId) {
+      setTranslationError("Save this mitigation plan before requesting Arabic translation.")
+      return
+    }
+
+    if (translatedPlan) {
+      setLanguage("ar")
+      return
+    }
+
+    setTranslating(true)
+    setTranslationError(null)
+    try {
+      const response = await gateway.translateReportMitigationPlan(reportId, {
+        targetLanguage: "ar",
+        actorUserId,
+      })
+      setTranslatedPlan(response.mitigationPlan)
+      setLanguage("ar")
+    } catch (error) {
+      setTranslationError(classifyUiError(error).message)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${isArabic ? "text-right" : ""}`} dir={isArabic ? "rtl" : "ltr"}>
       <article className="wb-panel space-y-4 border-emerald-400/35">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -126,6 +221,12 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
           </div>
           {result.persistedMitigationReport ? (
             <div className="flex flex-wrap gap-2">
+              <Button type="button" variant={language === "en" ? "default" : "outline"} size="sm" onClick={() => setLanguage("en")}>
+                English
+              </Button>
+              <Button type="button" variant={isArabic ? "default" : "outline"} size="sm" onClick={() => { void showArabic() }} disabled={translating}>
+                {translating ? "Translating..." : "Arabic"}
+              </Button>
               <Link
                 className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
                 href={`/reports?review=${encodeURIComponent(result.persistedMitigationReport.id)}`}
@@ -143,6 +244,9 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
             </div>
           ) : null}
         </div>
+        {translationError ? (
+          <p className="rounded-xl border border-amber-400/35 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{translationError}</p>
+        ) : null}
         <div className="rounded-2xl border border-border/60 bg-surface-2/45 p-4 text-sm leading-6 text-muted-foreground">
           {plan.threatSummary}
         </div>
@@ -152,7 +256,6 @@ function PlanView({ result }: { result: ReportMitigationResponse }) {
       <AegisMitigationTimeline plan={plan} collapsible />
 
       <ActionGroup title="Immediate actions" actions={plan.immediateActions} />
-      <ActionGroup title="Detection actions" actions={plan.detectionActions} />
       <ActionGroup title="Hardening actions" actions={plan.hardeningActions} />
 
       <details className="wb-panel space-y-4">
@@ -234,16 +337,46 @@ export default function AegisPage() {
   const [selectedScanJobId, setSelectedScanJobId] = useState("")
   const [scanJobSearch, setScanJobSearch] = useState("")
   const [scanBusyAction, setScanBusyAction] = useState<"create" | "regenerate" | null>(null)
-  const [activeSection, setActiveSection] = useState<AegisWorkspaceSection>("create")
+  const requestedSection = searchParams.get("section")
+  const widgetIssueTitle = searchParams.get("issueTitle")
+  const widgetIssueDetail = searchParams.get("issueDetail")
+  const widgetIssueTone = searchParams.get("issueTone")
+  const [activeSection, setActiveSection] = useState<AegisWorkspaceSection>(() => {
+    return requestedSection === "active" || requestedSection === "library" || requestedSection === "create"
+      ? requestedSection
+      : "create"
+  })
   const planDetailsRef = useRef<HTMLDivElement | null>(null)
 
   const reportsQuery = useWorkbenchQuery(["aegis", "reports"], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
   const jobsQuery = useWorkbenchQuery(["aegis", "legacy-jobs"], (signal) => listLegacyJobs(signal))
+  const resultsQuery = useWorkbenchQuery(
+    ["aegis", "legacy-results"],
+    (signal) => listLegacyResults({ limit: 200, includeOrphaned: false }, signal),
+  )
   const plansQuery = useWorkbenchQuery(["aegis", "plans", refreshKey], (signal) => gateway.listReportMitigationPlans(signal))
   const selectedReport = useMemo(
     () => reportsQuery.data?.items.find((item) => item.id === selectedReportId) ?? null,
     [reportsQuery.data?.items, selectedReportId],
   )
+
+  const publishWidgetState = useCallback((
+    phase: "reviewing" | "drafting" | "saving" | "completed" | "blocked",
+    title: string,
+    sourceNameValue: string | null,
+    detail?: string | null,
+    reviewPath?: string | null,
+  ) => {
+    writeAegisWidgetState({
+      phase,
+      title,
+      sourceName: sourceNameValue,
+      detail: detail ?? null,
+      reviewPath: reviewPath ?? null,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
+  }, [])
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -281,6 +414,7 @@ export default function AegisPage() {
     setGenerating(true)
     setErrorText(null)
     setMessage(null)
+    publishWidgetState("reviewing", "Aegis is reviewing evidence", selectedReport?.title ?? sourceName, "Aegis started a live mitigation review.")
     try {
       const response = await gateway.generateReportMitigation({
         sourceName: selectedReport?.title ?? sourceName,
@@ -296,9 +430,18 @@ export default function AegisPage() {
       setActiveSection("active")
       setShouldFocusResult(true)
       setRefreshKey((value) => value + 1)
+      publishWidgetState(
+        "completed",
+        "Aegis mitigation plan ready",
+        response.persistedMitigationReport?.title ?? selectedReport?.title ?? sourceName,
+        "Aegis finished creating a mitigation plan.",
+        response.persistedMitigationReport ? `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}` : "/agents/aegis",
+      )
       setMessage("Aegis created and saved a mitigation plan.")
     } catch (error) {
-      setErrorText(classifyUiError(error).message)
+      const failure = classifyUiError(error)
+      publishWidgetState("blocked", "Aegis was blocked while creating the mitigation plan", selectedReport?.title ?? sourceName, failure.message)
+      setErrorText(failure.message)
     } finally {
       setGenerating(false)
     }
@@ -307,7 +450,26 @@ export default function AegisPage() {
   const canGenerate = Boolean(selectedReport || documentText.trim() || documentBytesBase64)
   const reports = useMemo(() => reportsQuery.data?.items ?? [], [reportsQuery.data?.items])
   const scanJobs = useMemo(() => jobsQuery.data ?? [], [jobsQuery.data])
+  const scanResults = useMemo(() => resultsQuery.data ?? [], [resultsQuery.data])
   const plans = useMemo(() => plansQuery.data?.items ?? [], [plansQuery.data?.items])
+  const resultsByJobId = useMemo(() => {
+    const grouped = new Map<string, typeof scanResults>()
+    for (const result of scanResults) {
+      if (!result.jobId) {
+        continue
+      }
+
+      const current = grouped.get(result.jobId)
+      if (current) {
+        current.push(result)
+        continue
+      }
+
+      grouped.set(result.jobId, [result])
+    }
+
+    return grouped
+  }, [scanResults])
   const selectedScanJob = useMemo(
     () => scanJobs.find((job) => job.id === selectedScanJobId) ?? null,
     [scanJobs, selectedScanJobId],
@@ -335,6 +497,17 @@ export default function AegisPage() {
     [plans, selectedScanJobId],
   )
   const requestedPlanId = searchParams.get("plan")
+  const highlightedIssue = useMemo(() => {
+    if (!widgetIssueTitle || !widgetIssueDetail) {
+      return null
+    }
+
+    return {
+      title: widgetIssueTitle,
+      detail: widgetIssueDetail,
+      tone: widgetIssueTone === "working" ? "working" : widgetIssueTone === "finished" ? "finished" : "attention",
+    } as const
+  }, [widgetIssueDetail, widgetIssueTitle, widgetIssueTone])
   const loadPlanDetails = useCallback(async (planId: string, signal?: AbortSignal) => {
     const matchingReport = reports.find((report) => report.id === planId) ?? await gateway.getReport(planId, signal)
     const nextResult = readAegisResultFromReport(matchingReport)
@@ -363,10 +536,19 @@ export default function AegisPage() {
       setActiveSection("active")
       setShouldFocusResult(true)
       window.history.replaceState(null, "", `/agents/aegis?plan=${encodeURIComponent(planId)}`)
+      publishWidgetState(
+        "completed",
+        "Aegis mitigation plan ready",
+        nextResult.persistedMitigationReport?.title ?? "Saved Aegis plan",
+        "Aegis reopened a saved mitigation plan.",
+        `/agents/aegis?plan=${encodeURIComponent(planId)}`,
+      )
       setMessage("Opened saved Aegis mitigation plan details.")
       setErrorText(null)
     } catch (error) {
-      setErrorText(classifyUiError(error).message)
+      const failure = classifyUiError(error)
+      publishWidgetState("blocked", "Aegis could not open the saved mitigation plan", "Saved Aegis plan", failure.message)
+      setErrorText(failure.message)
     }
   }
 
@@ -378,12 +560,30 @@ export default function AegisPage() {
     setScanBusyAction(regenerate ? "regenerate" : "create")
     setErrorText(null)
     setMessage(null)
+    publishWidgetState(
+      regenerate ? "drafting" : "reviewing",
+      regenerate ? "Aegis is regenerating a mitigation plan" : "Aegis is reviewing the selected scan",
+      selectedScanJob ? `${selectedScanJob.scannerFamily} scan run` : "Selected scan run",
+      selectedScanJob ? `${selectedScanJob.summary} at ${formatUtc(selectedScanJob.finishedAtUtc ?? selectedScanJob.startedAtUtc ?? selectedScanJob.queuedAtUtc)}` : "Selected scan run",
+    )
     try {
-      const response = await gateway.generateReportMitigationFromScanJob(selectedScanJobId, {
-        includeWorkspaceContext: true,
-        actorUserId,
-        regenerate,
-      })
+      const response = isUuid(selectedScanJobId)
+        ? await gateway.generateReportMitigationFromScanJob(selectedScanJobId, {
+            includeWorkspaceContext: true,
+            actorUserId,
+            regenerate,
+          })
+        : await gateway.generateReportMitigation({
+            sourceName: selectedScanJob ? `${selectedScanJob.scannerFamily.toUpperCase()} scan run ${selectedScanJob.id}` : "Legacy scan run",
+            sourceType: "bulletin",
+            documentId: buildLegacyAegisDocumentId(selectedScanJobId),
+            documentText: selectedScanJob
+              ? buildLegacyAegisDocumentText(selectedScanJob, resultsByJobId.get(selectedScanJob.id) ?? [])
+              : `Legacy scan job ${selectedScanJobId}`,
+            includeWorkspaceContext: true,
+            actorUserId,
+            regenerate,
+          })
       if (!response.persistedMitigationReport) {
         throw new Error("Aegis did not return a saved mitigation plan.")
       }
@@ -394,13 +594,33 @@ export default function AegisPage() {
       setShouldFocusResult(true)
       setRefreshKey((value) => value + 1)
       window.history.replaceState(null, "", `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
+      publishWidgetState(
+        "completed",
+        "Aegis mitigation plan ready",
+        response.persistedMitigationReport.title,
+        "Aegis created a mitigation plan from the selected scan run.",
+        `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`,
+      )
       setMessage("Aegis created a mitigation plan from the selected scan run.")
     } catch (error) {
-      setErrorText(classifyUiError(error).message)
+      const failure = classifyUiError(error)
+      publishWidgetState(
+        "blocked",
+        "Aegis was blocked while reviewing the selected scan",
+        selectedScanJob ? `${selectedScanJob.scannerFamily} scan run` : "Selected scan run",
+        failure.message,
+      )
+      setErrorText(failure.message)
     } finally {
       setScanBusyAction(null)
     }
   }
+
+  useEffect(() => {
+    if (requestedSection === "active" || requestedSection === "library" || requestedSection === "create") {
+      setActiveSection(requestedSection)
+    }
+  }, [requestedSection])
 
   useEffect(() => {
     if (
@@ -448,12 +668,12 @@ export default function AegisPage() {
     return () => window.clearTimeout(timeoutId)
   }, [message])
 
-  if (reportsQuery.isLoading || jobsQuery.isLoading || plansQuery.isLoading) {
+  if (reportsQuery.isLoading || jobsQuery.isLoading || resultsQuery.isLoading || plansQuery.isLoading) {
     return <LoadingState label="Loading Aegis workspace" />
   }
 
-  if (reportsQuery.isError || jobsQuery.isError || plansQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(reportsQuery.error ?? jobsQuery.error ?? plansQuery.error)} fallbackTitle="Aegis unavailable" />
+  if (reportsQuery.isError || jobsQuery.isError || resultsQuery.isError || plansQuery.isError) {
+    return <ClassifiedFailureState failure={classifyUiError(reportsQuery.error ?? jobsQuery.error ?? resultsQuery.error ?? plansQuery.error)} fallbackTitle="Aegis unavailable" />
   }
 
   return (
@@ -470,6 +690,21 @@ export default function AegisPage() {
 
       {message ? <div className="rounded-2xl border border-emerald-400/35 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{message}</div> : null}
       {errorText ? <div className="rounded-2xl border border-rose-400/35 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{errorText}</div> : null}
+      {highlightedIssue ? (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm ${
+            highlightedIssue.tone === "working"
+              ? "border-primary/35 bg-primary/10 text-primary"
+              : highlightedIssue.tone === "finished"
+                ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
+                : "border-amber-400/35 bg-amber-400/10 text-amber-100"
+          }`}
+        >
+          <p className="wb-kicker mb-1">{highlightedIssue.tone === "working" ? "In progress" : highlightedIssue.tone === "finished" ? "Ready" : "Needs review"}</p>
+          <p className="font-medium">{highlightedIssue.title}</p>
+          <p className="mt-1 opacity-90">{highlightedIssue.detail}</p>
+        </div>
+      ) : null}
 
       <div className="grid gap-2 rounded-2xl border border-border/60 bg-surface-2/35 p-2 md:grid-cols-3">
         {([
@@ -669,7 +904,7 @@ export default function AegisPage() {
       {activeSection === "active" ? (
         <div ref={planDetailsRef} className="scroll-mt-24 space-y-5">
           {result ? (
-            <PlanView result={result} />
+            <PlanView result={result} actorUserId={actorUserId} />
           ) : (
             <article className="wb-panel min-h-[340px]">
               <EmptyState

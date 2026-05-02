@@ -70,6 +70,46 @@ public sealed class AiReportMitigationClient : IAiReportMitigationClient
         }
     }
 
+    public async Task<AiReportMitigationPlan> TranslatePlanAsync(AiReportMitigationTranslationRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.PostAsJsonAsync(
+                _options.ReportMitigationTranslationPath,
+                request,
+                JsonOptions,
+                cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "AI sidecar report mitigation translation endpoint returned status {StatusCode}. Payload: {Body}",
+                    (int)response.StatusCode,
+                    responseBody);
+                throw CreateUnavailableException();
+            }
+
+            var payload = JsonSerializer.Deserialize<AiReportMitigationPlan>(responseBody, JsonOptions);
+            return payload ?? throw CreateUnavailableException();
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "AI report mitigation translation request timed out after {TimeoutSeconds}s.", _options.TimeoutSeconds);
+            throw CreateUnavailableException(ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "AI report mitigation translation transport failure.");
+            throw CreateUnavailableException(ex);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "AI report mitigation translation returned invalid JSON.");
+            throw CreateUnavailableException(ex);
+        }
+    }
+
     private static OptionalDependencyUnavailableException CreateUnavailableException(Exception? innerException = null)
     {
         return new OptionalDependencyUnavailableException(

@@ -12,6 +12,7 @@ from .contracts import (
     ReportMitigationRequest,
     ReportMitigationResponse,
     ReportMitigationScanRecommendationResponse,
+    ReportMitigationTranslationRequest,
 )
 from .extraction import extract_report
 
@@ -61,6 +62,50 @@ def recommend_mitigation_plan(request: ReportMitigationRequest, settings: Servic
             },
         },
     )
+
+
+def translate_mitigation_plan(
+    request: ReportMitigationTranslationRequest,
+    settings: ServiceSettings,
+) -> ReportMitigationPlanResponse:
+    if request.target_language != "ar":
+        raise ValueError("Only Arabic translation is supported.")
+    if not settings.openai_api_key:
+        raise RuntimeError("OpenAI planner is required for report mitigation translation. Configure OPENAI_API_KEY.")
+
+    payload = {
+        "targetLanguage": "Arabic",
+        "mitigationPlan": request.mitigation_plan.model_dump(mode="json", by_alias=True),
+    }
+    response_body = _post_openai_responses_request(
+        settings,
+        {
+            "model": settings.openai_planner_model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": _translation_prompt()}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": json.dumps(payload, separators=(",", ":"), ensure_ascii=False)}],
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "translated_report_mitigation_plan",
+                    "schema": _mitigation_schema(),
+                    "strict": True,
+                }
+            },
+        },
+    )
+    output_text = _extract_response_output_text(response_body)
+    if not isinstance(output_text, str) or not output_text.strip():
+        raise ValueError("OpenAI response did not include output_text.")
+
+    return ReportMitigationPlanResponse.model_validate_json(output_text)
     output_text = _extract_response_output_text(response_body)
     if not isinstance(output_text, str) or not output_text.strip():
         raise ValueError("OpenAI response did not include output_text.")
@@ -96,6 +141,21 @@ def _system_prompt() -> str:
         "Also return a suggested execution timeline that shows when each action should start and how long it should take using hours or days. "
         "All blocking, quarantine, account disablement, firewall, and production changes must be policy_gated or manual_review. "
         "Scan recommendations may suggest scanner families and target hints, but must not pretend a scan has been created or run. "
+        "Return only valid JSON matching the schema."
+    )
+
+
+def _translation_prompt() -> str:
+    return (
+        "You translate Aegis cybersecurity mitigation plans into Arabic for an operator UI. "
+        "Return the same JSON object shape as the input mitigation plan. "
+        "Translate human-readable prose into clear Modern Standard Arabic. "
+        "Do not add, remove, reorder, weaken, or strengthen actions. "
+        "Preserve all technical identifiers exactly, including IP addresses, hostnames, file paths, hashes, rule names, scanner names, CVEs, MITRE technique IDs, commands, URLs, usernames, and IOC values. "
+        "Preserve schema enum values in English exactly as allowed by the schema: severity, confidence, priority, urgency, automationReadiness, lane, unit, and requiresHumanReview. "
+        "Preserve numeric fields exactly, including rank, startsIn, duration, and linkedPrimaryActionRank. "
+        "Keep stepId unchanged. "
+        "Use Arabic wording around preserved technical terms when needed, but never translate the technical terms themselves. "
         "Return only valid JSON matching the schema."
     )
 

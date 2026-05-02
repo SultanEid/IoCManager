@@ -8,6 +8,7 @@ public sealed class ScanAnalystPocOptions
     public const string SectionName = "ScanAnalystPoc";
 
     public bool Enabled { get; init; } = true;
+    public bool StrictLiveLlmMode { get; init; } = false;
     public bool AllowMockFallbackWithoutDatabase { get; init; } = true;
     public bool AutonomyEnabled { get; init; } = true;
     public int AutonomyIntervalSeconds { get; init; } = 45;
@@ -35,6 +36,7 @@ public sealed class ScanAnalystPocRuntimeState
     private int _activeSessionCount;
     private IReadOnlyList<string> _activeMockConditions = Array.Empty<string>();
     private ScanAnalystAutonomousActivityDto? _lastAutonomousActivity;
+    private ScanAnalystResponseDto? _lastAutonomousAnalysis;
     private ScanAnalystAgentParametersDto? _postureOverride;
     private readonly Dictionary<string, string> _legacyTargetStatuses = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _syncRoot = new();
@@ -45,6 +47,7 @@ public sealed class ScanAnalystPocRuntimeState
     public int ActiveSessionCount => _activeSessionCount;
     public IReadOnlyList<string> ActiveMockConditions => _activeMockConditions;
     public ScanAnalystAutonomousActivityDto? LastAutonomousActivity => _lastAutonomousActivity;
+    public ScanAnalystResponseDto? LastAutonomousAnalysis => _lastAutonomousAnalysis;
 
     public ScanAnalystAgentParametersDto GetEffectiveParameters(ScanAnalystPocOptions options)
     {
@@ -133,11 +136,12 @@ public sealed class ScanAnalystPocRuntimeState
         }
     }
 
-    public void RecordAutonomousActivity(ScanAnalystAutonomousActivityDto activity)
+    public void RecordAutonomousActivity(ScanAnalystAutonomousActivityDto activity, ScanAnalystResponseDto analysis)
     {
         lock (_syncRoot)
         {
             _lastAutonomousActivity = activity;
+            _lastAutonomousAnalysis = analysis;
         }
     }
 

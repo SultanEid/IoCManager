@@ -93,6 +93,66 @@ public sealed class AiReportMitigationController : ControllerBase
         return Ok(ToPlanListItem(report, alertIds));
     }
 
+    [HttpPost("reports/{reportId:guid}/translate")]
+    [EnableRateLimiting(RateLimitPolicies.Read)]
+    [ProducesResponseType<ReportMitigationTranslationResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<ReportMitigationTranslationResponse>> TranslateReportPlan(
+        Guid reportId,
+        [FromBody] ReportMitigationTranslateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.ActorUserId))
+        {
+            return BadRequest("ActorUserId is required.");
+        }
+
+        var targetLanguage = NormalizeTranslationTarget(request.TargetLanguage);
+        if (targetLanguage is null)
+        {
+            return BadRequest("Only Arabic report translation is supported in this version.");
+        }
+
+        var report = await _dbContext.ReportsV2
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == reportId && x.SummaryJson.Contains(SummaryMarker), cancellationToken);
+        if (report is null)
+        {
+            return NotFound();
+        }
+
+        var plan = ReadStoredMitigationPlan(report.SummaryJson);
+        if (plan is null)
+        {
+            return BadRequest("The selected report does not contain a readable Aegis mitigation plan.");
+        }
+
+        AiReportMitigationPlan translatedPlan;
+        try
+        {
+            translatedPlan = await _planner.TranslatePlanAsync(plan, targetLanguage, cancellationToken);
+        }
+        catch (OptionalDependencyUnavailableException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = ex.Message });
+        }
+
+        await _auditService.TryWriteAsync(
+            User,
+            "aegis.mitigation.translate",
+            "report",
+            report.Id.ToString("N"),
+            new { TargetLanguage = targetLanguage },
+            cancellationToken);
+
+        return Ok(new ReportMitigationTranslationResponse(
+            targetLanguage,
+            ToResponse(translatedPlan),
+            DateTimeOffset.UtcNow));
+    }
+
     [HttpPost("generate")]
     [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
@@ -402,5 +462,30 @@ public sealed class AiReportMitigationController : ControllerBase
         {
             return Array.Empty<Guid>();
         }
+    }
+
+    private static AiReportMitigationPlan? ReadStoredMitigationPlan(string summaryJson)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<StoredMitigationSummary>(summaryJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                ?.Result
+                ?.MitigationPlan;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? NormalizeTranslationTarget(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized is "ar" or "arabic" or "arabic-sa" or "ar-sa" ? "ar" : null;
+    }
+
+    private sealed class StoredMitigationSummary
+    {
+        public AiReportMitigationResult? Result { get; init; }
     }
 }
