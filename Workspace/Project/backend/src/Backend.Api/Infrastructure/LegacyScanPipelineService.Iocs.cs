@@ -377,7 +377,7 @@ public sealed partial class LegacyScanPipelineService
                 ? null
                 : new LegacyPipelineIocFindingSigmaDetailResponse(
                     row.Ioc.SigmaDetail.LogSource,
-                    NormalizeFindingSeverity(row.Ioc.SigmaDetail.Severity),
+                    ResolveSigmaFindingSeverity(row.Ioc),
                     row.Ioc.SigmaDetail.CommandLine),
             row.Ioc.NetworkDetail is null
                 ? null
@@ -458,9 +458,31 @@ public sealed partial class LegacyScanPipelineService
     }
 
     private static string ResolveSeverity(LegacyPipelineIocEntity ioc)
-        => NormalizeFindingSeverity(ioc.SigmaDetail?.Severity)
+        => ResolveSigmaFindingSeverity(ioc)
             ?? NormalizeFindingSeverity(ioc.NetworkDetail?.Severity)
             ?? "Unknown";
+
+    internal static string? ResolveSigmaFindingSeverity(LegacyPipelineIocEntity ioc)
+        => NormalizeFindingSeverity(ioc.SigmaDetail?.Severity)
+            ?? NormalizeFindingSeverity(ReadSigmaSeverityFromRawPayload(ioc.RawPayload));
+
+    private static string? ReadSigmaSeverityFromRawPayload(string? rawPayload)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            return ReadSigmaSeverity(document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private async Task<LegacyPipelineResolvedIocFindingRow[]> GetFilteredIocFindingRowsAsync(
         string? scannerFamily,

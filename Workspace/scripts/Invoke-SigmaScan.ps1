@@ -284,6 +284,68 @@ function Invoke-ScpDownload {
     }
 }
 
+function New-NormalizedSigmaRuleUpload {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $SourcePath,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Leaf,
+
+        [Parameter(Mandatory = $true)]
+        [bool] $IsDirectory
+    )
+
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ioc-manager-sigma-rules-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+    $stagedPath = Join-Path $tempRoot $Leaf
+
+    if ($IsDirectory) {
+        Copy-Item -LiteralPath $SourcePath -Destination $stagedPath -Recurse -Force
+        $ruleFiles = @(Get-ChildItem -LiteralPath $stagedPath -File -Recurse -Include *.yml, *.yaml)
+    } else {
+        Copy-Item -LiteralPath $SourcePath -Destination $stagedPath -Force
+        $ruleFiles = @(Get-Item -LiteralPath $stagedPath)
+    }
+
+    foreach ($ruleFile in $ruleFiles) {
+        if ($ruleFile.Extension -notin @(".yml", ".yaml")) {
+            continue
+        }
+
+        $lines = Get-Content -LiteralPath $ruleFile.FullName
+        $normalizedLines = foreach ($line in $lines) {
+            if ($line -match '^(\s*)level\s*:\s*(.+?)\s*$') {
+                $indent = $Matches[1]
+                $rawLevel = $Matches[2].Trim().Trim('"').Trim("'")
+                $normalizedLevel = switch -Regex ($rawLevel.Trim().ToLowerInvariant()) {
+                    '^critical$' { 'critical'; break }
+                    '^high$' { 'high'; break }
+                    '^medium$' { 'medium'; break }
+                    '^low$' { 'low'; break }
+                    '^(informational|info)$' { 'informational'; break }
+                    default { $null }
+                }
+
+                if ($null -ne $normalizedLevel) {
+                    "${indent}level: $normalizedLevel"
+                } else {
+                    $line
+                }
+            } else {
+                $line
+            }
+        }
+
+        Set-Content -LiteralPath $ruleFile.FullName -Value $normalizedLines -Encoding UTF8
+    }
+
+    return [pscustomobject]@{
+        Path = $stagedPath
+        Root = $tempRoot
+    }
+}
+
 function Build-EnvelopeObject {
     param(
         [Parameter(Mandatory = $true)]
@@ -634,8 +696,20 @@ if (!(Test-Path '$remoteRulesRoot')) { throw 'Failed to create remote temp rules
 # =========================
 if ($EffectiveOs -eq 'windows' -and $Interactive) { Write-Host "[*] Copying rules from '$RulesPath' to target..." }
 
+$UploadRulesPath = $RulesPath
+$NormalizedRulesTempRoot = $null
 if ($EffectiveOs -eq 'windows') {
-    Invoke-ScpUpload -LocalPath $RulesPath -RemotePath $remoteRulesRootScp -Recursive:$RulesIsDirectory
+    $NormalizedRules = New-NormalizedSigmaRuleUpload -SourcePath $RulesPath -Leaf $RulesLeaf -IsDirectory $RulesIsDirectory
+    $UploadRulesPath = $NormalizedRules.Path
+    $NormalizedRulesTempRoot = $NormalizedRules.Root
+}
+
+if ($EffectiveOs -eq 'windows') {
+    Invoke-ScpUpload -LocalPath $UploadRulesPath -RemotePath $remoteRulesRootScp -Recursive:$RulesIsDirectory
+}
+
+if ($null -ne $NormalizedRulesTempRoot -and (Test-Path -LiteralPath $NormalizedRulesTempRoot)) {
+    Remove-Item -LiteralPath $NormalizedRulesTempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($EffectiveOs -eq 'windows') {

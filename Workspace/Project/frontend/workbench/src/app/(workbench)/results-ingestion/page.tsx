@@ -1095,9 +1095,12 @@ export default function ScansPage() {
                   <p className="wb-kicker">Explicit Targets</p>
                   <p className="mt-1 text-sm text-muted-foreground">Optional refinement when you only want specific hosts.</p>
                 </div>
-                <Clock3 className="size-4 text-muted-foreground" />
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{form.selectedTargetIds.length}/{targets.length}</Badge>
+                  <Clock3 className="size-4 text-muted-foreground" />
+                </div>
               </div>
-              <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                 {targets.map((target) => {
                   const selected = form.selectedTargetIds.includes(target.id)
                   const targetName = target.displayName ?? target.hostname ?? "Unknown host"
@@ -1111,23 +1114,25 @@ export default function ScansPage() {
                           selectedTargetIds: toggleSelection(current.selectedTargetIds, target.id, !selected),
                         }))
                       }
-                      className={`w-full rounded-xl border p-3 text-left transition ${
+                      className={`min-h-[104px] w-full rounded-lg border p-3 text-left transition ${
                         selected
                           ? "border-cyan-300/60 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(103,232,249,0.18)]"
                           : "border-border/70 bg-surface-1/70 hover:border-border hover:bg-surface-1"
                       } ${target.status === "Offline" ? "opacity-80" : ""}`}
                       aria-pressed={selected}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold">{targetName}</p>
-                          <p className="text-xs text-muted-foreground">{target.ipAddress}</p>
+                      <div className="flex h-full flex-col justify-between gap-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{targetName}</p>
+                            <p className="text-xs text-muted-foreground">{target.ipAddress}</p>
+                          </div>
+                          <Badge variant={target.status === "Online" ? "secondary" : "outline"}>{target.status}</Badge>
                         </div>
-                        <Badge variant={target.status === "Online" ? "secondary" : "outline"}>{target.status}</Badge>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                        <span>{target.networkName}</span>
-                        <span>{selected ? "Included" : "Optional"}</span>
+                        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                          <span className="truncate">{target.networkName}</span>
+                          <span className={selected ? "font-medium text-cyan-100" : ""}>{selected ? "Included" : "Optional"}</span>
+                        </div>
                       </div>
                     </button>
                   )
