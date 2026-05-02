@@ -59,13 +59,13 @@ function formatTime(value: string | null | undefined) {
   return timestamp > 0 ? new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "now"
 }
 
-function isFreshLocalState(state: AegisWidgetState | null, newestBackendTime: number) {
+function isFreshLocalState(state: AegisWidgetState | null, newestBackendTime: number, observedAtMs: number) {
   if (!state) {
     return false
   }
 
   const updatedAt = parseTime(state.updatedAtUtc)
-  return updatedAt > newestBackendTime && Date.now() - updatedAt < LOCAL_STATE_FRESH_MS
+  return updatedAt > newestBackendTime && observedAtMs - updatedAt < LOCAL_STATE_FRESH_MS
 }
 
 function buildIssueHref(basePath: string, title: string, detail: string, tone: WidgetTone) {
@@ -247,10 +247,11 @@ export function AegisStatusWidget({ className }: { className?: string }) {
     const latestAudit = audits[0] ?? null
     const latestPlan = plans[0] ?? null
     const newestBackendTime = Math.max(parseTime(latestAudit?.occurredAtUtc), parseTime(latestPlan?.generatedAtUtc))
+    const observedAtMs = Math.max(plansQuery.dataUpdatedAt, auditQuery.dataUpdatedAt, newestBackendTime)
 
     if (latestAudit) {
       const state = stateFromAudit(latestAudit)
-      const ageMs = Date.now() - parseTime(state.updatedAtUtc)
+      const ageMs = observedAtMs - parseTime(state.updatedAtUtc)
       if (state.tone === "working" && ageMs >= 0 && ageMs < RECENT_WORKING_MS) {
         return state
       }
@@ -259,12 +260,12 @@ export function AegisStatusWidget({ className }: { className?: string }) {
       }
     }
 
-    if (isFreshLocalState(localState, newestBackendTime)) {
+    if (isFreshLocalState(localState, newestBackendTime, observedAtMs)) {
       return stateFromLocal(localState!)
     }
 
     if (latestPlan) {
-      const ageMs = Date.now() - parseTime(latestPlan.generatedAtUtc)
+      const ageMs = observedAtMs - parseTime(latestPlan.generatedAtUtc)
       if (ageMs >= 0 && ageMs < RECENT_FINISHED_MS) {
         return stateFromPlan(latestPlan)
       }
@@ -283,7 +284,7 @@ export function AegisStatusWidget({ className }: { className?: string }) {
     }
 
     return idleState(latestPlan)
-  }, [auditQuery.data?.items, auditQuery.isError, auditQuery.isLoading, localState, plansQuery.data?.items, plansQuery.isError, plansQuery.isLoading])
+  }, [auditQuery.data?.items, auditQuery.dataUpdatedAt, auditQuery.isError, auditQuery.isLoading, localState, plansQuery.data?.items, plansQuery.dataUpdatedAt, plansQuery.isError, plansQuery.isLoading])
 
   const toneClasses: Record<WidgetTone, string> = {
     idle: "border-border/70 bg-surface-2/70 text-muted-foreground hover:text-foreground",

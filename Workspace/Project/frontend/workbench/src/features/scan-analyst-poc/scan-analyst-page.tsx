@@ -806,7 +806,15 @@ export function ScanAnalystPage() {
       || requestedSection === "activity"
       || requestedSection === "guardrails"
     ) {
-      setActiveSection(requestedSection)
+      let isCancelled = false
+      queueMicrotask(() => {
+        if (!isCancelled) {
+          setActiveSection(requestedSection)
+        }
+      })
+      return () => {
+        isCancelled = true
+      }
     }
   }, [searchParams])
 
@@ -823,17 +831,33 @@ export function ScanAnalystPage() {
       return
     }
 
+    let isCancelled = false
     if (draftPlan && isDraftDirty) {
-      setPendingAutonomousAnalysis(autonomousAnalysis)
-      return
+      queueMicrotask(() => {
+        if (!isCancelled) {
+          setPendingAutonomousAnalysis(autonomousAnalysis)
+        }
+      })
+      return () => {
+        isCancelled = true
+      }
     }
 
-    setDraftAnalysis(autonomousAnalysis)
-    setDraftPlan(clonePlan(autonomousAnalysis.proposedPlan))
-    setDraftSourceKey(autonomousSourceKey)
-    setIsDraftDirty(false)
-    setPendingAutonomousAnalysis(null)
-    setIgnoredAutonomousSourceKey(null)
+    queueMicrotask(() => {
+      if (isCancelled) {
+        return
+      }
+
+      setDraftAnalysis(autonomousAnalysis)
+      setDraftPlan(clonePlan(autonomousAnalysis.proposedPlan))
+      setDraftSourceKey(autonomousSourceKey)
+      setIsDraftDirty(false)
+      setPendingAutonomousAnalysis(null)
+      setIgnoredAutonomousSourceKey(null)
+    })
+    return () => {
+      isCancelled = true
+    }
   }, [autonomousAnalysis, autonomousSourceKey, chatState, draftPlan, draftSourceKey, ignoredAutonomousSourceKey, isDraftDirty])
 
   function actionLabel(action: SendScanAnalystChatTurnInput["action"]) {

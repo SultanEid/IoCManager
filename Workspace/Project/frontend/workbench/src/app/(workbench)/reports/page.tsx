@@ -896,11 +896,13 @@ export default function ReportsPage() {
     targetsQuery.isLoading,
   ])
 
+  const activeSavedReportId = review?.kind === "saved" ? review.report.id : null
+
   useEffect(() => {
     setReviewLanguage("en")
     setTranslatedReviewAegisPlan(null)
     setReviewTranslationError(null)
-  }, [review?.kind === "saved" ? review.report.id : null])
+  }, [activeSavedReportId])
 
   if (targetsQuery.isLoading || reportsQuery.isLoading || aegisPlansQuery.isLoading) {
     return <LoadingState label="Loading reports workspace" />
