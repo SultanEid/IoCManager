@@ -23,6 +23,10 @@ public sealed record ReportMitigationGenerateFromScanJobRequest(
     string ActorUserId,
     bool Regenerate = false);
 
+public sealed record ReportMitigationTranslateRequest(
+    string TargetLanguage,
+    string ActorUserId);
+
 public sealed record ReportMitigationExtractedIocResponse(
     string IocType,
     string IocValue,
@@ -117,6 +121,11 @@ public sealed record ReportMitigationResponse(
     DateTimeOffset GeneratedAt,
     Guid? SourceReportId,
     ReportResponse? PersistedMitigationReport);
+
+public sealed record ReportMitigationTranslationResponse(
+    string TargetLanguage,
+    ReportMitigationPlanResponse MitigationPlan,
+    DateTimeOffset TranslatedAtUtc);
 
 public sealed record ReportMitigationListItemResponse(
     Guid Id,

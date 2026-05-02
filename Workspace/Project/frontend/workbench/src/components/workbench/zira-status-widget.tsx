@@ -8,8 +8,11 @@ import { gateway } from "@/shared/gateway"
 import { listLegacyJobs, type LegacyPipelineScanJob } from "@/shared/gateway/legacy-scan-pipeline"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import {
+  readZiraWidgetDismissedKey,
   readZiraWidgetState,
   type ZiraWidgetState,
+  writeZiraWidgetDismissedKey,
+  ZIRA_WIDGET_DISMISSED_KEY_EVENT,
   ZIRA_WIDGET_STATE_EVENT,
 } from "@/shared/zira/widget-state"
 
@@ -176,8 +179,13 @@ function iconForTone(tone: WidgetTone) {
   return <CircleDot className="h-3.5 w-3.5" />
 }
 
+function buildLiveStateKey(state: ZiraLiveState) {
+  return [state.tone, state.title, state.detail, state.updatedAtUtc ?? "none"].join("|")
+}
+
 export function ZiraStatusWidget({ className }: { className?: string }) {
   const [localState, setLocalState] = useState<ZiraWidgetState | null>(() => readZiraWidgetState())
+  const [dismissedKey, setDismissedKey] = useState<string | null>(() => readZiraWidgetDismissedKey())
 
   const statusQuery = useWorkbenchQuery(["shell", "zira", "status"], (signal) => gateway.getScanAnalystStatus(signal), {
     refetchInterval: 30_000,
@@ -193,16 +201,26 @@ export function ZiraStatusWidget({ className }: { className?: string }) {
       setLocalState((event as CustomEvent<ZiraWidgetState>).detail ?? readZiraWidgetState())
     }
 
+    function handleDismissedEvent(event: Event) {
+      setDismissedKey((event as CustomEvent<string | null>).detail ?? readZiraWidgetDismissedKey())
+    }
+
     function handleStorage(event: StorageEvent) {
       if (event.key === "zira.widget.state") {
         setLocalState(readZiraWidgetState())
       }
+
+      if (event.key === "zira.widget.dismissed") {
+        setDismissedKey(readZiraWidgetDismissedKey())
+      }
     }
 
     window.addEventListener(ZIRA_WIDGET_STATE_EVENT, handleStateEvent)
+    window.addEventListener(ZIRA_WIDGET_DISMISSED_KEY_EVENT, handleDismissedEvent)
     window.addEventListener("storage", handleStorage)
     return () => {
       window.removeEventListener(ZIRA_WIDGET_STATE_EVENT, handleStateEvent)
+      window.removeEventListener(ZIRA_WIDGET_DISMISSED_KEY_EVENT, handleDismissedEvent)
       window.removeEventListener("storage", handleStorage)
     }
   }, [])
@@ -292,31 +310,58 @@ export function ZiraStatusWidget({ className }: { className?: string }) {
     down: "border-destructive/35 bg-destructive/10 text-destructive",
   }
 
+  const href = useMemo(() => {
+    if (liveState.tone === "attention" || liveState.tone === "down") {
+      const params = new URLSearchParams({
+        section: "activity",
+        issueTitle: liveState.title,
+        issueDetail: liveState.detail,
+      })
+      return `/scan-analyst?${params.toString()}`
+    }
+
+    return "/scan-analyst"
+  }, [liveState.detail, liveState.title, liveState.tone])
+
+  const isDismissed = dismissedKey === buildLiveStateKey(liveState) && liveState.tone !== "down"
+  const visibleState = isDismissed ? idleState(statusQuery.data, null) : liveState
+
+  function handleClick() {
+    if (liveState.tone === "down") {
+      return
+    }
+
+    window.setTimeout(() => {
+      writeZiraWidgetDismissedKey(buildLiveStateKey(liveState))
+    }, 0)
+  }
+
   return (
     <Link
-      href="/scan-analyst"
+      href={href}
+      onClick={handleClick}
       data-testid="zira-status-widget"
       className={cn(
         "group inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border px-2 text-xs transition-colors xl:min-w-[136px] xl:max-w-[220px]",
-        toneClasses[liveState.tone],
+        toneClasses[visibleState.tone],
         className,
       )}
-      title={`${liveState.title}: ${liveState.detail}`}
-      aria-label={`Zira ${liveState.label}: ${liveState.detail}`}
+      title={`${visibleState.title}: ${visibleState.detail}`}
+      aria-label={`Zira ${visibleState.label}: ${visibleState.detail}`}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md border border-current/20 bg-current/10">
-        {liveState.tone === "idle" ? <Bot className="h-3.5 w-3.5" /> : iconForTone(liveState.tone)}
+        {visibleState.tone === "idle" ? <Bot className="h-3.5 w-3.5" /> : iconForTone(visibleState.tone)}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="font-semibold text-foreground">Zira</span>
-          <span className="hidden rounded-full border border-current/20 px-1.5 py-0.5 text-xs xl:inline-flex">{liveState.label}</span>
+          <span className="hidden rounded-full border border-current/20 px-1.5 py-0.5 text-xs xl:inline-flex">{visibleState.label}</span>
         </span>
-        <span className="hidden truncate text-xs text-muted-foreground 2xl:block">{liveState.title}</span>
+        <span className="hidden truncate text-xs text-muted-foreground 2xl:block">{visibleState.title}</span>
       </span>
       <span className="hidden shrink-0 flex-col items-end text-xs text-muted-foreground 2xl:flex">
-        <span>{liveState.mode}</span>
-        <span>{liveState.updatedAtUtc ? formatTime(liveState.updatedAtUtc) : <PauseCircle className="h-3 w-3" />}</span>
+        <span>{visibleState.mode}</span>
+        <span>{visibleState.updatedAtUtc ? formatTime(visibleState.updatedAtUtc) : <PauseCircle className="h-3 w-3" />}</span>
       </span>
     </Link>
   )

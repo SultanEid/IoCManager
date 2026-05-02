@@ -404,9 +404,8 @@ FodyWeavers.xsd
 /live_ioc_probe_*.json
 /backend_live*.log
 
-# Phase 1 repository boundary: keep planning docs and active Workspace/Project files tracked.
-# Ignore generated/local output going forward; do not delete existing user material without
-# an explicit cleanup request.
+# Local planning workspace
+/.planning/
 
 # AI local staging and generated evaluation bundles
 /Workspace/Project/ai/datasets/raw/**

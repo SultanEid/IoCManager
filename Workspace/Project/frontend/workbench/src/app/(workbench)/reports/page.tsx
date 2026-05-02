@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart3,
@@ -20,7 +19,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { reportTypeAccent } from "@/components/workbench/accent-tone"
 import { classifyUiError } from "@/shared/api/error-classification"
-import type { GeneratedReportResponse, GeneratedReportSectionResponse, ReportResponse, RuleFamily, TargetServerResponse } from "@/shared/api/schemas"
+import type { GeneratedReportResponse, GeneratedReportSectionResponse, ReportMitigationPlanResponse, ReportResponse, RuleFamily, TargetServerResponse } from "@/shared/api/schemas"
+import { writeAegisWidgetState } from "@/shared/aegis/widget-state"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
 import type { GenerateReportInput, ReportGenerationType } from "@/shared/gateway/types"
@@ -396,7 +396,6 @@ function buildAegisSnapshot(report: ReportResponse, record: Record<string, unkno
   const extractedIocs = readRecords(result, "extractedIocs")
   const claims = readRecords(result, "claims")
   const immediateActions = readRecords(plan, "immediateActions")
-  const detectionActions = readRecords(plan, "detectionActions")
   const hardeningActions = readRecords(plan, "hardeningActions")
   const scanRecommendations = readRecords(plan, "scanRecommendations")
   const affectedAssets = readStringList(plan, "affectedAssetHypotheses")
@@ -472,20 +471,18 @@ function buildAegisSnapshot(report: ReportResponse, record: Record<string, unkno
         tables: [],
       },
       {
-        title: "Detection and hardening",
-        summary: "Follow-up monitoring and resilience recommendations.",
+        title: "Hardening and validation",
+        summary: "Follow-up resilience recommendations and validation checks.",
         metrics: [
-          { label: "Detection", value: String(detectionActions.length), detail: "Recommended monitoring or detection improvements." },
           { label: "Hardening", value: String(hardeningActions.length), detail: "Recommended configuration or resilience improvements." },
           { label: "Validation", value: String(validationSteps.length), detail: "Ways to confirm mitigation worked." },
         ],
         highlights: listOrFallback(
           [
-            ...summarizeMitigationActions(detectionActions),
             ...summarizeMitigationActions(hardeningActions),
             ...validationSteps.slice(0, 5).map((step) => `Validation: ${step}`),
           ],
-          "No detection, hardening, or validation recommendations were recorded.",
+          "No hardening or validation recommendations were recorded.",
         ),
         narrative: null,
         tables: [],
@@ -637,6 +634,10 @@ export default function ReportsPage() {
   const [libraryTypeFilter, setLibraryTypeFilter] = useState("")
   const [libraryPage, setLibraryPage] = useState(1)
   const [openLibraryActionsId, setOpenLibraryActionsId] = useState<string | null>(null)
+  const [reviewLanguage, setReviewLanguage] = useState<"en" | "ar">("en")
+  const [translatedReviewAegisPlan, setTranslatedReviewAegisPlan] = useState<ReportMitigationPlanResponse | null>(null)
+  const [reviewTranslationBusy, setReviewTranslationBusy] = useState(false)
+  const [reviewTranslationError, setReviewTranslationError] = useState<string | null>(null)
   const previewRef = useRef<HTMLElement | null>(null)
   const [form, setForm] = useState(() => {
     const range = defaultUtcRange()
@@ -717,6 +718,9 @@ export default function ReportsPage() {
       setClosedReviewId(review.report.id)
     }
 
+    setReviewLanguage("en")
+    setTranslatedReviewAegisPlan(null)
+    setReviewTranslationError(null)
     setReview(null)
     setPreview(null)
     if (requestedReviewId) {
@@ -765,10 +769,31 @@ export default function ReportsPage() {
     }))
   }
 
+  const openAegisPlan = (planId: string) => {
+    writeAegisWidgetState({
+      phase: "completed",
+      title: "Aegis mitigation plan ready",
+      sourceName: "Saved Aegis plan",
+      reviewPath: `/agents/aegis?plan=${encodeURIComponent(planId)}`,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
+    router.push(`/agents/aegis?plan=${encodeURIComponent(planId)}`)
+  }
+
   const createAegisPlanForReport = async (reportId: string, regenerate: boolean) => {
     setAegisBusyReportId(reportId)
     setErrorText(null)
     setMessage(null)
+    const sourceReport = reports.find((item) => item.id === reportId)
+    writeAegisWidgetState({
+      phase: regenerate ? "drafting" : "reviewing",
+      title: regenerate ? "Aegis is regenerating a mitigation plan" : "Aegis is reviewing the selected report",
+      sourceName: sourceReport?.title ?? "Selected report",
+      reviewPath: null,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
     try {
       const response = await gateway.generateReportMitigation({
         sourceName: "Aegis report review",
@@ -782,11 +807,53 @@ export default function ReportsPage() {
         throw new Error("Aegis did not return a saved mitigation plan.")
       }
       setRefreshKey((value) => value + 1)
+      writeAegisWidgetState({
+        phase: "completed",
+        title: "Aegis mitigation plan ready",
+        sourceName: response.persistedMitigationReport.title,
+        reviewPath: `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
       router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
     } catch (error) {
+      writeAegisWidgetState({
+        phase: "blocked",
+        title: "Aegis was blocked while reviewing the selected report",
+        sourceName: sourceReport?.title ?? "Selected report",
+        reviewPath: null,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
       setErrorText(classifyUiError(error).message)
     } finally {
       setAegisBusyReportId(null)
+    }
+  }
+
+  const showReviewArabic = async () => {
+    if (review?.kind !== "saved") {
+      return
+    }
+
+    if (translatedReviewAegisPlan) {
+      setReviewLanguage("ar")
+      return
+    }
+
+    setReviewTranslationBusy(true)
+    setReviewTranslationError(null)
+    try {
+      const response = await gateway.translateReportMitigationPlan(review.report.id, {
+        targetLanguage: "ar",
+        actorUserId,
+      })
+      setTranslatedReviewAegisPlan(response.mitigationPlan)
+      setReviewLanguage("ar")
+    } catch (error) {
+      setReviewTranslationError(classifyUiError(error).message)
+    } finally {
+      setReviewTranslationBusy(false)
     }
   }
 
@@ -832,6 +899,14 @@ export default function ReportsPage() {
     targetsQuery.isError,
     targetsQuery.isLoading,
   ])
+
+  const activeSavedReportId = review?.kind === "saved" ? review.report.id : null
+
+  useEffect(() => {
+    setReviewLanguage("en")
+    setTranslatedReviewAegisPlan(null)
+    setReviewTranslationError(null)
+  }, [activeSavedReportId])
 
   if (targetsQuery.isLoading || reportsQuery.isLoading || aegisPlansQuery.isLoading) {
     return <LoadingState label="Loading reports workspace" />
@@ -885,6 +960,8 @@ export default function ReportsPage() {
   const reviewGeneratedAt = review?.kind === "saved" ? review.report.generatedAtUtc : review?.report.generatedAtUtc
   const reviewIsAegisPlan = review?.kind === "saved" ? isAegisMitigationReport(review.report) : false
   const reviewAegisPlan = review?.kind === "saved" ? review.snapshot.aegisPlan ?? null : null
+  const displayReviewAegisPlan = reviewLanguage === "ar" && translatedReviewAegisPlan ? translatedReviewAegisPlan : reviewAegisPlan
+  const reviewIsArabic = reviewLanguage === "ar" && translatedReviewAegisPlan !== null
   const previewExportReportId = preview?.kind === "saved" ? preview.report.id : preview?.report.persistedReport?.id
   const reviewExportReportId = review?.kind === "saved" ? review.report.id : review?.report.persistedReport?.id
 
@@ -1340,12 +1417,16 @@ export default function ReportsPage() {
                             Export HTML
                           </a>
                           {aegisPlan || isAegisPlan ? (
-                            <Link
-                              className="rounded-lg px-3 py-2 text-sm transition hover:bg-surface-2"
-                              href={`/agents/aegis?plan=${encodeURIComponent(aegisPlan?.id ?? report.id)}`}
+                            <button
+                              type="button"
+                              className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+                              onClick={() => {
+                                setOpenLibraryActionsId(null)
+                                openAegisPlan(aegisPlan?.id ?? report.id)
+                              }}
                             >
                               Open in Aegis
-                            </Link>
+                            </button>
                           ) : (
                             <button
                               type="button"
@@ -1466,13 +1547,25 @@ export default function ReportsPage() {
               </div>
 
               {review.kind === "saved" && reviewIsAegisPlan ? (
-                <section className="mb-5 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-                  Aegis mitigation plans are shown as structured recommendations below. Export HTML to preserve this report as a standalone file.
+                <section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+                  <span>Aegis mitigation plans are shown as structured recommendations below. Export HTML to preserve this report as a standalone file.</span>
+                  <span className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant={reviewLanguage === "en" ? "default" : "outline"} onClick={() => setReviewLanguage("en")}>
+                      English
+                    </Button>
+                    <Button type="button" size="sm" variant={reviewIsArabic ? "default" : "outline"} onClick={() => { void showReviewArabic() }} disabled={reviewTranslationBusy}>
+                      {reviewTranslationBusy ? "Translating..." : "Arabic"}
+                    </Button>
+                  </span>
                 </section>
               ) : null}
 
-              {reviewIsAegisPlan && reviewAegisPlan ? (
-                <div className="space-y-5">
+              {reviewTranslationError ? (
+                <p className="mb-5 rounded-xl border border-amber-400/35 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{reviewTranslationError}</p>
+              ) : null}
+
+              {reviewIsAegisPlan && displayReviewAegisPlan ? (
+                <div className={`space-y-5 ${reviewIsArabic ? "text-right" : ""}`} dir={reviewIsArabic ? "rtl" : "ltr"}>
                   <section className="rounded-[1.8rem] border border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-2)_82%,transparent),color-mix(in_srgb,var(--background)_88%,transparent))] p-5 shadow-[var(--shadow-soft)]">
                     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
                       <div className="space-y-4">
@@ -1480,42 +1573,42 @@ export default function ReportsPage() {
                           <p className="wb-kicker">Mitigation Brief</p>
                           <h3 className="mt-1 text-2xl font-semibold tracking-tight">Operator-ready response plan</h3>
                           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                            {reviewAegisPlan.executiveSummary?.trim() || "Aegis created a mitigation plan from the stored report evidence and linked alert context."}
+                            {displayReviewAegisPlan.executiveSummary?.trim() || "Aegis created a mitigation plan from the stored report evidence and linked alert context."}
                           </p>
                         </div>
-                        {reviewAegisPlan.threatSummary ? (
+                        {displayReviewAegisPlan.threatSummary ? (
                           <div className="rounded-2xl border border-border/60 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
-                            {reviewAegisPlan.threatSummary}
+                            {displayReviewAegisPlan.threatSummary}
                           </div>
                         ) : null}
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                         <ReportMetricCard
                           label="Severity"
-                          value={reviewAegisPlan.severity || "Unknown"}
+                          value={displayReviewAegisPlan.severity || "Unknown"}
                           detail="Aegis-assessed response priority for this case."
                         />
                         <ReportMetricCard
                           label="Confidence"
-                          value={reviewAegisPlan.confidence || "Unknown"}
+                          value={displayReviewAegisPlan.confidence || "Unknown"}
                           detail="Confidence based on available evidence and linked operational context."
                         />
                         <ReportMetricCard
                           label="Review Gate"
-                          value={reviewAegisPlan.requiresHumanReview === false ? "Operator can proceed" : "Human review recommended"}
+                          value={displayReviewAegisPlan.requiresHumanReview === false ? "Operator can proceed" : "Human review recommended"}
                           detail="Aegis remains advisory and does not apply mitigations directly."
                         />
                         <ReportMetricCard
                           label="Affected Focus"
-                          value={reviewAegisPlan.affectedAssetHypotheses?.[0] || "Workspace-wide case"}
+                          value={displayReviewAegisPlan.affectedAssetHypotheses?.[0] || "Workspace-wide case"}
                           detail="Primary target or case hypothesis Aegis anchored the plan around."
                         />
                       </div>
                     </div>
                   </section>
 
-                  <AegisPrimaryActions plan={reviewAegisPlan} />
-                  <AegisMitigationTimeline plan={reviewAegisPlan} />
+                  <AegisPrimaryActions plan={displayReviewAegisPlan} />
+                  <AegisMitigationTimeline plan={displayReviewAegisPlan} />
 
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
                     {reviewSections?.slice(1).map((section) => (

@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Globalization;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -8,6 +9,7 @@ using Backend.Application.Abstractions.Integrations;
 using Backend.Application.Abstractions.Services;
 using Backend.Contracts.V2;
 using Backend.Domain.IocManager;
+using Backend.Infrastructure.Configuration;
 using Backend.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +21,8 @@ public sealed class ScanAnalystPocService
 {
     private const int DefaultMaxTargetCount = 5;
     private const int MaxAllowedTargetCount = 25;
+    private const int MaxUploadedRuleFileCount = 8;
+    private const int MaxUploadedRuleFileBytes = 1024 * 1024;
     private static readonly string[] LocalPlannerOverridePhrases =
     [
         "use local planner",
@@ -38,6 +42,7 @@ public sealed class ScanAnalystPocService
     private readonly ScanAnalystPocSessionStore _sessionStore;
     private readonly ScanAnalystPocRuntimeState _runtimeState;
     private readonly ScanAnalystPocOptions _options;
+    private readonly LegacyScanPipelineOptions _legacyPipelineOptions;
     private readonly ILogger<ScanAnalystPocService> _logger;
 
     public ScanAnalystPocService(
@@ -49,6 +54,7 @@ public sealed class ScanAnalystPocService
         ScanAnalystPocSessionStore sessionStore,
         ScanAnalystPocRuntimeState runtimeState,
         IOptions<ScanAnalystPocOptions> options,
+        IOptions<LegacyScanPipelineOptions> legacyPipelineOptions,
         ILogger<ScanAnalystPocService> logger)
     {
         _dbContext = dbContext;
@@ -59,6 +65,7 @@ public sealed class ScanAnalystPocService
         _sessionStore = sessionStore;
         _runtimeState = runtimeState;
         _options = options.Value;
+        _legacyPipelineOptions = legacyPipelineOptions.Value;
         _logger = logger;
     }
 
@@ -124,6 +131,7 @@ public sealed class ScanAnalystPocService
             ActiveMockConditions: _runtimeState.ActiveMockConditions,
             Parameters: parameters,
             LastAutonomousActivity: _runtimeState.LastAutonomousActivity,
+            LastAutonomousAnalysis: _runtimeState.LastAutonomousAnalysis,
             PersonaName: personaName,
             CurrentActivity: currentActivity,
             LatestActionSummary: latestActionSummary,
@@ -166,6 +174,7 @@ public sealed class ScanAnalystPocService
             editedPlan: null,
             sessionMessages: Array.Empty<ScanAnalystAgentMessageDto>(),
             simulatedConditions: Array.Empty<string>(),
+            uploadedRuleFiles: Array.Empty<ScanAnalystUploadedRuleFileDto>(),
             cancellationToken);
 
         return result.Analysis;
@@ -189,6 +198,7 @@ public sealed class ScanAnalystPocService
             request.EditedPlan ?? snapshot.LatestAnalysis?.ProposedPlan,
             snapshot.Messages,
             NormalizeSimulatedConditions(request.SimulatedConditions),
+            request.UploadedRuleFiles ?? Array.Empty<ScanAnalystUploadedRuleFileDto>(),
             cancellationToken);
 
         var agentMessage = new ScanAnalystAgentMessageDto(
@@ -287,7 +297,8 @@ public sealed class ScanAnalystPocService
                 Trigger: trigger.TriggerLabel,
                 Action: analysis.Action,
                 OperatingMode: analysis.OperatingMode,
-                OccurredAtUtc: DateTimeOffset.UtcNow));
+                OccurredAtUtc: DateTimeOffset.UtcNow),
+            analysis);
 
         return new ScanAnalystChatResponseDto(
             updated.SessionId,
@@ -338,6 +349,203 @@ public sealed class ScanAnalystPocService
             context.CandidateRules.Count,
             context.ExistingPlans.Count,
             context.RecentJobs.Count);
+    }
+
+    private async Task<IReadOnlyList<StagedUploadedRuleFamily>> StageUploadedRuleFilesAsync(
+        IReadOnlyList<ScanAnalystUploadedRuleFileDto> uploadedRuleFiles,
+        string? preferredScannerCapability,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        if (uploadedRuleFiles.Count == 0)
+        {
+            return Array.Empty<StagedUploadedRuleFamily>();
+        }
+
+        if (uploadedRuleFiles.Count > MaxUploadedRuleFileCount)
+        {
+            throw new ArgumentException($"Upload no more than {MaxUploadedRuleFileCount} rule files for one Zira request.");
+        }
+
+        var root = LegacyScanPipelineHelpers.EnsureDirectory(_legacyPipelineOptions.TempRuleRootDirectory);
+        var sessionDirectory = Path.Combine(root, "zira-uploaded-rules", DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(sessionDirectory);
+
+        var stagedFiles = new List<StagedUploadedRuleFile>();
+        foreach (var upload in uploadedRuleFiles)
+        {
+            var fileName = SanitizeUploadedRuleFileName(upload.FileName);
+            var family = InferUploadedRuleFamily(upload, preferredScannerCapability, message);
+            var extension = Path.GetExtension(fileName);
+            if (!IsSupportedRuleFileExtension(extension))
+            {
+                throw new ArgumentException($"Rule file '{fileName}' is not a supported rule type. Use .yar, .yara, .yml, .yaml, .rules, or .txt.");
+            }
+
+            var bytes = DecodeUploadedRuleFile(upload.ContentBase64, fileName);
+            if (bytes.Length == 0 || bytes.Length > MaxUploadedRuleFileBytes)
+            {
+                throw new ArgumentException($"Rule file '{fileName}' must be between 1 byte and 1 MB.");
+            }
+
+            var familyDirectory = Path.Combine(sessionDirectory, family);
+            Directory.CreateDirectory(familyDirectory);
+            var destination = Path.Combine(familyDirectory, fileName);
+            await File.WriteAllBytesAsync(destination, bytes, cancellationToken);
+            stagedFiles.Add(new StagedUploadedRuleFile(family, fileName, destination));
+        }
+
+        return stagedFiles
+            .GroupBy(x => x.ScannerFamily, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var files = group.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase).ToArray();
+                var rulePath = files.Length == 1 ? files[0].Path : Path.GetDirectoryName(files[0].Path)!;
+                var family = group.Key;
+                return new StagedUploadedRuleFamily(
+                    family,
+                    ToDisplayScannerCapability(family),
+                    rulePath,
+                    files.Select(x => x.FileName).ToArray(),
+                    BuildStableGuid($"uploaded-rule-revision:{family}:{rulePath}"),
+                    BuildStableGuid($"uploaded-rule-artifact:{family}:{rulePath}"));
+            })
+            .ToArray();
+    }
+
+    private static ScanAnalystPocContextSnapshot AddUploadedRulesToContext(
+        ScanAnalystPocContextSnapshot context,
+        IReadOnlyList<StagedUploadedRuleFamily> stagedRules)
+    {
+        var uploadedRuleContexts = stagedRules.Select(rule => new AiScanAnalystRuleContext(
+            rule.SyntheticRuleRevisionId,
+            rule.SyntheticRuleArtifactId,
+            $"Uploaded {rule.DisplayScannerCapability} rule file",
+            rule.ScannerFamily,
+            1,
+            "uploaded",
+            "uploaded",
+            "UploadedRuleFile",
+            rule.RulePath,
+            $"Operator uploaded {string.Join(", ", rule.FileNames)} for this Zira request. Prefer this rule path when the scanner family is {rule.DisplayScannerCapability}."));
+        var uploadedPresets = stagedRules.Select(rule => new LegacyScanAnalystRulePresetContext(
+            rule.SyntheticRuleRevisionId,
+            rule.SyntheticRuleArtifactId,
+            rule.ScannerFamily,
+            rule.RulePath));
+
+        return context with
+        {
+            CandidateRules = uploadedRuleContexts.Concat(context.CandidateRules).ToArray(),
+            LegacyRulePresets = uploadedPresets.Concat(context.LegacyRulePresets).ToArray(),
+        };
+    }
+
+    private static string BuildUploadedRuleObjective(IReadOnlyList<StagedUploadedRuleFamily> stagedRules)
+    {
+        var lines = stagedRules.Select(rule =>
+            $"- {rule.DisplayScannerCapability}: {rule.RulePath} ({string.Join(", ", rule.FileNames)})");
+        return "Operator uploaded rule files for this request. Use these uploaded rule files as the preferred rule source when building the scan plan:\n" + string.Join("\n", lines);
+    }
+
+    private static ScanAnalystPlanProposalDto ApplyUploadedRuleSelection(
+        ScanAnalystPlanProposalDto proposal,
+        IReadOnlyList<StagedUploadedRuleFamily> stagedRules)
+    {
+        var selectedRule = stagedRules.FirstOrDefault(x => x.DisplayScannerCapability.Equals(proposal.ScannerCapability, StringComparison.OrdinalIgnoreCase))
+            ?? stagedRules[0];
+
+        return proposal with
+        {
+            ScannerCapability = selectedRule.DisplayScannerCapability,
+            RuleSelectionMode = "LegacyPreset",
+            RuleScopeType = "UploadedRuleFile",
+            RuleScopeValue = selectedRule.RulePath,
+            OperatorNotes = string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    proposal.OperatorNotes,
+                    $"Zira will use uploaded {selectedRule.DisplayScannerCapability} rule file(s): {string.Join(", ", selectedRule.FileNames)}.",
+                    $"Uploaded rule path staged for backend worker: {selectedRule.RulePath}",
+                }.Where(x => !string.IsNullOrWhiteSpace(x))),
+            RuleRevisionIds = [selectedRule.SyntheticRuleRevisionId],
+            Rules =
+            [
+                new ScanAnalystRuleProposalDto(
+                    selectedRule.SyntheticRuleRevisionId,
+                    selectedRule.SyntheticRuleArtifactId,
+                    $"Uploaded {selectedRule.DisplayScannerCapability} rule file",
+                    selectedRule.ScannerFamily,
+                    1,
+                    "uploaded",
+                    "uploaded",
+                    "UploadedRuleFile",
+                    selectedRule.RulePath,
+                    $"Operator-uploaded rule source for this Zira request: {string.Join(", ", selectedRule.FileNames)}."),
+            ],
+        };
+    }
+
+    private static string SanitizeUploadedRuleFileName(string fileName)
+    {
+        var name = Path.GetFileName(string.IsNullOrWhiteSpace(fileName) ? "uploaded-rule.rules" : fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '-');
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? "uploaded-rule.rules" : name;
+    }
+
+    private static byte[] DecodeUploadedRuleFile(string contentBase64, string fileName)
+    {
+        var payload = contentBase64.Contains(',', StringComparison.Ordinal)
+            ? contentBase64[(contentBase64.IndexOf(',', StringComparison.Ordinal) + 1)..]
+            : contentBase64;
+        try
+        {
+            return Convert.FromBase64String(payload);
+        }
+        catch (FormatException ex)
+        {
+            throw new ArgumentException($"Rule file '{fileName}' was not uploaded as valid base64 content.", ex);
+        }
+    }
+
+    private static bool IsSupportedRuleFileExtension(string extension)
+        => extension.ToLowerInvariant() is ".yar" or ".yara" or ".yml" or ".yaml" or ".rules" or ".txt";
+
+    private static string InferUploadedRuleFamily(
+        ScanAnalystUploadedRuleFileDto upload,
+        string? preferredScannerCapability,
+        string message)
+    {
+        var explicitFamily = NormalizePreferredCapability(upload.ScannerFamily);
+        if (!string.IsNullOrWhiteSpace(explicitFamily))
+        {
+            return ToLegacyScannerFamily(explicitFamily);
+        }
+
+        if (!string.IsNullOrWhiteSpace(preferredScannerCapability))
+        {
+            return ToLegacyScannerFamily(preferredScannerCapability);
+        }
+
+        var messageFamily = NormalizePreferredCapability(message);
+        if (!string.IsNullOrWhiteSpace(messageFamily))
+        {
+            return ToLegacyScannerFamily(messageFamily);
+        }
+
+        var extension = Path.GetExtension(upload.FileName).ToLowerInvariant();
+        return extension switch
+        {
+            ".yar" or ".yara" => "yara",
+            ".yml" or ".yaml" => "sigma",
+            ".rules" => "suricata",
+            _ => "yara",
+        };
     }
 
     public async Task<ScanAnalystRunSummaryDto?> GetRunSummaryAsync(Guid scanJobId, CancellationToken cancellationToken)
@@ -421,7 +629,8 @@ public sealed class ScanAnalystPocService
             return null;
         }
 
-        if (TryFindLiveTargetYaraTrigger(activeTriggers, context, out var liveTargetTrigger, out var liveTarget))
+        if (!_options.StrictLiveLlmMode
+            && TryFindLiveTargetYaraTrigger(activeTriggers, context, out var liveTargetTrigger, out var liveTarget))
         {
             return await RunBoundedLiveTargetYaraActionAsync(
                 context,
@@ -447,7 +656,8 @@ public sealed class ScanAnalystPocService
                 PreferredScannerCapability: NormalizePreferredCapability(parameters.PreferredScannerFamily),
                 MaxTargetCount: parameters.MaxTargetsPerRun,
                 EditedPlan: null,
-                SimulatedConditions: simulatedConditions),
+                SimulatedConditions: simulatedConditions,
+                UploadedRuleFiles: null),
             cancellationToken);
 
         _runtimeState.RecordAutonomousActivity(
@@ -456,7 +666,8 @@ public sealed class ScanAnalystPocService
                 Trigger: string.Join(", ", triggerParts),
                 Action: response.LatestAnalysis.Action,
                 OperatingMode: response.OperatingMode,
-                OccurredAtUtc: DateTimeOffset.UtcNow));
+                OccurredAtUtc: DateTimeOffset.UtcNow),
+            response.LatestAnalysis);
 
         return response;
     }
@@ -471,22 +682,43 @@ public sealed class ScanAnalystPocService
         ScanAnalystPlanProposalDto? editedPlan,
         IReadOnlyList<ScanAnalystAgentMessageDto> sessionMessages,
         IReadOnlyList<string> simulatedConditions,
+        IReadOnlyList<ScanAnalystUploadedRuleFileDto> uploadedRuleFiles,
         CancellationToken cancellationToken)
     {
         var effectiveMaxTargetCount = maxTargetCount ?? DefaultMaxTargetCount;
         var effectivePreferredCapability = ResolvePreferredCapability(preferredScannerCapability, message);
+        var stagedUploadedRules = await StageUploadedRuleFilesAsync(uploadedRuleFiles, effectivePreferredCapability, message, cancellationToken);
         var context = await GetContextSnapshotAsync(subnetId, simulatedConditions, cancellationToken);
+        if (stagedUploadedRules.Count > 0)
+        {
+            context = AddUploadedRulesToContext(context, stagedUploadedRules);
+        }
+
         var objective = BuildConversationObjective(message, sessionMessages);
+        if (stagedUploadedRules.Count > 0)
+        {
+            objective = $"{objective}{Environment.NewLine}{BuildUploadedRuleObjective(stagedUploadedRules)}";
+        }
+
         var aiRequest = CreateAgentRequest(
             context,
             objective,
             action,
             effectivePreferredCapability,
             effectiveMaxTargetCount,
-            _options.AllowLocalPlannerWhenOpenAiMissing);
+            _options.AllowLocalPlannerWhenOpenAiMissing,
+            _options.StrictLiveLlmMode);
         var recommendation = await _agentAdapter.RecommendAsync(aiRequest, cancellationToken);
         var proposal = MergeWithEdits(MapProposal(recommendation.Proposal), editedPlan);
-        proposal = ApplyMessageAdjustments(proposal, message, effectivePreferredCapability, effectiveMaxTargetCount);
+        if (!_options.StrictLiveLlmMode)
+        {
+            proposal = ApplyMessageAdjustments(proposal, message, effectivePreferredCapability, effectiveMaxTargetCount);
+        }
+
+        if (stagedUploadedRules.Count > 0)
+        {
+            proposal = ApplyUploadedRuleSelection(proposal, stagedUploadedRules);
+        }
 
         var validationWarnings = recommendation.ValidationWarnings.ToList();
         if (proposal.TargetServerIds.Count == 0)
@@ -502,6 +734,11 @@ public sealed class ScanAnalystPocService
         MaterializationResult materialized;
         if (context.OperatingMode == ScanAnalystPocModes.MockFallback)
         {
+            if (_options.StrictLiveLlmMode)
+            {
+                throw new InvalidOperationException("Strict live LLM mode is enabled, but Zira is currently in mock fallback mode.");
+            }
+
             materialized = CreateMockMaterialization(proposal, action, context);
         }
         else
@@ -555,7 +792,7 @@ public sealed class ScanAnalystPocService
                 _runtimeState.SetActiveMockConditions(Array.Empty<string>());
                 return live;
             }
-            catch (Exception ex) when (_options.AllowMockFallbackWithoutDatabase && IsDatabaseFailure(ex))
+            catch (Exception ex) when (_options.AllowMockFallbackWithoutDatabase && !_options.StrictLiveLlmMode && IsDatabaseFailure(ex))
             {
                 _logger.LogWarning(ex, "Falling back to mock scan analyst context because live database access failed.");
                 _runtimeState.MarkDatabaseUnavailable(ex.Message);
@@ -1352,7 +1589,8 @@ public sealed class ScanAnalystPocService
         string action,
         string? preferredScannerCapability,
         int maxTargetCount,
-        bool allowConfiguredLocalPlanner)
+        bool allowConfiguredLocalPlanner,
+        bool strictLiveLlmMode)
     {
         return new AiScanAnalystContextRequest(
             objective,
@@ -1369,7 +1607,7 @@ public sealed class ScanAnalystPocService
             context.RecentAlerts,
             context.ExternalServerFacts,
             context.ActiveTriggers,
-            allowConfiguredLocalPlanner || AllowsLocalPlannerOverride(objective));
+            !strictLiveLlmMode && (allowConfiguredLocalPlanner || AllowsLocalPlannerOverride(objective)));
     }
 
     private static bool AllowsLocalPlannerOverride(string objective)
@@ -2738,6 +2976,19 @@ public sealed class ScanAnalystPocService
         Guid SyntheticRuleArtifactId,
         string ScannerFamily,
         string? RulePath);
+
+    private sealed record StagedUploadedRuleFile(
+        string ScannerFamily,
+        string FileName,
+        string Path);
+
+    private sealed record StagedUploadedRuleFamily(
+        string ScannerFamily,
+        string DisplayScannerCapability,
+        string RulePath,
+        IReadOnlyList<string> FileNames,
+        Guid SyntheticRuleRevisionId,
+        Guid SyntheticRuleArtifactId);
 
     private sealed record MaterializationResult(
         ScanPlanResponse? CreatedPlan,

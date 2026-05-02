@@ -36,17 +36,6 @@ type NormalizedTimelineStep = {
   rationale: string
 }
 
-function severityTone(value: string) {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === "critical" || normalized === "high") {
-    return "border-rose-300/35 bg-rose-500/10 text-rose-100"
-  }
-  if (normalized === "medium") {
-    return "border-amber-300/35 bg-amber-500/10 text-amber-100"
-  }
-  return "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
-}
-
 function laneTone(value: string) {
   const normalized = value.trim().toLowerCase()
   if (normalized === "containment") {
@@ -73,26 +62,6 @@ function formatLaneLabel(value: string) {
     return "Recovery"
   }
   return value.replace(/_/g, " ") || "Mitigation"
-}
-
-export function formatAegisUrgency(value: string) {
-  const normalized = value.trim().toLowerCase()
-  if (normalized === "now") {
-    return "Act now"
-  }
-  if (normalized === "hours") {
-    return "Next hours"
-  }
-  if (normalized === "same_day") {
-    return "Same day"
-  }
-  if (normalized === "next_day") {
-    return "Next day"
-  }
-  if (normalized === "multi_day") {
-    return "Multi-day"
-  }
-  return value || "Review soon"
 }
 
 function normalizeAction(action: Partial<ReportMitigationActionResponse> | undefined, rank: number, targetHint: string, urgency: string): NormalizedPrimaryAction {
@@ -123,7 +92,6 @@ export function buildAegisPrimaryActions(plan: LegacyPlanLike): NormalizedPrimar
   const targetHint = plan.affectedAssetHypotheses?.[0] || "Affected target or case"
   const fallbackPool = [
     ...(plan.immediateActions ?? []),
-    ...(plan.detectionActions ?? []),
     ...(plan.hardeningActions ?? []),
   ]
   const fallbackUrgencies = ["now", "hours", "same_day"]
@@ -214,12 +182,9 @@ export function AegisPrimaryActions({ plan }: { plan: LegacyPlanLike }) {
       <div className="grid gap-3 xl:grid-cols-3">
         {actions.map((action) => (
           <article key={`${action.rank}-${action.title}`} className="rounded-3xl border border-border/65 bg-surface-2/45 p-4 shadow-[var(--shadow-soft)]">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-primary/35 bg-primary/10 text-sm font-semibold text-primary">
                 {action.rank}
-              </span>
-              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${severityTone(action.urgency === "now" ? "critical" : action.urgency === "hours" ? "high" : "medium")}`}>
-                {formatAegisUrgency(action.urgency)}
               </span>
             </div>
             <p className="mt-4 text-base font-semibold">{action.title}</p>

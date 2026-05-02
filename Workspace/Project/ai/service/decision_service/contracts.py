@@ -843,6 +843,11 @@ class ReportMitigationResponse(ApiModel):
     generated_at: datetime
 
 
+class ReportMitigationTranslationRequest(ApiModel):
+    target_language: Literal["ar"]
+    mitigation_plan: ReportMitigationPlanResponse
+
+
 class GraphCandidateObservableInput(ApiModel):
     observable_id: int = Field(gt=0)
     type: str

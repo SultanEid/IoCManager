@@ -19,6 +19,8 @@ export type ZiraWidgetState = {
 
 export const ZIRA_WIDGET_STATE_STORAGE_KEY = "zira.widget.state"
 export const ZIRA_WIDGET_STATE_EVENT = "zira:widget-state"
+export const ZIRA_WIDGET_DISMISSED_KEY_STORAGE_KEY = "zira.widget.dismissed"
+export const ZIRA_WIDGET_DISMISSED_KEY_EVENT = "zira:widget-dismissed"
 
 export function normalizeZiraOperatingMode(value: string | null | undefined): ZiraWidgetState["operatingMode"] {
   return value === "LiveData" || value === "MockFallback" ? value : null
@@ -62,4 +64,27 @@ export function writeZiraWidgetState(state: ZiraWidgetState) {
 
   window.localStorage.setItem(ZIRA_WIDGET_STATE_STORAGE_KEY, JSON.stringify(state))
   window.dispatchEvent(new CustomEvent<ZiraWidgetState>(ZIRA_WIDGET_STATE_EVENT, { detail: state }))
+}
+
+export function readZiraWidgetDismissedKey(): string | null {
+  if (typeof window === "undefined") {
+    return null
+  }
+
+  const raw = window.localStorage.getItem(ZIRA_WIDGET_DISMISSED_KEY_STORAGE_KEY)
+  return raw?.trim() ? raw : null
+}
+
+export function writeZiraWidgetDismissedKey(value: string | null) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  if (!value) {
+    window.localStorage.removeItem(ZIRA_WIDGET_DISMISSED_KEY_STORAGE_KEY)
+  } else {
+    window.localStorage.setItem(ZIRA_WIDGET_DISMISSED_KEY_STORAGE_KEY, value)
+  }
+
+  window.dispatchEvent(new CustomEvent<string | null>(ZIRA_WIDGET_DISMISSED_KEY_EVENT, { detail: value }))
 }

@@ -4,6 +4,7 @@ public sealed class AegisMitigationOptions
 {
     public const string SectionName = "AegisMitigation";
 
+    public bool StrictLiveLlmMode { get; set; } = false;
     public bool AutonomyEnabled { get; set; } = true;
     public int AutonomyIntervalSeconds { get; set; } = 180;
     public int SevereAlertLookbackHours { get; set; } = 24;

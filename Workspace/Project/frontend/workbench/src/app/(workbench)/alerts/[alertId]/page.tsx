@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { classifyUiError } from "@/shared/api/error-classification"
+import { writeAegisWidgetState } from "@/shared/aegis/widget-state"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { isItOnlyScope } from "@/shared/auth/role-access"
 import type { V2AlertDetailResponse } from "@/shared/api/schemas"
@@ -307,12 +308,28 @@ export default function AlertDetailPage() {
       return
     }
 
+    writeAegisWidgetState({
+      phase: "completed",
+      title: "Aegis mitigation plan ready",
+      sourceName: detail ? alertCaseTitle(detail) : "Selected alert",
+      reviewPath: `/agents/aegis?plan=${encodeURIComponent(existingAegisPlan.id)}`,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
     router.push(`/agents/aegis?plan=${encodeURIComponent(existingAegisPlan.id)}`)
   }
 
   const generateAegisPlan = async (regenerate: boolean) => {
     setAegisBusyAction(regenerate ? "regenerate" : "create")
     setAegisError(null)
+    writeAegisWidgetState({
+      phase: regenerate ? "drafting" : "reviewing",
+      title: regenerate ? "Aegis is regenerating a mitigation plan" : "Aegis is reviewing the selected alert",
+      sourceName: detail ? alertCaseTitle(detail) : "Selected alert",
+      reviewPath: null,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
     try {
       const response = await gateway.generateReportMitigationFromAlert(alertId, {
         includeWorkspaceContext: true,
@@ -322,8 +339,24 @@ export default function AlertDetailPage() {
       if (!response.persistedMitigationReport) {
         throw new Error("Aegis did not return a saved mitigation plan.")
       }
+      writeAegisWidgetState({
+        phase: "completed",
+        title: "Aegis mitigation plan ready",
+        sourceName: response.persistedMitigationReport.title,
+        reviewPath: `/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
       router.push(`/agents/aegis?plan=${encodeURIComponent(response.persistedMitigationReport.id)}`)
     } catch (error) {
+      writeAegisWidgetState({
+        phase: "blocked",
+        title: "Aegis was blocked while reviewing the selected alert",
+        sourceName: detail ? alertCaseTitle(detail) : "Selected alert",
+        reviewPath: null,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
       setAegisError(classifyUiError(error).message)
     } finally {
       setAegisBusyAction(null)

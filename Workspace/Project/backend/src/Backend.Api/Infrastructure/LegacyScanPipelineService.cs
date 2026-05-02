@@ -581,6 +581,45 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
             existingNetworkTargets[createdTarget.IPAddress] = createdTarget;
         }
 
+        if (reachableObservations.Length == 0 && range.Targets.Count == 1)
+        {
+            var requestedAddress = range.Targets[0].ToString();
+            if (!excludedAddresses.Contains(requestedAddress))
+            {
+                if (existingTargetsByAddress.TryGetValue(requestedAddress, out var target))
+                {
+                    if (target.NetworkId == parsedNetworkId)
+                    {
+                        target.Status = "Offline";
+                        target.LastSweep = nowUtc.UtcDateTime;
+                        existingNetworkTargets[target.IPAddress] = target;
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Discovery skipped unresolved IP {IpAddress} for network {NetworkId} because the target already belongs to network {ExistingNetworkId}.",
+                            requestedAddress,
+                            parsedNetworkId,
+                            target.NetworkId);
+                    }
+                }
+                else
+                {
+                    var createdUnreachableTarget = new LegacyPipelineTargetEntity
+                    {
+                        IPAddress = requestedAddress,
+                        Status = "Offline",
+                        NetworkId = parsedNetworkId,
+                        LastSweep = nowUtc.UtcDateTime,
+                    };
+
+                    _dbContext.Targets.Add(createdUnreachableTarget);
+                    existingTargetsByAddress[createdUnreachableTarget.IPAddress] = createdUnreachableTarget;
+                    existingNetworkTargets[createdUnreachableTarget.IPAddress] = createdUnreachableTarget;
+                }
+            }
+        }
+
         var offlineCount = 0;
         foreach (var existing in existingNetworkTargets.Values)
         {

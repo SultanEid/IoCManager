@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
+import { writeAegisWidgetState } from "@/shared/aegis/widget-state"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
 import {
@@ -449,6 +450,14 @@ export default function ScansPage() {
 
   const navigateToAegisPlan = (planId: string) => {
     const destination = `/agents/aegis?plan=${encodeURIComponent(planId)}`
+    writeAegisWidgetState({
+      phase: "completed",
+      title: "Aegis mitigation plan ready",
+      sourceName: "Saved Aegis plan",
+      reviewPath: destination,
+      source: "user_action",
+      updatedAtUtc: new Date().toISOString(),
+    })
     if (typeof window !== "undefined") {
       window.location.assign(destination)
       return
@@ -470,6 +479,14 @@ export default function ScansPage() {
       if (!job) {
         throw new Error("The selected scan job could not be found.")
       }
+      writeAegisWidgetState({
+        phase: regenerate ? "drafting" : "reviewing",
+        title: regenerate ? "Aegis is regenerating a mitigation plan" : "Aegis is reviewing the selected scan",
+        sourceName: `${job.scannerFamily.toUpperCase()} scan ${job.id}`,
+        reviewPath: null,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
 
       const response = isUuid(jobId)
         ? await gateway.generateReportMitigationFromScanJob(jobId, {
@@ -490,10 +507,18 @@ export default function ScansPage() {
         throw new Error("Aegis did not return a saved mitigation plan.")
       }
 
-        navigateToAegisPlan(response.persistedMitigationReport.id)
-      } catch (error) {
-        setAegisError(classifyUiError(error).message)
-      } finally {
+      navigateToAegisPlan(response.persistedMitigationReport.id)
+    } catch (error) {
+      writeAegisWidgetState({
+        phase: "blocked",
+        title: "Aegis was blocked while reviewing the selected scan",
+        sourceName: `Scan job ${jobId}`,
+        reviewPath: null,
+        source: "user_action",
+        updatedAtUtc: new Date().toISOString(),
+      })
+      setAegisError(classifyUiError(error).message)
+    } finally {
       setAegisBusyJobId(null)
       setAegisBusyAction(null)
     }
