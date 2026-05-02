@@ -3,6 +3,7 @@ namespace Backend.Application.Abstractions.Integrations;
 public interface IAiReportMitigationClient
 {
     Task<AiReportMitigationResult> GenerateAsync(AiReportMitigationRequest request, CancellationToken cancellationToken);
+    Task<AiReportMitigationPlan> TranslatePlanAsync(AiReportMitigationTranslationRequest request, CancellationToken cancellationToken);
 }
 
 public sealed record AiReportMitigationRequest(
@@ -20,6 +21,10 @@ public sealed record AiReportMitigationRequest(
     IReadOnlyList<IReadOnlyDictionary<string, object?>> AlertContext,
     IReadOnlyList<IReadOnlyDictionary<string, object?>> RuleContext,
     IReadOnlyList<IReadOnlyDictionary<string, object?>> PriorOutcomeContext);
+
+public sealed record AiReportMitigationTranslationRequest(
+    string TargetLanguage,
+    AiReportMitigationPlan MitigationPlan);
 
 public sealed record AiReportMitigationResult(
     string ReportId,

@@ -8,6 +8,7 @@ public sealed class AiSidecarOptions
     public string ScanAnalystPath { get; set; } = "/scan_analyst";
     public string ReportExtractionPath { get; set; } = "/extract_report";
     public string ReportMitigationPath { get; set; } = "/report_mitigation";
+    public string ReportMitigationTranslationPath { get; set; } = "/report_mitigation/translate";
     public string ScoreCasePath { get; set; } = "/score_case";
     public string ExplainCasePath { get; set; } = "/explain_case";
     public string RecommendActionPath { get; set; } = "/recommend_action";

@@ -170,18 +170,52 @@ public sealed class DiscoveryObservationProvider : IDiscoveryObservationProvider
             {
                 var ipAddress = targets[index];
                 var result = await _probe.ProbeAsync(ipAddress, TimeSpan.FromMilliseconds(options.TimeoutMilliseconds), innerCancellationToken);
+                var tcpReachable = !result.Reachable
+                                   && await IsReachableViaTcpAsync(ipAddress, options.TcpProbePorts, options.TimeoutMilliseconds, innerCancellationToken);
+                var reachable = result.Reachable || tcpReachable;
                 var hostname = result.Reachable
                     ? await ResolveHostNameAsync(ipAddress.ToString(), options.DnsLookupTimeoutMilliseconds, innerCancellationToken) ?? result.Hostname
                     : null;
                 observations[index] = new DiscoveryObservation(
                     ipAddress.ToString(),
                     hostname == ipAddress.ToString() ? null : hostname,
-                    result.Reachable ? LegacyScanPipelineHelpers.InferTargetOsType(hostname, null, result.Ttl) : null,
-                    result.Reachable ? DiscoveredHostReachability.Reachable : DiscoveredHostReachability.Unreachable,
+                    reachable ? LegacyScanPipelineHelpers.InferTargetOsType(hostname, null, result.Ttl) : null,
+                    reachable ? DiscoveredHostReachability.Reachable : DiscoveredHostReachability.Unreachable,
                     DateTimeOffset.UtcNow);
             });
 
         return observations;
+    }
+
+    private static async Task<bool> IsReachableViaTcpAsync(
+        IPAddress ipAddress,
+        IReadOnlyList<int> ports,
+        int timeoutMilliseconds,
+        CancellationToken cancellationToken)
+    {
+        foreach (var port in ports.Where(port => port is > 0 and <= 65535).Distinct())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                using var client = new TcpClient();
+                var connectTask = client.ConnectAsync(ipAddress, port, cancellationToken).AsTask();
+                var completedTask = await Task.WhenAny(connectTask, Task.Delay(timeoutMilliseconds, cancellationToken));
+                if (completedTask == connectTask && client.Connected)
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException or OperationCanceledException)
+            {
+                if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static async Task<string?> ResolveHostNameAsync(string ipAddress, int timeoutMilliseconds, CancellationToken cancellationToken)

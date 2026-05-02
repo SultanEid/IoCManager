@@ -35,6 +35,8 @@ from .contracts import (
     ReportIngestionResponse,
     ReportMitigationRequest,
     ReportMitigationResponse,
+    ReportMitigationPlanResponse,
+    ReportMitigationTranslationRequest,
     ScanAnalystRequest,
     ScanAnalystResponse,
     ScoreBatchRequest,
@@ -51,7 +53,7 @@ from .feedback_store import FeedbackStore
 from .graph import score_graph_neighbors
 from .historical_learning import HistoricalLearningEngine
 from .registry import ModelRegistryEntry, ModelRegistryStore
-from .report_mitigation import recommend_mitigation_plan
+from .report_mitigation import recommend_mitigation_plan, translate_mitigation_plan
 from .scan_analyst import recommend_scan_plan
 from .scorer import BaselineScorer, ScorerContext, ScoringThresholds
 from .snapshots import SnapshotDataset, SnapshotLoader
@@ -314,6 +316,13 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
     def report_mitigation_endpoint(request: ReportMitigationRequest) -> ReportMitigationResponse:
         try:
             return recommend_mitigation_plan(request, runtime.settings)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/report_mitigation/translate", response_model=ReportMitigationPlanResponse)
+    def report_mitigation_translate_endpoint(request: ReportMitigationTranslationRequest) -> ReportMitigationPlanResponse:
+        try:
+            return translate_mitigation_plan(request, runtime.settings)
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

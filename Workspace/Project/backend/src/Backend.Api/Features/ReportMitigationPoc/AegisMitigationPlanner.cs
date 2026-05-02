@@ -5,6 +5,7 @@ using Backend.Application.Abstractions.Integrations;
 using Backend.Domain.IocManager;
 using Backend.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Api.Features.ReportMitigationPoc;
 
@@ -16,15 +17,18 @@ public sealed class AegisMitigationPlanner
     private readonly CtiDbContext _dbContext;
     private readonly IAiReportMitigationClient _aiReportMitigationClient;
     private readonly AegisActivityNotifier _activityNotifier;
+    private readonly AegisMitigationOptions _options;
 
     public AegisMitigationPlanner(
         CtiDbContext dbContext,
         IAiReportMitigationClient aiReportMitigationClient,
-        AegisActivityNotifier activityNotifier)
+        AegisActivityNotifier activityNotifier,
+        IOptions<AegisMitigationOptions> options)
     {
         _dbContext = dbContext;
         _aiReportMitigationClient = aiReportMitigationClient;
         _activityNotifier = activityNotifier;
+        _options = options.Value;
     }
 
     public async Task<AegisMitigationGenerationOutcome> GenerateAsync(
@@ -88,7 +92,7 @@ public sealed class AegisMitigationPlanner
                 resolved.DocumentText,
                 resolved.DocumentBytesBase64,
                 resolved.BulletinJson,
-                EnableLlmFallback: true,
+                EnableLlmFallback: !_options.StrictLiveLlmMode,
                 IngestionTime: DateTimeOffset.UtcNow,
                 EnvironmentContext: environmentContext,
                 AssetContext: assetContext,
@@ -96,7 +100,10 @@ public sealed class AegisMitigationPlanner
                 RuleContext: ruleContext,
                 PriorOutcomeContext: priorOutcomeContext),
             cancellationToken);
-        aiResult = StrengthenMitigationResult(aiResult, resolved, alertContext);
+        if (!_options.StrictLiveLlmMode)
+        {
+            aiResult = StrengthenMitigationResult(aiResult, resolved, alertContext);
+        }
 
         var persisted = await PersistMitigationReportAsync(aiResult, resolved, request.ActorUserId, cancellationToken);
         if (isAutonomousTrigger)
@@ -111,6 +118,18 @@ public sealed class AegisMitigationPlanner
             resolved.AlertIds,
             resolved.ScanJobIds,
             false);
+    }
+
+    public async Task<AiReportMitigationPlan> TranslatePlanAsync(
+        AiReportMitigationPlan plan,
+        string targetLanguage,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetLanguage);
+
+        return await _aiReportMitigationClient.TranslatePlanAsync(
+            new AiReportMitigationTranslationRequest(targetLanguage.Trim(), plan),
+            cancellationToken);
     }
 
     private async Task<AegisResolvedSource> ResolveSourceAsync(

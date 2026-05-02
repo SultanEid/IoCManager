@@ -1,10 +1,11 @@
 "use client"
 
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { useMutation } from "@tanstack/react-query"
 import { motion } from "framer-motion"
-import { Bot, ChevronDown, PlayCircle, Radar, Sparkles } from "lucide-react"
-import type { FormEvent, ReactNode } from "react"
+import { Bot, ChevronDown, PlayCircle, Radar, Sparkles, UploadCloud, X } from "lucide-react"
+import type { ChangeEvent, FormEvent, ReactNode } from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
@@ -15,6 +16,7 @@ import type {
   ScanAnalystChatResponse,
   ScanAnalystAgentStatusResponse,
   ScanAnalystPlanProposalResponse,
+  ScanAnalystResponse,
   ScannerCapability,
 } from "@/shared/api/schemas"
 import { classifyUiError } from "@/shared/api/error-classification"
@@ -63,7 +65,24 @@ const QUICK_PROMPTS = [
   },
 ]
 
+const RULE_UPLOAD_EXTENSIONS = [".yar", ".yara", ".yml", ".yaml", ".rules", ".txt"]
+const MAX_RULE_UPLOAD_BYTES = 1024 * 1024
+
 type ZiraWorkspaceSection = "ask" | "proposal" | "activity" | "guardrails"
+
+type HighlightedZiraIssue = {
+  title: string
+  detail: string
+}
+
+type ZiraRecentAction = NonNullable<ScanAnalystAgentStatusResponse["recentActions"]>[number]
+
+type UploadedRuleFileDraft = {
+  fileName: string
+  contentBase64: string
+  size: number
+  scannerFamily?: ScannerCapability
+}
 
 const MOCK_CONDITION_LABELS: Record<ScanAnalystSimulatedCondition, string> = {
   new_hosts_found: "New hosts found",
@@ -217,6 +236,24 @@ function formatRulePath(value: string | null | undefined) {
   return value?.trim() ? value : "Not recorded"
 }
 
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ""))
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read rule file."))
+    reader.readAsDataURL(file)
+  })
+}
+
+function toBase64Payload(dataUrl: string) {
+  return dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl
+}
+
+function isSupportedRuleUpload(fileName: string) {
+  const lower = fileName.toLowerCase()
+  return RULE_UPLOAD_EXTENSIONS.some((extension) => lower.endsWith(extension))
+}
+
 function readCompletedPlanRulePath(plan: object) {
   return "rulePath" in plan && typeof plan.rulePath === "string" ? plan.rulePath : null
 }
@@ -250,6 +287,32 @@ function deriveLiveCompletedPlans(
         summary: job.summary,
       }
     })
+}
+
+function mergeLiveRecentActions(
+  existingActions: ScanAnalystAgentStatusResponse["recentActions"] | undefined,
+  completedPlans: ReturnType<typeof deriveLiveCompletedPlans>,
+) {
+  const normalized = new Map<string, ZiraRecentAction>()
+
+  for (const action of existingActions ?? []) {
+    normalized.set(`${normalizeIssueText(action.title)}|${normalizeIssueText(action.summary)}`, action)
+  }
+
+  for (const plan of completedPlans.slice(0, 3)) {
+    const candidate: ZiraRecentAction = {
+      id: `legacy-job-${plan.id}`,
+      title: `${plan.scannerCapability} scan finished`,
+      summary: plan.summary,
+      occurredAtUtc: plan.completedAtUtc,
+      status: plan.outcome,
+    }
+    normalized.set(`${normalizeIssueText(candidate.title)}|${normalizeIssueText(candidate.summary)}`, candidate)
+  }
+
+  return [...normalized.values()].sort(
+    (left, right) => Date.parse(right.occurredAtUtc) - Date.parse(left.occurredAtUtc),
+  )
 }
 
 function deriveMockStatus(
@@ -310,6 +373,21 @@ function clonePlan(plan: ScanAnalystPlanProposalResponse | null) {
   } satisfies ScanAnalystPlanProposalResponse
 }
 
+function buildAnalysisSourceKey(analysis: ScanAnalystResponse, sourceTimestampUtc?: string | null) {
+  const plan = analysis.proposedPlan
+  return [
+    sourceTimestampUtc ?? "",
+    analysis.action,
+    analysis.summary,
+    plan.name,
+    plan.scannerCapability,
+    plan.targetServerIds.join(","),
+    plan.ruleRevisionIds.join(","),
+    analysis.createdPlan?.id ?? "",
+    analysis.queuedJob?.id ?? "",
+  ].join("|")
+}
+
 function CollapsibleSection({
   eyebrow,
   title,
@@ -340,7 +418,33 @@ function CollapsibleSection({
   )
 }
 
-function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) {
+function normalizeIssueText(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? ""
+}
+
+function StatusOverview({
+  status,
+  highlightedIssue,
+}: {
+  status: ScanAnalystAgentStatusResponse
+  highlightedIssue: HighlightedZiraIssue | null
+}) {
+  const normalizedHighlightedTitle = normalizeIssueText(highlightedIssue?.title)
+  const normalizedHighlightedDetail = normalizeIssueText(highlightedIssue?.detail)
+
+  const latestActionMatchesHighlight =
+    highlightedIssue !== null
+    && normalizedHighlightedDetail.length > 0
+    && normalizeIssueText(status.latestActionSummary ?? status.currentActivity).includes(normalizedHighlightedDetail)
+  const hasMatchingRecentAction = (status.recentActions ?? []).some((action) =>
+    normalizeIssueText(action.title) === normalizedHighlightedTitle
+    || normalizeIssueText(action.summary).includes(normalizedHighlightedDetail),
+  )
+  const shouldShowOpenedIssueCard =
+    highlightedIssue !== null
+    && !latestActionMatchesHighlight
+    && !hasMatchingRecentAction
+
   return (
     <motion.article className="grid gap-4 xl:grid-cols-[1fr_1fr]" variants={panelMotion}>
       <CollapsibleSection
@@ -348,7 +452,21 @@ function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) 
         title="What Zira has been doing"
         badge={<StatusBadge value={status.operatingMode === "LiveData" ? "Live" : "Demo"} />}
       >
-        <div className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+        <div
+          className={`rounded-xl border p-4 ${
+            latestActionMatchesHighlight
+              ? "border-amber-500/40 bg-amber-500/10 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--amber-500)_15%,transparent)]"
+              : "border-border/70 bg-surface-2/55"
+          }`}
+        >
+            {latestActionMatchesHighlight ? <p className="wb-kicker mb-2 text-amber-300">Needs review</p> : null}
+            {shouldShowOpenedIssueCard ? (
+              <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="wb-kicker mb-1 text-amber-300">Needs review</p>
+                <p className="text-sm font-medium text-foreground">{highlightedIssue.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{highlightedIssue.detail}</p>
+              </div>
+          ) : null}
           <p className="text-sm font-medium text-foreground">
             {status.latestActionSummary ?? status.currentActivity ?? "Zira is monitoring the workspace and waiting for the next task."}
           </p>
@@ -361,16 +479,34 @@ function StatusOverview({ status }: { status: ScanAnalystAgentStatusResponse }) 
 
         <div className="space-y-2">
           {(status.recentActions ?? []).length > 0 ? (
-            status.recentActions?.map((action) => (
-              <div key={action.id} className="rounded-xl border border-border/70 bg-surface-2/55 p-3">
+            status.recentActions?.map((action) => {
+              const isHighlighted =
+                highlightedIssue !== null
+                && (
+                  normalizeIssueText(action.title) === normalizedHighlightedTitle
+                  || normalizeIssueText(action.summary).includes(normalizedHighlightedDetail)
+                )
+
+              return (
+              <div
+                key={action.id}
+                className={`rounded-xl border p-3 ${
+                  isHighlighted
+                    ? "border-amber-500/40 bg-amber-500/10 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--amber-500)_15%,transparent)]"
+                    : "border-border/70 bg-surface-2/55"
+                }`}
+              >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{action.title}</p>
+                  <div>
+                    {isHighlighted ? <p className="wb-kicker mb-1 text-amber-300">Needs review</p> : null}
+                     <p className="text-sm font-medium">{action.title}</p>
+                  </div>
                   <StatusBadge value={action.status} />
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{action.summary}</p>
                 <p className="mt-2 text-xs text-muted-foreground">{formatTimestamp(action.occurredAtUtc)}</p>
               </div>
-            ))
+            )})
           ) : (
             <EmptyState
               title="No recent actions yet"
@@ -578,6 +714,7 @@ function PostureEditor({
 }
 
 export function ScanAnalystPage() {
+  const searchParams = useSearchParams()
   const { session } = useAuth()
   const actorUserId = session?.userId ?? session?.username ?? ""
   const operatorLabel = session?.username ?? "Unavailable"
@@ -587,9 +724,15 @@ export function ScanAnalystPage() {
   const [subnetId, setSubnetId] = useState("")
   const [preferredCapability, setPreferredCapability] = useState<ScannerCapability | "Auto">("Auto")
   const [maxTargetCount, setMaxTargetCount] = useState("5")
+  const [uploadedRuleFiles, setUploadedRuleFiles] = useState<UploadedRuleFileDraft[]>([])
   const [simulatedConditions, setSimulatedConditions] = useState<ScanAnalystSimulatedCondition[]>(["new_hosts_found"])
   const [chatState, setChatState] = useState<ScanAnalystChatResponse | null>(null)
   const [draftPlan, setDraftPlan] = useState<ScanAnalystPlanProposalResponse | null>(null)
+  const [draftAnalysis, setDraftAnalysis] = useState<ScanAnalystResponse | null>(null)
+  const [draftSourceKey, setDraftSourceKey] = useState<string | null>(null)
+  const [isDraftDirty, setIsDraftDirty] = useState(false)
+  const [pendingAutonomousAnalysis, setPendingAutonomousAnalysis] = useState<ScanAnalystResponse | null>(null)
+  const [ignoredAutonomousSourceKey, setIgnoredAutonomousSourceKey] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [activeAction, setActiveAction] = useState<SendScanAnalystChatTurnInput["action"] | null>(null)
   const [activeSection, setActiveSection] = useState<ZiraWorkspaceSection>("ask")
@@ -608,28 +751,44 @@ export function ScanAnalystPage() {
     refetchInterval: 10000,
   })
 
-  const queuedJobId = chatState?.latestAnalysis.queuedJob?.id ?? ""
+  const autonomousAnalysis = statusQuery.data?.lastAutonomousAnalysis ?? null
+  const autonomousSourceKey = autonomousAnalysis
+    ? buildAnalysisSourceKey(autonomousAnalysis, statusQuery.data?.lastAutonomousActivity?.occurredAtUtc)
+    : null
+  const currentAnalysis = chatState?.latestAnalysis ?? draftAnalysis ?? autonomousAnalysis
+  const queuedJobId = currentAnalysis?.queuedJob?.id ?? ""
   const liveRunSummaryQuery = useWorkbenchQuery(
     ["scan-analyst", "run-summary", queuedJobId],
     (signal) => gateway.getScanAnalystRunSummary(queuedJobId, signal),
     {
-      enabled: queuedJobId.length > 0 && chatState?.operatingMode === "LiveData",
+      enabled: queuedJobId.length > 0 && currentAnalysis?.operatingMode === "LiveData",
       refetchInterval: 4000,
     },
   )
 
-  const activeRunSummary = chatState?.latestRunSummary ?? liveRunSummaryQuery.data ?? chatState?.latestAnalysis.runSummary ?? null
-  const currentAnalysis = chatState?.latestAnalysis ?? null
+  const activeRunSummary = chatState?.latestRunSummary ?? liveRunSummaryQuery.data ?? currentAnalysis?.runSummary ?? null
   const trimmedMessage = message.trim()
   const actionDisabledReason = !actorUserId
     ? "Open a demo workspace first so Zira has an operator identity for the session."
-    : trimmedMessage.length < 10
+    : trimmedMessage.length < 10 && !draftPlan
       ? "Enter at least 10 characters so Zira has enough context to act."
       : null
   const selectedSubnet = useMemo(
     () => (subnetsQuery.data ?? []).find((subnet) => subnet.id === subnetId) ?? null,
     [subnetId, subnetsQuery.data],
   )
+  const highlightedIssue = useMemo<HighlightedZiraIssue | null>(() => {
+    const title = searchParams.get("issueTitle")?.trim() ?? ""
+    const detail = searchParams.get("issueDetail")?.trim() ?? ""
+    if (!title && !detail) {
+      return null
+    }
+
+    return {
+      title,
+      detail,
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (!chatState) {
@@ -638,6 +797,44 @@ export function ScanAnalystPage() {
 
     conversationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }, [chatState])
+
+  useEffect(() => {
+    const requestedSection = searchParams.get("section")
+    if (
+      requestedSection === "ask"
+      || requestedSection === "proposal"
+      || requestedSection === "activity"
+      || requestedSection === "guardrails"
+    ) {
+      setActiveSection(requestedSection)
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    if (chatState || !autonomousAnalysis?.proposedPlan || !autonomousSourceKey) {
+      return
+    }
+
+    if (draftSourceKey === autonomousSourceKey) {
+      return
+    }
+
+    if (ignoredAutonomousSourceKey === autonomousSourceKey) {
+      return
+    }
+
+    if (draftPlan && isDraftDirty) {
+      setPendingAutonomousAnalysis(autonomousAnalysis)
+      return
+    }
+
+    setDraftAnalysis(autonomousAnalysis)
+    setDraftPlan(clonePlan(autonomousAnalysis.proposedPlan))
+    setDraftSourceKey(autonomousSourceKey)
+    setIsDraftDirty(false)
+    setPendingAutonomousAnalysis(null)
+    setIgnoredAutonomousSourceKey(null)
+  }, [autonomousAnalysis, autonomousSourceKey, chatState, draftPlan, draftSourceKey, ignoredAutonomousSourceKey, isDraftDirty])
 
   function actionLabel(action: SendScanAnalystChatTurnInput["action"]) {
     return ACTIONS.find((item) => item.value === action)?.label ?? action
@@ -653,6 +850,66 @@ export function ScanAnalystPage() {
         return "Zira is preparing the plan, queueing execution, and waiting for run output."
       default:
         return "Zira is working on your request."
+    }
+  }
+
+  function buildSubmissionMessage(action: SendScanAnalystChatTurnInput["action"]) {
+    if (trimmedMessage.length >= 10) {
+      return trimmedMessage
+    }
+
+    if (draftPlan) {
+      const actionLabel =
+        action === "CreateAndRun"
+          ? "Create and run"
+          : action === "CreatePlan"
+            ? "Create"
+            : "Review"
+      return `${actionLabel} the edited autonomous scan proposal "${draftPlan.name}" using the selected targets, rules, and operator notes.`
+    }
+
+    return trimmedMessage
+  }
+
+  function canSubmitAction(action: SendScanAnalystChatTurnInput["action"]) {
+    if (!actorUserId || chatMutation.isPending) {
+      return false
+    }
+
+    return trimmedMessage.length >= 10 || Boolean(draftPlan && action !== "RecommendOnly")
+  }
+
+  async function handleRuleFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ""
+    if (files.length === 0) {
+      return
+    }
+
+    const nextFiles: UploadedRuleFileDraft[] = []
+    for (const file of files) {
+      if (!isSupportedRuleUpload(file.name)) {
+        setSubmitError(`Rule file "${file.name}" is not supported. Use .yar, .yara, .yml, .yaml, .rules, or .txt.`)
+        continue
+      }
+
+      if (file.size <= 0 || file.size > MAX_RULE_UPLOAD_BYTES) {
+        setSubmitError(`Rule file "${file.name}" must be between 1 byte and 1 MB.`)
+        continue
+      }
+
+      const dataUrl = await readFileAsDataUrl(file)
+      nextFiles.push({
+        fileName: file.name,
+        contentBase64: toBase64Payload(dataUrl),
+        size: file.size,
+        scannerFamily: preferredCapability === "Auto" ? undefined : preferredCapability,
+      })
+    }
+
+    if (nextFiles.length > 0) {
+      setUploadedRuleFiles((current) => [...current, ...nextFiles].slice(0, 8))
+      setSubmitError(null)
     }
   }
 
@@ -677,20 +934,29 @@ export function ScanAnalystPage() {
         throw new Error("Open a demo workspace first so Zira has an operator identity for the session.")
       }
 
-      if (trimmedMessage.length < 10) {
-        throw new Error("Enter at least 10 characters so Zira has enough context to act.")
+      const submissionMessage = buildSubmissionMessage(action)
+      const startsFreshRecommendation = action === "RecommendOnly" && trimmedMessage.length >= 10
+      if (submissionMessage.length < 10) {
+        throw new Error("Enter at least 10 characters or open an editable proposal so Zira has enough context to act.")
       }
 
       return gateway.sendScanAnalystChatTurn({
-        sessionId: chatState?.sessionId,
+        sessionId: startsFreshRecommendation ? undefined : chatState?.sessionId,
         actorUserId,
-        message: trimmedMessage,
+        message: submissionMessage,
         action,
         subnetId: subnetId || undefined,
         preferredScannerCapability: preferredCapability === "Auto" ? undefined : preferredCapability,
         maxTargetCount: Number.parseInt(maxTargetCount, 10) || undefined,
-        editedPlan: draftPlan ?? undefined,
+        editedPlan: startsFreshRecommendation ? undefined : draftPlan ?? undefined,
         simulatedConditions: statusQuery.data?.operatingMode === "MockFallback" ? simulatedConditions : undefined,
+        uploadedRuleFiles: uploadedRuleFiles.length > 0
+          ? uploadedRuleFiles.map((file) => ({
+            fileName: file.fileName,
+            contentBase64: file.contentBase64,
+            scannerFamily: file.scannerFamily,
+          }))
+          : undefined,
       })
     },
     onMutate: (action) => {
@@ -712,11 +978,18 @@ export function ScanAnalystPage() {
       publishWidgetState(action === "CreateAndRun" ? "running" : action === "CreatePlan" ? "creating" : "analyzing", title, capability)
     },
     onSuccess: (response) => {
+      const sourceKey = buildAnalysisSourceKey(response.latestAnalysis, response.messages.at(-1)?.timestampUtc)
       setChatState(response)
+      setDraftAnalysis(response.latestAnalysis)
       setDraftPlan(clonePlan(response.latestAnalysis.proposedPlan))
+      setDraftSourceKey(sourceKey)
+      setIsDraftDirty(false)
+      setPendingAutonomousAnalysis(null)
+      setIgnoredAutonomousSourceKey(null)
       setActiveSection("proposal")
       setSubmitError(null)
       setActiveAction(null)
+      setUploadedRuleFiles([])
       const analysis = response.latestAnalysis
       const capability = analysis.proposedPlan.scannerCapability
       const title =
@@ -789,13 +1062,7 @@ export function ScanAnalystPage() {
     ? {
       ...baseStatus,
       completedPlans: liveCompletedPlans,
-      recentActions: liveCompletedPlans.slice(0, 3).map((plan) => ({
-        id: `legacy-job-${plan.id}`,
-        title: `${plan.scannerCapability} scan finished`,
-        summary: plan.summary,
-        occurredAtUtc: plan.completedAtUtc,
-        status: plan.outcome,
-      })),
+      recentActions: mergeLiveRecentActions(baseStatus.recentActions, liveCompletedPlans),
     }
     : baseStatus
 
@@ -819,10 +1086,12 @@ export function ScanAnalystPage() {
   }
 
   function updateDraftPlan(patch: Partial<ScanAnalystPlanProposalResponse>) {
+    setIsDraftDirty(true)
     setDraftPlan((previous) => (previous ? { ...previous, ...patch } : previous))
   }
 
   function toggleTarget(targetId: string) {
+    setIsDraftDirty(true)
     setDraftPlan((previous) => {
       if (!previous) {
         return previous
@@ -840,6 +1109,7 @@ export function ScanAnalystPage() {
   }
 
   function toggleRule(ruleRevisionId: string) {
+    setIsDraftDirty(true)
     setDraftPlan((previous) => {
       if (!previous) {
         return previous
@@ -854,6 +1124,21 @@ export function ScanAnalystPage() {
         ruleRevisionIds: nextRuleIds,
       }
     })
+  }
+
+  function loadPendingAutonomousProposal() {
+    if (!pendingAutonomousAnalysis) {
+      return
+    }
+
+    setChatState(null)
+    setDraftAnalysis(pendingAutonomousAnalysis)
+    setDraftPlan(clonePlan(pendingAutonomousAnalysis.proposedPlan))
+    setDraftSourceKey(buildAnalysisSourceKey(pendingAutonomousAnalysis, statusQuery.data?.lastAutonomousActivity?.occurredAtUtc))
+    setIsDraftDirty(false)
+    setPendingAutonomousAnalysis(null)
+    setIgnoredAutonomousSourceKey(null)
+    setActiveSection("proposal")
   }
 
   return (
@@ -931,6 +1216,46 @@ export function ScanAnalystPage() {
               </Button>
             ))}
           </div>
+          <div className="rounded-2xl border border-border/60 bg-surface-2/35 p-3 lg:col-span-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="wb-kicker">Optional Rule Upload</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Attach YARA, Sigma, Snort, or Suricata rule files for this request. Zira will stage them on the backend and use them as the preferred rule source.
+                </p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition hover:bg-muted">
+                <UploadCloud className="h-4 w-4" />
+                Upload rules
+                <input
+                  type="file"
+                  multiple
+                  accept=".yar,.yara,.yml,.yaml,.rules,.txt"
+                  className="sr-only"
+                  onChange={(event) => { void handleRuleFileUpload(event) }}
+                />
+              </label>
+            </div>
+            {uploadedRuleFiles.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {uploadedRuleFiles.map((file) => (
+                  <span key={`${file.fileName}-${file.size}`} className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs">
+                    <span>{file.fileName}</span>
+                    <span className="text-muted-foreground">{Math.ceil(file.size / 1024)} KB</span>
+                    {file.scannerFamily ? <span className="text-muted-foreground">{file.scannerFamily}</span> : null}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${file.fileName}`}
+                      className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                      onClick={() => setUploadedRuleFiles((current) => current.filter((item) => item !== file))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <label className="space-y-1">
             <span className="wb-kicker">Subnet Focus</span>
             <select
@@ -972,7 +1297,7 @@ export function ScanAnalystPage() {
               key={action.value}
               type="button"
               onClick={() => chatMutation.mutate(action.value)}
-              disabled={chatMutation.isPending}
+              disabled={!canSubmitAction(action.value)}
               title={action.description}
             >
               {chatMutation.isPending && activeAction === action.value ? `${action.label}...` : action.label}
@@ -1062,7 +1387,7 @@ export function ScanAnalystPage() {
 
       {activeSection === "activity" ? (
         <>
-          <StatusOverview status={status} />
+          <StatusOverview status={status} highlightedIssue={highlightedIssue} />
 
       <motion.article className="grid gap-4" variants={panelMotion}>
         <div ref={conversationRef}>
@@ -1249,8 +1574,41 @@ export function ScanAnalystPage() {
                 <p className="wb-kicker">Plan Editor</p>
                 <h2 className="mt-1 text-sm font-semibold tracking-tight">Refine before the next run</h2>
               </div>
-              {draftPlan ? <StatusBadge value={draftPlan.status} /> : null}
+              <div className="flex flex-wrap items-center gap-2">
+                {isDraftDirty ? <span className="wb-chip border-amber-500/35 bg-amber-500/10 text-amber-100">Unsaved edits</span> : null}
+                {draftPlan ? <StatusBadge value={draftPlan.status} /> : null}
+              </div>
             </div>
+
+            {pendingAutonomousAnalysis ? (
+              <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-3 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-amber-100">A newer autonomous proposal is available</p>
+                    <p className="mt-1 text-muted-foreground">
+                      Zira created another draft while this proposal has local edits. Keep editing this one, or load the newer autonomous draft.
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">{pendingAutonomousAnalysis.summary}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setIgnoredAutonomousSourceKey(autonomousSourceKey)
+                        setPendingAutonomousAnalysis(null)
+                      }}
+                    >
+                      Keep current edits
+                    </Button>
+                    <Button type="button" size="sm" onClick={loadPendingAutonomousProposal}>
+                      Load newer proposal
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {draftPlan ? (
               <>
@@ -1347,6 +1705,32 @@ export function ScanAnalystPage() {
                         })}
                       </TableBody>
                     </Table>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/10 p-3">
+                  <div>
+                    <p className="text-sm font-medium">Ready to act on the edited proposal</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Zira will send the current editor values back to the backend before creating or running the scan.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => chatMutation.mutate("CreatePlan")}
+                      disabled={!canSubmitAction("CreatePlan")}
+                    >
+                      {chatMutation.isPending && activeAction === "CreatePlan" ? "Creating..." : "Create scan plan"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => chatMutation.mutate("CreateAndRun")}
+                      disabled={!canSubmitAction("CreateAndRun")}
+                    >
+                      {chatMutation.isPending && activeAction === "CreateAndRun" ? "Running..." : "Run scan from edited plan"}
+                    </Button>
                   </div>
                 </div>
               </>

@@ -21,6 +21,7 @@ import {
   WorkbenchInspectorDrawer,
   useWorkbenchInspector,
 } from "@/components/workbench/workbench-inspector"
+import { AegisStatusWidget } from "@/components/workbench/aegis-status-widget"
 import { ZiraStatusWidget } from "@/components/workbench/zira-status-widget"
 import {
   getWorkbenchNavByModule,
@@ -465,7 +466,10 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                 <Search className="h-4 w-4" />
               </Button>
 
-              <ZiraStatusWidget />
+              <div className="flex items-center gap-2">
+                <ZiraStatusWidget />
+                <AegisStatusWidget />
+              </div>
 
               <Sheet open={notificationOpen} onOpenChange={setNotificationOpen}>
                 <SheetTrigger

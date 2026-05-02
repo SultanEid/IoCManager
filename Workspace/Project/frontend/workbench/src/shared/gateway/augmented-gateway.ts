@@ -65,6 +65,7 @@ import type {
   RetryDistributionJobInput,
   SendAlertEmailUpdateInput,
   SendScanAnalystChatTurnInput,
+  TranslateReportMitigationInput,
   UpdateScanAnalystPostureInput,
   AssignWorkbenchRolePermissionInput,
   ImportRuleFileInput,
@@ -230,6 +231,10 @@ export class AugmentedGateway implements Gateway {
 
   generateReportMitigationFromScanJob(scanJobId: string, input: GenerateReportMitigationFromScanJobInput) {
     return this.source.generateReportMitigationFromScanJob(scanJobId, input)
+  }
+
+  translateReportMitigationPlan(reportId: string, input: TranslateReportMitigationInput, signal?: AbortSignal) {
+    return this.source.translateReportMitigationPlan(reportId, input, signal)
   }
 
   listReportMitigationPlans(signal?: AbortSignal) {

@@ -27,6 +27,7 @@ import type {
   ReportResponse,
   ReportMitigationListResponse,
   ReportMitigationResponse,
+  ReportMitigationTranslationResponse,
   ScanJobResponse,
   ScanJobTargetExecutionResponse,
   ScanAnalystAgentStatusResponse,
@@ -87,6 +88,7 @@ import type {
   GenerateReportMitigationInput,
   GenerateReportMitigationFromAlertInput,
   GenerateReportMitigationFromScanJobInput,
+  TranslateReportMitigationInput,
   GraphRelationshipsVM,
   IocListQuery,
   ManagedServerInventoryFilters,
@@ -1095,6 +1097,26 @@ export class MockGateway implements Gateway {
       includeWorkspaceContext: input.includeWorkspaceContext,
       actorUserId: input.actorUserId,
       regenerate: input.regenerate,
+    })
+  }
+
+  async translateReportMitigationPlan(reportId: string, input: TranslateReportMitigationInput, _signal?: AbortSignal): Promise<ReportMitigationTranslationResponse> {
+    consume(_signal)
+    const report = this.generatedReports.find((item) => item.id === reportId)
+    if (!report) {
+      throw new Error("Report not found.")
+    }
+
+    const parsed = JSON.parse(report.summaryJson) as { result?: ReportMitigationResponse }
+    const mitigationPlan = parsed.result?.mitigationPlan
+    if (!mitigationPlan) {
+      throw new Error("The selected report does not contain a mitigation plan.")
+    }
+
+    return copy({
+      targetLanguage: input.targetLanguage,
+      mitigationPlan,
+      translatedAtUtc: new Date().toISOString(),
     })
   }
 

@@ -55,6 +55,8 @@ function Start-Backend {
 `$env:Auth__LocalFallback__Password='don'
 `$env:Auth__LocalFallback__Roles='IT,Analyst,Lead,Admin,DEV'
 `$env:IOC_MANAGER_PROMOTE_YARA_HIGH_FOR_TESTING='true'
+`$env:ScanAnalystPoc__StrictLiveLlmMode='true'
+`$env:AegisMitigation__StrictLiveLlmMode='true'
 `$env:AppStartup__SkipHostedWorkers='true'
 `$env:AppStartup__EnableLegacyScanPipelineWorker='true'
 `$env:AppStartup__EnableScanAnalystPocAutonomyWorker='true'

@@ -32,7 +32,13 @@ public sealed record ScanAnalystChatRequestDto(
     string? PreferredScannerCapability,
     int? MaxTargetCount,
     ScanAnalystPlanProposalDto? EditedPlan,
-    IReadOnlyList<string>? SimulatedConditions);
+    IReadOnlyList<string>? SimulatedConditions,
+    IReadOnlyList<ScanAnalystUploadedRuleFileDto>? UploadedRuleFiles);
+
+public sealed record ScanAnalystUploadedRuleFileDto(
+    string FileName,
+    string ContentBase64,
+    string? ScannerFamily);
 
 public sealed record ScanAnalystChatResponseDto(
     Guid SessionId,
@@ -61,6 +67,7 @@ public sealed record ScanAnalystAgentStatusDto(
     IReadOnlyList<string> ActiveMockConditions,
     ScanAnalystAgentParametersDto Parameters,
     ScanAnalystAutonomousActivityDto? LastAutonomousActivity,
+    ScanAnalystResponseDto? LastAutonomousAnalysis,
     string? PersonaName,
     string? CurrentActivity,
     string? LatestActionSummary,

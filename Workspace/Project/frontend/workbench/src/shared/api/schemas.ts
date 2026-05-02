@@ -888,6 +888,7 @@ export const scanAnalystAgentStatusResponseSchema = z.object({
   activeMockConditions: z.array(z.string()),
   parameters: scanAnalystAgentParametersResponseSchema,
   lastAutonomousActivity: scanAnalystAutonomousActivityResponseSchema.nullable(),
+  lastAutonomousAnalysis: scanAnalystResponseSchema.nullable().optional(),
   personaName: z.string().optional(),
   currentActivity: z.string().optional(),
   latestActionSummary: z.string().optional(),
@@ -1158,6 +1159,12 @@ export const reportMitigationResponseSchema = z.object({
   generatedAt: z.string(),
   sourceReportId: z.string().uuid().nullable(),
   persistedMitigationReport: reportResponseSchema.nullable(),
+})
+
+export const reportMitigationTranslationResponseSchema = z.object({
+  targetLanguage: z.string(),
+  mitigationPlan: reportMitigationPlanResponseSchema,
+  translatedAtUtc: z.string(),
 })
 
 export const reportMitigationListItemResponseSchema = z.object({
@@ -1757,6 +1764,7 @@ export type ReportMitigationTimelineStepResponse = z.infer<typeof reportMitigati
 export type ReportMitigationScanRecommendationResponse = z.infer<typeof reportMitigationScanRecommendationResponseSchema>
 export type ReportMitigationPlanResponse = z.infer<typeof reportMitigationPlanResponseSchema>
 export type ReportMitigationResponse = z.infer<typeof reportMitigationResponseSchema>
+export type ReportMitigationTranslationResponse = z.infer<typeof reportMitigationTranslationResponseSchema>
 export type ReportMitigationListItemResponse = z.infer<typeof reportMitigationListItemResponseSchema>
 export type ReportMitigationListResponse = z.infer<typeof reportMitigationListResponseSchema>
 export type PowerBiWorkspaceResponse = z.infer<typeof powerBiWorkspaceResponseSchema>
