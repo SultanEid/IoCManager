@@ -34,6 +34,23 @@ public sealed class LegacyScanPipelinePainLevelTests
             .Be("30d82fca708abf90288aef2fc876ff57e90fcb4bd76833f738597d9ca611cef9");
     }
 
+    [Theory]
+    [InlineData("""{"level":"High"}""")]
+    [InlineData("""{"Level":"High"}""")]
+    [InlineData("""{"rule":{"level":"High"}}""")]
+    public void ResolveSigmaFindingSeverity_ReadsSigmaRuleLevel(string rawPayload)
+    {
+        var ioc = BuildIoc(
+            scannerType: "SIGMA",
+            ruleName: "IOC Manager Test - CMD Marker",
+            rawPayload: rawPayload,
+            sigmaDetail: new LegacyPipelineSigmaDetailEntity());
+
+        LegacyScanPipelineService.ResolveSigmaFindingSeverity(ioc)
+            .Should()
+            .Be("High");
+    }
+
     [Fact]
     public void ResolvePainLevel_NetworkSourceOrDestinationIp_UsesIpTier()
     {

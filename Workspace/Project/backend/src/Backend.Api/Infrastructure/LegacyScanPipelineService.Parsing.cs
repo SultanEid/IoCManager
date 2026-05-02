@@ -398,13 +398,27 @@ public sealed partial class LegacyScanPipelineService
             null,
             new LegacyPipelinePersistedSigmaDetail(
                 LegacyScanPipelineHelpers.ReadJsonString(detection, "logsource") ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "LogSource"),
-                LegacyScanPipelineHelpers.ReadJsonString(detection, "severity") ?? LegacyScanPipelineHelpers.ReadJsonPath(detection, "document", "data", "Level"),
+                ReadSigmaSeverity(detection),
                 LegacyScanPipelineHelpers.ReadJsonPath(detection, "document", "data", "Event", "EventData", "CommandLine")
                     ?? LegacyScanPipelineHelpers.ReadJsonPath(detection, "document", "data", "CommandLine")
                     ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "CommandLine")
                     ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "message")),
             null);
     }
+
+    private static string? ReadSigmaSeverity(JsonElement detection)
+        => LegacyScanPipelineHelpers.CleanOrNull(
+            LegacyScanPipelineHelpers.ReadJsonString(detection, "severity")
+            ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "Severity")
+            ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "level")
+            ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "Level")
+            ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "rule_level")
+            ?? LegacyScanPipelineHelpers.ReadJsonString(detection, "ruleLevel")
+            ?? LegacyScanPipelineHelpers.ReadJsonPath(detection, "rule", "level")
+            ?? LegacyScanPipelineHelpers.ReadJsonPath(detection, "Rule", "Level")
+            ?? LegacyScanPipelineHelpers.ReadJsonPath(detection, "sigma", "level")
+            ?? LegacyScanPipelineHelpers.ReadJsonPath(detection, "metadata", "level")
+            ?? LegacyScanPipelineHelpers.ReadJsonPath(detection, "document", "data", "Level"));
 
     private static IEnumerable<LegacyPipelinePersistedIoc> ParseNetworkFindings(string family, LegacyScannerEnvelope envelope, LegacyPipelineTargetEntity target, DateTimeOffset timestampUtc)
     {
