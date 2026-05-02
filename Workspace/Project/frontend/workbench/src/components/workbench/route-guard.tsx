@@ -46,11 +46,16 @@ export function RouteGuard({
   }, [canAccessRoute, defaultRoute, hasRequiredRole, loading, pathname, router, session])
 
   if (loading || !session) {
-    return <LoadingState label="Checking session" />
+    return (
+      <LoadingState
+        label="Preparing secure workspace"
+        description="Restoring your session and keeping the workbench shell stable."
+      />
+    )
   }
 
   if (!canAccessRoute && pathname !== defaultRoute) {
-    return <LoadingState label="Redirecting to permitted route" />
+    return <LoadingState label="Opening permitted workspace" />
   }
 
   if (!hasRequiredRole) {

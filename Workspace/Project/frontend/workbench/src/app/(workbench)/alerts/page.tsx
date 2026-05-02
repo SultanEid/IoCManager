@@ -390,17 +390,25 @@ export default function AlertsPage() {
             onChange={(event) => setFilters((current) => ({ ...current, targetId: event.target.value.trim(), page: 1 }))}
             placeholder="Target id"
           />
-          <Input
-            type="date"
-            value={filters.fromUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, fromUtc: event.target.value, page: 1 }))}
-          />
-          <Input
-            type="date"
-            value={filters.toUtc}
-            onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value, page: 1 }))}
-          />
-          <div className="flex flex-wrap items-center gap-2">
+          <label className="space-y-1.5">
+            <span className="block text-xs font-semibold uppercase tracking-[0.06em] text-primary">Detected from</span>
+            <Input
+              aria-label="Detected from date"
+              type="date"
+              value={filters.fromUtc}
+              onChange={(event) => setFilters((current) => ({ ...current, fromUtc: event.target.value, page: 1 }))}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-xs font-semibold uppercase tracking-[0.06em] text-primary">Detected to</span>
+            <Input
+              aria-label="Detected to date"
+              type="date"
+              value={filters.toUtc}
+              onChange={(event) => setFilters((current) => ({ ...current, toUtc: event.target.value, page: 1 }))}
+            />
+          </label>
+          <div className="flex flex-wrap items-end gap-2">
             <Button type="button" size="sm" onClick={applyFilters}>
               Apply
             </Button>

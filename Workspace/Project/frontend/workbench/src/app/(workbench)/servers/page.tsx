@@ -80,6 +80,7 @@ export default function ServersPage() {
   const [deleteBlocked, setDeleteBlocked] = useState<ReturnType<typeof parseLegacyNetworkDeletionBlocked>>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [openNetworkActionsId, setOpenNetworkActionsId] = useState<string | null>(null)
 
   const networksQuery = useWorkbenchQuery(["legacy-pipeline", "networks", refreshKey], (signal) => listLegacyNetworks(signal), {
     refetchInterval: 15_000,
@@ -470,19 +471,40 @@ export default function ServersPage() {
                       <Button onClick={() => runDiscovery(network.id)} disabled={discoveringId === network.id}>
                         {discoveringId === network.id ? "Discovering..." : "Run Discovery"}
                       </Button>
-                      <details className="relative">
-                        <summary className="inline-flex h-9 cursor-pointer list-none items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted [&::-webkit-details-marker]:hidden">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="inline-flex h-9 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                          aria-expanded={openNetworkActionsId === network.id}
+                          onClick={() => setOpenNetworkActionsId((current) => current === network.id ? null : network.id)}
+                        >
                           More
-                        </summary>
+                        </button>
+                        {openNetworkActionsId === network.id ? (
                         <div className="absolute right-0 z-20 mt-2 grid w-48 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
-                          <button type="button" className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2" onClick={() => beginEditNetwork(network)}>
+                          <button
+                            type="button"
+                            className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+                            onClick={() => {
+                              setOpenNetworkActionsId(null)
+                              beginEditNetwork(network)
+                            }}
+                          >
                             Edit settings
                           </button>
-                          <button type="button" className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10" onClick={() => requestDelete(network.id)}>
+                          <button
+                            type="button"
+                            className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10"
+                            onClick={() => {
+                              setOpenNetworkActionsId(null)
+                              requestDelete(network.id)
+                            }}
+                          >
                             Delete subnet
                           </button>
                         </div>
-                      </details>
+                        ) : null}
+                      </div>
                       {confirmingDeleteNetworkId === network.id ? (
                         <>
                           <Button
