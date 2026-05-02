@@ -75,7 +75,11 @@ public sealed partial class LegacyScanPipelineService
             job.PlanId?.ToString(CultureInfo.InvariantCulture),
             scope?.ScannerFamily ?? "unknown",
             scope?.RuleInputMode ?? "unknown",
-            scope?.RulePath,
+            scope is null
+                ? null
+                : string.Equals(scope.RuleInputMode, "hostPath", StringComparison.OrdinalIgnoreCase)
+                    ? scope.RulePath
+                    : scope.StagedRulePath,
             scope is null ? null : LegacyScanPipelineHelpers.ResolveExecutionMode(scope.ScannerFamily, scope.Options),
             job.TriggerType ?? "Manual",
             job.Status ?? "Queued",

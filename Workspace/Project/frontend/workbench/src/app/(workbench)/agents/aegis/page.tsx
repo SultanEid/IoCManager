@@ -98,6 +98,7 @@ function buildLegacyAegisDocumentText(
     triggerType: string
     status: string
     summary: string
+    ruleInputMode: string
     rulePath: string | null
     executionMode: string | null
     queuedAtUtc: string
@@ -116,13 +117,14 @@ function buildLegacyAegisDocumentText(
     finishedAtUtc: string | null
   }>,
 ) {
+  const ruleSource = formatRuleSource(job.ruleInputMode, job.rulePath)
   const lines = [
     `Legacy scan job id: ${job.id}`,
     `Scanner family: ${job.scannerFamily}`,
     `Trigger type: ${job.triggerType}`,
     `Status: ${job.status}`,
     `Execution mode: ${job.executionMode ?? "Not recorded"}`,
-    `Rule path: ${job.rulePath?.trim() ? job.rulePath : "Not recorded"}`,
+    `Rule source: ${ruleSource}`,
     `Queued at UTC: ${job.queuedAtUtc}`,
     `Started at UTC: ${job.startedAtUtc ?? "Not recorded"}`,
     `Finished at UTC: ${job.finishedAtUtc ?? "Not recorded"}`,
@@ -135,6 +137,19 @@ function buildLegacyAegisDocumentText(
   ]
 
   return lines.join("\n")
+}
+
+function getPathLeaf(value: string) {
+  return value.split(/[\\/]/).filter(Boolean).pop() ?? value
+}
+
+function formatRuleSource(ruleInputMode: string | null | undefined, rulePath: string | null | undefined) {
+  const trimmedPath = rulePath?.trim()
+  if (!trimmedPath) {
+    return ruleInputMode === "upload" ? "Uploaded rule pending" : "Not recorded"
+  }
+
+  return ruleInputMode === "upload" ? `Uploaded rule: ${getPathLeaf(trimmedPath)}` : trimmedPath
 }
 
 function ActionGroup({ title, actions }: { title: string; actions: ReportMitigationActionResponse[] }) {
@@ -809,7 +824,7 @@ export default function AegisPage() {
                   Targets: {selectedScanJob.completedTargets}/{selectedScanJob.totalTargets} complete | Failed: {selectedScanJob.failedTargets} | No findings: {selectedScanJob.noFindingsTargets}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Rule file: {selectedScanJob.rulePath?.trim() ? selectedScanJob.rulePath : "Not recorded"}
+                  Rule file: {formatRuleSource(selectedScanJob.ruleInputMode, selectedScanJob.rulePath)}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {existingScanPlan ? (

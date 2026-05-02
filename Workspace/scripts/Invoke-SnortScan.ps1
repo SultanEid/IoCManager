@@ -215,6 +215,31 @@ function Invoke-LocalProcess {
     return $process.ExitCode
 }
 
+function Test-TcpPort {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetHost,
+
+        [int]$Port = 22,
+
+        [int]$TimeoutMilliseconds = 2000
+    )
+
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $connectTask = $client.ConnectAsync($TargetHost, $Port)
+        if (-not $connectTask.Wait($TimeoutMilliseconds)) {
+            return $false
+        }
+
+        return $client.Connected
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
+    }
+}
+
 function Get-HuntWindowStartUtc {
     if ($PSBoundParameters.ContainsKey('Since')) {
         return $Since.ToUniversalTime()
@@ -499,7 +524,8 @@ switch ($Mode) {
             $exitCode = Invoke-LocalProcess -Executable $LocalSnortExe -Arguments $args -StdOutPath $stdoutFile -StdErrPath $stderrFile
 
             if ($exitCode -ne 0) {
-                $stderr = if (Test-Path $stderrFile) { (Get-Content $stderrFile -Raw).Trim() } else { '' }
+                $stderrContent = if (Test-Path $stderrFile) { Get-Content $stderrFile -Raw } else { $null }
+                $stderr = if ($null -ne $stderrContent) { $stderrContent.Trim() } else { '' }
                 throw "Snort PCAP execution failed with exit code $exitCode. $stderr"
             }
 
@@ -507,6 +533,10 @@ switch ($Mode) {
                 $outputLines = @(Get-Content $stdoutFile)
             }
         } else {
+            if (-not (Test-TcpPort -TargetHost $SensorIP -Port 22)) {
+                throw "Snort PCAP execution requires either local snort.exe/snort.conf or reachable sensor SSH on ${SensorIP}:22."
+            }
+
             Sync-SensorRules
             $remotePcapPath = "/tmp/detechtive_snort_pcap_${script:RunTimestamp}_${script:RunNonce}$([System.IO.Path]::GetExtension($FilePath))"
             try {

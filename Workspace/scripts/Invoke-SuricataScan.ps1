@@ -33,6 +33,15 @@ $script:RunTimestamp = Get-Date -Format "yyyyMMdd_HHmmss_fff"
 $script:RunNonce = [guid]::NewGuid().ToString('N')
 $script:BashSingleQuoteEscape = [string][char]39 + '"' + [string][char]39 + '"' + [string][char]39
 
+$suricataFallbackRoot = "C:\Tools\Tools\Suricata"
+if (-not (Test-Path -LiteralPath $LocalSuricataExe) -and (Test-Path -LiteralPath (Join-Path $suricataFallbackRoot "suricata.exe"))) {
+    $LocalSuricataExe = Join-Path $suricataFallbackRoot "suricata.exe"
+}
+
+if (-not (Test-Path -LiteralPath $LocalSuricataConfig) -and (Test-Path -LiteralPath (Join-Path $suricataFallbackRoot "suricata.yaml"))) {
+    $LocalSuricataConfig = Join-Path $suricataFallbackRoot "suricata.yaml"
+}
+
 function Build-Envelope {
     param($LogObj, $TargetServer, $OsType, $CmdLine)
 
@@ -551,7 +560,12 @@ switch ($Mode) {
 
             $exitCode = Invoke-LocalProcess -Executable $LocalSuricataExe -Arguments $suriArgs -StdOutPath $stdoutFile -StdErrPath $stderrFile
             if ($exitCode -ne 0) {
-                $stderr = if (Test-Path $stderrFile) { (Get-Content $stderrFile -Raw).Trim() } else { '' }
+                $stderrContent = if (Test-Path $stderrFile) { Get-Content $stderrFile -Raw } else { $null }
+                $stderr = if ($null -ne $stderrContent) { $stderrContent.Trim() } else { '' }
+                if ($exitCode -eq -1073741515 -and [string]::IsNullOrWhiteSpace($stderr)) {
+                    $stderr = "The local Suricata binary could not start. This usually means a required runtime DLL or packet-processing dependency is missing."
+                }
+
                 throw "Suricata PCAP execution failed with exit code $exitCode. $stderr"
             }
 
