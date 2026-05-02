@@ -144,6 +144,7 @@ public sealed partial class LegacyScanPipelineService
                     startInfo.ArgumentList.Add(LegacyScanPipelineHelpers.ResolveExecutionTargetOs(target, scope.Options));
                     startInfo.ArgumentList.Add("-MinutesBack");
                     startInfo.ArgumentList.Add(LegacyScanPipelineHelpers.GetOption(scope.Options, "minutesBack") ?? options.DefaultSigmaMinutesBack.ToString(CultureInfo.InvariantCulture));
+                    if (LegacyScanPipelineHelpers.ReadBoolOption(scope.Options, "scanEntireLog")) startInfo.ArgumentList.Add("-ScanEntireLog");
                     startInfo.ArgumentList.Add("-CustomRule");
                     startInfo.ArgumentList.Add(sigmaRuleArgument);
                     if (options.AcceptNewHostKey) startInfo.ArgumentList.Add("-AcceptNewHostKey");
@@ -295,10 +296,10 @@ public sealed partial class LegacyScanPipelineService
 
         return normalized switch
         {
-            "yara" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-YaraScan.ps1"),
-            "sigma" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-SigmaScan.ps1"),
-            "snort" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-SnortScan.ps1"),
-            "suricata" => LegacyScanPipelineHelpers.ResolvePath("Workspace/scripts/Invoke-SuricataScan.ps1"),
+            "yara" => LegacyScanPipelineHelpers.ResolvePath("../scripts/Invoke-YaraScan.ps1"),
+            "sigma" => LegacyScanPipelineHelpers.ResolvePath("../scripts/Invoke-SigmaScan.ps1"),
+            "snort" => LegacyScanPipelineHelpers.ResolvePath("../scripts/Invoke-SnortScan.ps1"),
+            "suricata" => LegacyScanPipelineHelpers.ResolvePath("../scripts/Invoke-SuricataScan.ps1"),
             _ => throw new ArgumentException($"Unsupported scanner family '{scannerFamily}'."),
         };
     }
