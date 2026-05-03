@@ -1,0 +1,108 @@
+table 'Dim_Calendar 4'
+	lineageTag: 41e3a021-16ed-45c5-99e6-0cd0773f8b92
+	sourceLineageTag: a0deb8f7-c837-4d8e-b4c2-72984c9bad24
+
+	column Date
+		dataType: dateTime
+		isNullable: false
+		formatString: General Number
+		lineageTag: 3e5356eb-4ce6-4798-ac47-0e745e31ee3d
+		sourceLineageTag: 454c96bd-7f3f-4ed7-8d24-2e4382a1fe46
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Date
+
+		annotation SummarizationSetBy = User
+
+	column Year
+		dataType: int64
+		formatString: 0
+		lineageTag: 378189ea-bf64-4109-a54c-a321ae4485e8
+		sourceLineageTag: 66a3a748-4d93-4f4d-a9c7-28009e81ec6f
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Year
+
+		annotation SummarizationSetBy = User
+
+	column 'Month Number'
+		dataType: int64
+		formatString: 0
+		lineageTag: 015689dc-6fd0-4e52-bf1d-cf066f506207
+		sourceLineageTag: 1b3b9857-3b98-4667-b014-4b8967fe0932
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Month Number
+
+		annotation SummarizationSetBy = User
+
+	column 'Month Name'
+		dataType: string
+		lineageTag: ed0298b2-5296-49fb-958c-09eb8231caef
+		sourceLineageTag: ddf6436b-320e-4715-af50-add5e44ada2a
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Month Name
+
+		annotation SummarizationSetBy = User
+
+	column Quarter
+		dataType: string
+		lineageTag: 1a090ddd-8a4e-450a-9456-8f4ac10eb8a5
+		sourceLineageTag: 0521690d-194d-4314-b319-c565567814e0
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Quarter
+
+		annotation SummarizationSetBy = User
+
+	column 'Year Month'
+		dataType: string
+		lineageTag: 67d524b9-7ba8-45da-8f42-3af81b23cfe2
+		sourceLineageTag: 4e59a729-d5fa-438d-9b5a-7e9ef3eac17c
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Year Month
+
+		annotation SummarizationSetBy = User
+
+	column 'Day of Week'
+		dataType: string
+		lineageTag: 66cfe182-1e27-4411-b90d-88fa67256068
+		sourceLineageTag: 523573ea-4934-4267-8110-76076790e670
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Day of Week
+
+		annotation SummarizationSetBy = User
+
+	hierarchy 'Year Hierarchy'
+		lineageTag: 030903b9-535d-46b0-ad1a-c1450f1c6252
+		sourceLineageTag: 1091e340-7425-490c-8290-2ee7ea861959
+
+		level Year
+			lineageTag: 1f8896ca-640b-43d3-9c21-ed577238d6e2
+			sourceLineageTag: 9933722f-be2a-45fb-b6f3-f577b29c091a
+			column: Year
+
+		level Quarter
+			lineageTag: 03b5aad1-c9ac-41f8-8d1d-94f31a42c66c
+			sourceLineageTag: 741ca909-d366-4b06-bfb7-c627284e8583
+			column: Quarter
+
+		level 'Month Number'
+			lineageTag: a4c99dc4-26e4-43d1-b58c-1bd4d00655ad
+			sourceLineageTag: 700eec20-bd73-412a-bb8a-c45835644713
+			column: 'Month Number'
+
+		level 'Day of Week'
+			lineageTag: fc3a6e4c-63ee-483d-9763-c66e0bc4af27
+			sourceLineageTag: b8f65e35-5f95-404b-86c8-6b638198c8a1
+			column: 'Day of Week'
+
+	partition 'Dim_Calendar 4' = entity
+		mode: directQuery
+		source
+			entityName: Dim_Calendar
+			expressionSource: 'DirectQuery to AS - DeTechTive_semantic_model 3'
+

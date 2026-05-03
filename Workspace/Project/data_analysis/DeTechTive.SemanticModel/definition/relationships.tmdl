@@ -1,0 +1,12 @@
+relationship c4de6c3d-2a42-409f-a498-2d3e34533995
+	fromColumn: 'Target 4'.NetworkID
+	toColumn: 'NETWORK 4'.NetworkID
+
+relationship 10fe48ce-bbdb-4bf0-b1eb-28568a966165
+	fromColumn: 'Fact_IOCs 3'.TimestampUtc
+	toColumn: 'Dim_Calendar 4'.Date
+
+relationship 0d210bea-da7d-4497-a1cc-499d00128572
+	fromColumn: 'Fact_IOCs 3'.TargetServer_IP
+	toColumn: 'Target 4'.IPAddress
+

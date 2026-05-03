@@ -1,0 +1,232 @@
+table 'Fact_IOCs 3'
+	lineageTag: 3227e262-1c88-4aee-ba00-a622e6b055cd
+	sourceLineageTag: b691fdd2-f743-4dc0-80cf-cad674f7ce25
+
+	column IOC_Id
+		dataType: string
+		lineageTag: 52bdf9ac-8432-471d-867b-9243b21f56c3
+		sourceLineageTag: 081e86cf-4980-4213-9227-0ca984bff542
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: IOC_Id
+
+		annotation SummarizationSetBy = User
+
+	column TimestampUtc
+		dataType: dateTime
+		formatString: General Number
+		lineageTag: 576c37e3-ff7e-4354-af6a-d008c2239270
+		sourceLineageTag: cc1c8bea-f5e6-48df-ae00-cce388f7e7a8
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: TimestampUtc
+
+		annotation SummarizationSetBy = User
+
+	column ScannerType
+		dataType: string
+		lineageTag: 4efcd5f6-65e9-4090-95b7-0e688d40fc86
+		sourceLineageTag: e2cf719e-711e-4487-aeb0-f335c0c54772
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: ScannerType
+
+		annotation SummarizationSetBy = User
+
+	column TargetServer_IP
+		dataType: string
+		lineageTag: 9ce5dd1a-9984-4eb2-b8a3-4e293fdfd2d6
+		sourceLineageTag: 329da955-453e-4aef-9fa3-b3dfb444ac58
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: TargetServer_IP
+
+		annotation SummarizationSetBy = User
+
+	column TargetID
+		dataType: int64
+		formatString: 0
+		lineageTag: 427a0e73-0692-4b28-bf31-b8cc4b8b7579
+		sourceLineageTag: 38283e26-6c79-4534-a5d8-74a4904491fb
+		dataCategory: Uncategorized
+		summarizeBy: count
+		sourceColumn: TargetID
+
+		annotation SummarizationSetBy = User
+
+	column TargetOsType
+		dataType: string
+		lineageTag: 38b925eb-6197-409a-89e9-b0fcd826ba8a
+		sourceLineageTag: 212c1e87-5f4c-47e8-b81e-9d6de174325e
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: TargetOsType
+
+		annotation SummarizationSetBy = User
+
+	column RuleName
+		dataType: string
+		lineageTag: e56dde42-8332-4e9d-b6e4-e654f071e198
+		sourceLineageTag: bfca36aa-66fa-4912-904f-8f46f47737b2
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: RuleName
+
+		annotation SummarizationSetBy = User
+
+	column JSON_Snort_Description
+		dataType: string
+		lineageTag: 63599089-bb5c-453e-ad67-b6ef44fe9f33
+		sourceLineageTag: e64806dc-1931-4144-a24c-672b833a5348
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: JSON_Snort_Description
+
+		annotation SummarizationSetBy = User
+
+	column JSON_Yara_FileHash
+		dataType: string
+		lineageTag: ce09ce83-e6ac-4452-a991-086b2df02539
+		sourceLineageTag: 551e6dde-d3bf-4578-a83e-19f0de361b59
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: JSON_Yara_FileHash
+
+		annotation SummarizationSetBy = User
+
+	column JSON_Yara_FilePath
+		dataType: string
+		lineageTag: 26888902-cf4e-4f8f-87f9-a756a24f3c19
+		sourceLineageTag: 6121ca7b-1eb3-4494-a141-ff4aca624325
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: JSON_Yara_FilePath
+
+		annotation SummarizationSetBy = User
+
+	column JSON_Snort_Protocol
+		dataType: string
+		lineageTag: ea0d3797-ab01-49fd-9753-60885ce07d4b
+		sourceLineageTag: 429e2a55-79f9-4eae-b526-ae2f11bb9fd8
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: JSON_Snort_Protocol
+
+		annotation SummarizationSetBy = User
+
+	column JSON_Snort_Severity
+		dataType: string
+		lineageTag: f0d6e648-5dd9-4fdc-8924-18bcbf8ba854
+		sourceLineageTag: 53938eed-eeea-4cd0-96df-455d2c319363
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: JSON_Snort_Severity
+
+		annotation SummarizationSetBy = User
+
+	column RawPayload
+		dataType: string
+		lineageTag: c3969fb1-e124-4dae-ad54-5c263ee55006
+		sourceLineageTag: a7cceed4-b84c-409c-8074-724a49b34898
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: RawPayload
+
+		annotation SummarizationSetBy = User
+
+	column Yara_FilePath_DB
+		dataType: string
+		lineageTag: 7ff5f50d-3222-4566-b072-1515208ee5fb
+		sourceLineageTag: b013f7de-75bb-434d-bd50-994c48150cd7
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Yara_FilePath_DB
+
+		annotation SummarizationSetBy = User
+
+	column Yara_FileHash_DB
+		dataType: string
+		lineageTag: 70c7512b-8764-4efd-bdb9-d590948a8f18
+		sourceLineageTag: 37c8215f-c50c-488e-87fe-ee2b2f6d28c6
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Yara_FileHash_DB
+
+		annotation SummarizationSetBy = User
+
+	column Snort_Suricata_SourceIP
+		dataType: string
+		lineageTag: 717d8ad3-4ace-4f1c-9c76-fdc7138e6f05
+		sourceLineageTag: ddc460b9-dfa6-45c6-b421-af59318e67dc
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Snort_Suricata_SourceIP
+
+		annotation SummarizationSetBy = User
+
+	column Snort_Suricata_DestIP
+		dataType: string
+		lineageTag: f4b4d2b8-675c-4168-8c70-0c56b69f3329
+		sourceLineageTag: c0189973-8427-447f-a5ec-bc8adf4c7a44
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Snort_Suricata_DestIP
+
+		annotation SummarizationSetBy = User
+
+	column Snort_Suricata_Protocol
+		dataType: string
+		lineageTag: 581c0ca6-5b5a-4d04-8862-9f7b68ffa61d
+		sourceLineageTag: dd04b849-6436-462a-af39-51ea8b456589
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Snort_Suricata_Protocol
+
+		annotation SummarizationSetBy = User
+
+	column Snort_Suricata_Severity
+		dataType: string
+		lineageTag: 96504b31-1339-4140-877a-a3c7c9f90c6e
+		sourceLineageTag: 8f2ab924-82db-4c24-85bf-07bdf7ee2881
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Snort_Suricata_Severity
+
+		annotation SummarizationSetBy = User
+
+	column Sigma_LogSource
+		dataType: string
+		lineageTag: f2c08e4c-c96e-43bd-83c0-98a2a94623c0
+		sourceLineageTag: 61924332-67e4-4f4d-9c16-fb824c361c7d
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Sigma_LogSource
+
+		annotation SummarizationSetBy = User
+
+	column Sigma_Severity
+		dataType: string
+		lineageTag: 5bbf6882-b256-4451-b7ec-902bacbf597a
+		sourceLineageTag: 35ef5f3d-e21c-424f-bf4a-2ce4c1875ba0
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Sigma_Severity
+
+		annotation SummarizationSetBy = User
+
+	column sigma_source
+		dataType: string
+		lineageTag: 75430144-6c53-47de-85de-9c969b1acdda
+		sourceLineageTag: c0396efd-1b68-4202-9cb0-722dd664a177
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: sigma_source
+
+		annotation SummarizationSetBy = User
+
+	partition 'Fact_IOCs 3' = entity
+		mode: directQuery
+		source
+			entityName: Fact_IOCs
+			expressionSource: 'DirectQuery to AS - DeTechTive_semantic_model 3'
+

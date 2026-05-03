@@ -1,0 +1,93 @@
+table 'Alert 4'
+	lineageTag: 149be3f1-24d1-43d4-b8de-84425c9a784d
+	sourceLineageTag: a5a72de5-fccc-42a0-b8d3-b66b13d3c9b9
+
+	column AlertID
+		dataType: int64
+		formatString: 0
+		lineageTag: b3a19a0a-7f6a-4ee5-b165-aa03f77b69a8
+		sourceLineageTag: 1a013ffe-e953-435e-b462-39dd7dfac786
+		dataCategory: Uncategorized
+		summarizeBy: count
+		sourceColumn: AlertID
+
+		annotation SummarizationSetBy = User
+
+	column Title
+		dataType: string
+		lineageTag: 17f871d2-4052-49f2-84e1-c51291ad0ef7
+		sourceLineageTag: d3381ce8-dea0-4602-8ad7-80268dc0772b
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Title
+
+		annotation SummarizationSetBy = User
+
+	column CreatedAt
+		dataType: dateTime
+		formatString: General Number
+		lineageTag: dc5503eb-3007-404b-9f05-53ba681fac64
+		sourceLineageTag: b8ae9093-26d2-4fcd-aa4d-bc0ca8ea26c6
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: CreatedAt
+
+		annotation SummarizationSetBy = User
+
+	column Status
+		dataType: string
+		lineageTag: 2b6d6c8b-6fc3-437b-b4ac-beafed6c9c62
+		sourceLineageTag: 4ba2015a-e81c-4c31-ab35-b5d7d9d044df
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Status
+
+		annotation SummarizationSetBy = User
+
+	column HandledByUserID
+		dataType: int64
+		formatString: 0
+		lineageTag: e112291b-02f6-45ca-a355-62d91c9fcc8b
+		sourceLineageTag: fbe20c3b-7c26-4265-973b-e3ae56e985d7
+		dataCategory: Uncategorized
+		summarizeBy: count
+		sourceColumn: HandledByUserID
+
+		annotation SummarizationSetBy = User
+
+	column IocId
+		dataType: string
+		lineageTag: 909861ed-ac0d-4c35-b861-b5915e2f6a15
+		sourceLineageTag: 20924298-2592-4681-a513-018593fee66a
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: IocId
+
+		annotation SummarizationSetBy = User
+
+	column Subject
+		dataType: string
+		lineageTag: 7a07df44-c2ac-41f9-859e-3924f26a5ff2
+		sourceLineageTag: 97ac799c-8384-4574-bb45-854c325c72b6
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Subject
+
+		annotation SummarizationSetBy = User
+
+	column Severity
+		dataType: string
+		lineageTag: 7c90ab26-0da6-4339-9306-c6baa2031e83
+		sourceLineageTag: 4fc4695f-ea25-4534-979e-6991ec7b439c
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Severity
+
+		annotation SummarizationSetBy = User
+
+	partition 'Alert 4' = entity
+		mode: directQuery
+		source
+			entityName: Alert
+			expressionSource: 'DirectQuery to AS - DeTechTive_semantic_model 3'
+

@@ -1,0 +1,53 @@
+cultureInfo en-US
+
+	linguisticMetadata =
+			{
+			  "Version": "2.0.0",
+			  "Language": "en-US",
+			  "Entities": {
+			    "fact_iocs_3.snort_suricata_destip": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "Fact_IOCs 3",
+			          "ConceptualProperty": "Snort_Suricata_DestIP"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "DestIP": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    },
+			    "fact_iocs_3.snort_suricata_sourceip": {
+			      "Definition": {
+			        "Binding": {
+			          "ConceptualEntity": "Fact_IOCs 3",
+			          "ConceptualProperty": "Snort_Suricata_SourceIP"
+			        }
+			      },
+			      "State": "Generated",
+			      "Terms": [
+			        {
+			          "SourceIP": {
+			            "State": "Suggested",
+			            "Source": {
+			              "Type": "External",
+			              "Agent": "PowerBI.VisualColumnRename"
+			            },
+			            "Weight": 0.9
+			          }
+			        }
+			      ]
+			    }
+			  }
+			}
+		contentType: json
+

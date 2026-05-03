@@ -1,0 +1,95 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/3.2.0/schema.json",
+  "themeCollection": {
+    "baseTheme": {
+      "name": "CY26SU02",
+      "reportVersionAtImport": {
+        "visual": "2.6.0",
+        "report": "3.1.0",
+        "page": "2.3.0"
+      },
+      "type": "SharedResources"
+    },
+    "customTheme": {
+      "name": "Accessible_Orchid6030448349250129.json",
+      "reportVersionAtImport": {
+        "visual": "2.7.0",
+        "report": "3.2.0",
+        "page": "2.3.1"
+      },
+      "type": "RegisteredResources"
+    }
+  },
+  "objects": {
+    "section": [
+      {
+        "properties": {
+          "verticalAlignment": {
+            "expr": {
+              "Literal": {
+                "Value": "'Top'"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "resourcePackages": [
+    {
+      "name": "SharedResources",
+      "type": "SharedResources",
+      "items": [
+        {
+          "name": "CY26SU02",
+          "path": "BaseThemes/CY26SU02.json",
+          "type": "BaseTheme"
+        }
+      ]
+    },
+    {
+      "name": "RegisteredResources",
+      "type": "RegisteredResources",
+      "items": [
+        {
+          "name": "Accessible_Orchid6030448349250129.json",
+          "path": "Accessible_Orchid6030448349250129.json",
+          "type": "CustomTheme"
+        },
+        {
+          "name": "drill06852077542438018.png",
+          "path": "drill06852077542438018.png",
+          "type": "Image"
+        },
+        {
+          "name": "drill14276666173446617.png",
+          "path": "drill14276666173446617.png",
+          "type": "Image"
+        },
+        {
+          "name": "drill5322128828642088.png",
+          "path": "drill5322128828642088.png",
+          "type": "Image"
+        },
+        {
+          "name": "page1_det061652106597103185.png",
+          "path": "page1_det061652106597103185.png",
+          "type": "Image"
+        },
+        {
+          "name": "page2_det33178714242027096.png",
+          "path": "page2_det33178714242027096.png",
+          "type": "Image"
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "useStylableVisualContainerHeader": true,
+    "exportDataMode": "AllowSummarized",
+    "defaultDrillFilterOtherVisuals": true,
+    "allowChangeFilterTypes": true,
+    "useEnhancedTooltips": true,
+    "useDefaultAggregateDisplayName": true
+  }
+}

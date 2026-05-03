@@ -1,0 +1,82 @@
+table 'NETWORK 4'
+	lineageTag: a9a0b5ab-13ce-48c5-9b3e-1aa7fdd07f3d
+	sourceLineageTag: 9c2013d9-f20e-4f46-a768-b0dbc2050448
+
+	column NetworkID
+		dataType: int64
+		isNullable: false
+		formatString: 0
+		lineageTag: 0dd26200-e8d4-4139-b209-26c09ec035ef
+		sourceLineageTag: c8a81657-4404-4ba3-b056-f023d13ab2c2
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: NetworkID
+
+		annotation SummarizationSetBy = User
+
+	column Name
+		dataType: string
+		lineageTag: d47d4ca6-d46b-432f-affa-bccb83ea9d84
+		sourceLineageTag: 06df34b4-8a7a-4f0a-8c50-6944bac4c877
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Name
+
+		annotation SummarizationSetBy = User
+
+	column SubNet
+		dataType: string
+		lineageTag: 6e32461b-2c78-4889-b14c-fca29170b454
+		sourceLineageTag: da95de60-f472-4599-8e55-e7478d8ea475
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: SubNet
+
+		annotation SummarizationSetBy = User
+
+	column SshUser
+		dataType: string
+		lineageTag: 2c0dddd4-9f46-46eb-8064-e8b04a82ca55
+		sourceLineageTag: e9a1ae62-6a4f-4cfc-848f-42b4c30af383
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: SshUser
+
+		annotation SummarizationSetBy = User
+
+	column SshKeyPath
+		dataType: string
+		lineageTag: 70a4a21e-dbc4-4082-a484-cf1081b71669
+		sourceLineageTag: f26069a7-39a5-42ea-bbe3-3f9cffb12af5
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: SshKeyPath
+
+		annotation SummarizationSetBy = User
+
+	column Notes
+		dataType: string
+		lineageTag: b34e2462-5e6c-4e96-a78e-fab4b141ab8b
+		sourceLineageTag: 3a729667-6ed2-445d-9271-feb22ec08eaa
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Notes
+
+		annotation SummarizationSetBy = User
+
+	column SshPasswordProtected
+		dataType: string
+		lineageTag: ddba14ce-074b-477b-aecc-024d5d26e76d
+		sourceLineageTag: 7252b7f6-6bf8-49ea-b492-80579f599e59
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: SshPasswordProtected
+
+		annotation SummarizationSetBy = User
+
+	partition 'NETWORK 4' = entity
+		mode: directQuery
+		source
+			entityName: NETWORK
+			expressionSource: 'DirectQuery to AS - DeTechTive_semantic_model 3'
+
