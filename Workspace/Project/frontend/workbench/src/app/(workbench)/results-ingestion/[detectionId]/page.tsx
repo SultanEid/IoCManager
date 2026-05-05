@@ -24,6 +24,12 @@ import {
   type DetectionLinkedAlertCaseResponse,
 } from "@/shared/api/schemas"
 import { explainDecisionConfidence } from "@/shared/ai/confidence-explanation"
+import {
+  AI_VERDICT_SCALE_OPTIONS,
+  aiVerdictSentenceLabel,
+  summarizeAiVerdict,
+  toAiVerdictDisplay,
+} from "@/shared/ai/verdict-scale"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway, isMockMode, isModeConfigured } from "@/shared/gateway"
@@ -252,7 +258,7 @@ function summarizeDecisionNarrative(result: AiDecisionResultResponse | null) {
   }
 
   const limitText = limits.length > 0 ? ` Limits: ${limits.join("; ")}.` : ""
-  return `The system currently labels this detection as ${humanizeSentenceToken(decision.verdict)}. Primary basis: ${mainReason}.${limitText}`
+  return `The system currently places this detection in the ${aiVerdictSentenceLabel(decision.verdict)} band. Primary basis: ${mainReason}.${limitText}`
 }
 
 function summarizeProgressLabel({
@@ -801,6 +807,7 @@ export default function DetectionDecisionPage() {
   ].filter(Boolean) as string[]
   const canSubmitOverride = Boolean(decisionId) && !isSubmittingOverride && overrideRequirements.length === 0
   const safetyDiagnostics = decisionResult?.decision?.safetyDiagnostics ?? null
+  const verdictDisplay = decisionResult?.decision ? toAiVerdictDisplay(decisionResult.decision.verdict) : null
   const confidenceReasons = explainDecisionConfidence({
     result: decisionResult,
     explanation,
@@ -964,7 +971,10 @@ export default function DetectionDecisionPage() {
             <div className="space-y-4 rounded-xl border border-border/70 bg-surface-2/70 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary" className="border border-border/70 bg-surface-1/75 text-foreground">
-                  Verdict: {humanizeToken(decisionResult.decision.verdict)}
+                  Verdict: {verdictDisplay?.label ?? "Suspicious"}
+                </Badge>
+                <Badge variant="secondary" className="border border-border/70 bg-surface-1/75 text-muted-foreground">
+                  Scale: {verdictDisplay ? `${verdictDisplay.scalePosition}/5` : "3/5"}
                 </Badge>
                 <Badge variant="secondary" className="border border-border/70 bg-surface-1/75 text-muted-foreground">
                   Review priority: {humanizeToken(decisionResult.decision.reviewPriority)}
@@ -1000,7 +1010,9 @@ export default function DetectionDecisionPage() {
                 </div>
               </div>
 
-              <p className="text-sm text-muted-foreground">{summarizeDecisionNarrative(decisionResult)}</p>
+              <p className="text-sm text-muted-foreground">
+                {summarizeAiVerdict(decisionResult.decision.verdict, "detection")} {summarizeDecisionNarrative(decisionResult)}
+              </p>
 
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Decision rationale</p>
@@ -1150,7 +1162,7 @@ export default function DetectionDecisionPage() {
                           Reasons: {item.similarityReasons.length > 0 ? item.similarityReasons.join(", ") : "Not reported"}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Prior verdicts: {item.priorVerdicts.length > 0 ? item.priorVerdicts.map((entry) => humanizeToken(entry)).join(", ") : "Not reported"}
+                          Prior verdicts: {item.priorVerdicts.length > 0 ? item.priorVerdicts.map((entry) => toAiVerdictDisplay(entry).label).join(", ") : "Not reported"}
                         </p>
                       </div>
                     ))}
@@ -1401,12 +1413,11 @@ export default function DetectionDecisionPage() {
                   className="h-9 w-full rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
                 >
                   <option value="">Select verdict</option>
-                  <option value="benign">Benign</option>
-                  <option value="likely_benign">Likely benign</option>
-                  <option value="suspicious">Suspicious</option>
-                  <option value="likely_malicious">Likely malicious</option>
-                  <option value="malicious">Malicious</option>
-                  <option value="insufficient_evidence">Insufficient evidence</option>
+                  {AI_VERDICT_SCALE_OPTIONS.map((option) => (
+                    <option key={option.level} value={option.level}>
+                      {option.scalePosition}. {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             ) : (

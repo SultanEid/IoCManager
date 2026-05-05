@@ -17,6 +17,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ApiError } from "@/shared/api/error"
 import { explainDecisionConfidence } from "@/shared/ai/confidence-explanation"
+import { summarizeAiVerdict, toAiVerdictDisplay } from "@/shared/ai/verdict-scale"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
@@ -161,29 +162,6 @@ function isDecisionTelemetryReason(reason: string) {
   return /(verdict=|calibrated_signal=|uncertainty=|conflict=)/i.test(reason)
 }
 
-function formatDecisionSummary(verdict: string) {
-  switch (verdict) {
-    case "malicious":
-      return "The model sees enough corroboration to treat this IOC as malicious."
-    case "likely_malicious":
-      return "The model leans malicious, but some uncertainty remains."
-    case "suspicious":
-      return "The IOC looks suspicious, but the evidence is not strong enough for a stronger call."
-    case "benign":
-      return "The model sees enough context to treat this IOC as benign."
-    case "likely_benign":
-      return "The model leans benign, but the signal is still directional."
-    case "stale_or_revoked":
-      return "The IOC appears stale or revoked."
-    case "false_positive":
-      return "The model sees enough context to treat this IOC as a false positive."
-    case "insufficient_evidence":
-      return "The model could not support a stronger decision from the current evidence."
-    default:
-      return "The model returned a decision for this IOC."
-  }
-}
-
 export default function IocsExplorerPage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -258,6 +236,7 @@ export default function IocsExplorerPage() {
   const latestIocDecisionData = latestIocDecisionQuery.data ?? null
   const latestIocDecision = latestIocDecisionQuery.data?.result.decision ?? null
   const latestIocDecisionResult = latestIocDecisionQuery.data?.result ?? null
+  const latestIocVerdictDisplay = latestIocDecision ? toAiVerdictDisplay(latestIocDecision.verdict) : null
   const latestIocTelemetryReason =
     latestIocDecision?.reasons.find((reason) => isDecisionTelemetryReason(reason)) ?? null
   const latestIocNarrativeReasons =
@@ -926,12 +905,15 @@ export default function IocsExplorerPage() {
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="space-y-3">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <StatusBadge value={latestIocDecision.verdict} />
+                                  {latestIocVerdictDisplay ? <StatusBadge value={latestIocVerdictDisplay.label} /> : null}
+                                  {latestIocVerdictDisplay ? (
+                                    <StatusBadge value={`Level ${latestIocVerdictDisplay.scalePosition} of 5`} />
+                                  ) : null}
                                   <StatusBadge value={latestIocDecisionResult?.status ?? "unknown"} />
                                 </div>
                                 <div className="space-y-1.5">
                                   <p className="text-base font-semibold tracking-tight">
-                                    {formatDecisionSummary(latestIocDecision.verdict)}
+                                    {summarizeAiVerdict(latestIocDecision.verdict, "IOC")}
                                   </p>
                                   <p className="text-sm text-muted-foreground">
                                     {latestIocLeadReason ?? "No operator-facing explanation was stored for this decision."}
