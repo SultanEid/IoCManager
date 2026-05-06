@@ -9,7 +9,6 @@ This change performed repository cleanup and active-surface reset only. No produ
 - `ai/service` and `ai/jobs` (FastAPI sidecar + offline job scripts)
 - `docs` (product docs/migration history)
 - `infra` (docker/env/scripts)
-- `AGENTS.md`
 
 ## Archived (Legacy / Non-Active)
 

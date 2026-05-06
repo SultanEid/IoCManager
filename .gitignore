@@ -407,6 +407,25 @@ FodyWeavers.xsd
 # Local planning workspace
 /.planning/
 
+# Local session notes and tool working files
+/Workspace/**/.agents/
+/Workspace/**/.claude/
+/Workspace/**/.codex/
+/Workspace/**/.cursor/
+/Workspace/**/.planning/
+/Workspace/**/AI-SPEC.md
+/Workspace/**/HANDOFF*.md
+/Workspace/**/PLAN.md
+/Workspace/**/RESEARCH.md
+/Workspace/**/REVIEW.md
+/Workspace/**/SESSION*.md
+/Workspace/**/UI-SPEC.md
+/Workspace/**/UI_UX_REVIEW.md
+/Workspace/**/VERIFICATION.md
+/Workspace/**/output/
+/Workspace/**/tmp/
+/output/
+
 # AI local staging and generated evaluation bundles
 /Workspace/Project/ai/datasets/raw/**
 /Workspace/Project/ai/datasets/processed/**

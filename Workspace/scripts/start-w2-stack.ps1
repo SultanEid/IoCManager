@@ -49,7 +49,7 @@ function Start-Backend {
 `$env:ASPNETCORE_ENVIRONMENT='Production'
 `$env:DOTNET_ENVIRONMENT='Production'
 `$env:CONNECTIONSTRINGS__MAIN='$mainConnectionString'
-`$env:Auth__Jwt__SigningKey='codex-local-temporary-signing-key-32chars-minimum'
+`$env:Auth__Jwt__SigningKey='ioc-manager-local-temporary-signing-key-32chars-minimum'
 `$env:Auth__LocalFallback__Enabled='true'
 `$env:Auth__LocalFallback__UserName='don'
 `$env:Auth__LocalFallback__Password='don'

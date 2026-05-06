@@ -65,9 +65,9 @@ Pop-Location
 
 ### Secret scan
 
-CI runs a lightweight tracked-file pattern scan across active roots and planning
-docs. For local work, prefer a dedicated scanner such as gitleaks when
-available, then run the lightweight fallback:
+CI runs a lightweight tracked-file pattern scan across active roots. For local
+work, prefer a dedicated scanner such as gitleaks when available, then run the
+lightweight fallback:
 
 ```powershell
 $patterns = @(
@@ -82,7 +82,7 @@ $patterns = @(
   ('-----BEGIN.*' + 'PRIVATE' + ' KEY'),
   'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.'
 )
-$files = git ls-files AGENTS.md README.md .planning Workspace/README.md Workspace/Project
+$files = git ls-files README.md Workspace/README.md Workspace/Project
 foreach ($pattern in $patterns) {
   $matches = $files | ForEach-Object { Select-String -Path $_ -Pattern $pattern -ErrorAction SilentlyContinue }
   if ($matches) {

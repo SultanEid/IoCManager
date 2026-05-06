@@ -60,14 +60,14 @@ deleted unless the user explicitly requests cleanup.
 
 `src/IocManager.Web` is removed/decommissioned. Do not reintroduce it as an
 active application surface. If a future task needs scanner behavior, start from
-the canonical stack and current plans under `Workspace/Project/`.
+the canonical stack under `Workspace/Project/`.
 
 ## Search and Review Rule
 
 Default code search, dependency review, and security review to active roots:
 
 ```powershell
-rg "pattern" Workspace/Project AGENTS.md README.md .planning
+rg "pattern" Workspace/Project README.md
 ```
 
 Search archive/reference material only when the task explicitly asks for it.

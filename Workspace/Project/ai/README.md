@@ -20,8 +20,6 @@ Purpose:
 
 Notes:
 - This repository is an IoC Manager, not a CTI platform.
-- Hooks under `.codex/hooks.json` are advisory and non-destructive by design.
-- On Windows runtimes, hook execution may be skipped; policy files remain authoritative.
 
 
 ## Active AI Project Layout
