@@ -98,6 +98,13 @@ Screenshots will be added under `Workspace/Project/docs/assets/readme/`. The REA
   - **Aegis** for mitigation-plan recommendations from report evidence.
 - Keep final action authority with the analyst. IOC Manager is **not** an autonomous threat-response engine.
 
+### 📊 Cloud-Native Power BI & Reporting
+
+- Provide real-time and historical insights into threat landscapes, scanner performance, and analyst workloads.
+- Utilize **Microsoft Fabric** and **Direct Lake** mode for seamless, high-performance data connectivity with the SQL Server backend.
+- Embedded **Power BI** dashboards integrated directly into the Next.js workbench with customized UI matching the platform's dark mode architecture.
+- Follow software engineering best practices for reporting by treating dashboards as code using the **Power BI Project (.pbip)** format for Git integration and version control.
+
 ### ✅ Validation And CI
 
 - GitHub Actions validation pipeline for pull requests and branch updates.
@@ -150,6 +157,7 @@ flowchart LR
 | UI System | shadcn-style components, Radix/Base UI patterns, Lucide icons |
 | Data Fetching | TanStack Query, typed gateway abstraction |
 | AI Sidecar | Python 3.11, FastAPI, Pydantic, NumPy, pandas, scikit-learn |
+| Reporting & BI | Power BI, Microsoft Fabric, DAX, Power BI Project (.pbip) |
 | Testing | xUnit, pytest, ESLint, TypeScript checks, Playwright support |
 | Automation | GitHub Actions, PowerShell validation scripts |
 | Scanner Scripts | PowerShell workflows for YARA, Sigma, Snort, Suricata, and discovery |
@@ -167,6 +175,7 @@ IOC_Manager/
 │   │   ├── backend/                # ASP.NET Core API, Worker, Domain, Infrastructure, Tests
 │   │   ├── frontend/workbench/     # Next.js operator workbench
 │   │   ├── ai/service/             # Python FastAPI AI sidecar
+│   │   ├── analytics/              # Power BI project, report, and semantic model
 │   │   ├── docs/                   # Active technical documentation
 │   │   ├── deploy/                 # Deployment notes
 │   │   └── scripts/                # Project validation/support scripts
@@ -348,6 +357,7 @@ The goal is to help analysts understand:
 | 🖧 Servers | Server discovery, inventory, scanner fleet, subnets, and asset groups. |
 | 📥 IoC Ingestion | Findings exploration, source context, and normalized IoC review. |
 | 📊 Reporting | Report builder, report archive, and analytics integration. |
+| 📊 Reporting & BI | Interactive Power BI embedded dashboards for IoC trends, scanner metrics, and SOC performance analytics. |
 | 🤖 Zira | AI-assisted scan-planning support. |
 | 🛡️ Aegis | AI-assisted mitigation-planning support from report evidence. |
 | ⚙️ Settings | System health, access, scanner fleet, owner routing, and lifecycle controls. |

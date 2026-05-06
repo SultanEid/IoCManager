@@ -28,6 +28,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ApiError } from "@/shared/api/error"
 import { explainDecisionConfidence } from "@/shared/ai/confidence-explanation"
+import { summarizeAiVerdict, toAiVerdictDisplay } from "@/shared/ai/verdict-scale"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
@@ -186,49 +187,11 @@ function isDecisionTelemetryReason(reason: string) {
 }
 
 function formatDecisionSummary(verdict: string) {
-  switch (verdict) {
-    case "malicious":
-      return "The model sees enough corroboration to treat this IOC as malicious."
-    case "likely_malicious":
-      return "The model leans malicious, but some uncertainty remains."
-    case "suspicious":
-      return "The IOC looks suspicious, but the evidence is not strong enough for a stronger call."
-    case "benign":
-      return "The model sees enough context to treat this IOC as benign."
-    case "likely_benign":
-      return "The model leans benign, but the signal is still directional."
-    case "stale_or_revoked":
-      return "The IOC appears stale or revoked."
-    case "false_positive":
-      return "The model sees enough context to treat this IOC as a false positive."
-    case "insufficient_evidence":
-      return "The model could not support a stronger decision from the current evidence."
-    default:
-      return "The model returned a decision for this IOC."
-  }
+  return summarizeAiVerdict(verdict, "IOC")
 }
 
 function formatDecisionVerdictLabel(verdict: string) {
-  switch (verdict) {
-    case "malicious":
-      return "Malicious"
-    case "likely_malicious":
-      return "Likely malicious"
-    case "suspicious":
-      return "Suspicious"
-    case "benign":
-      return "Non-malicious"
-    case "likely_benign":
-      return "Likely non-malicious"
-    case "false_positive":
-      return "False positive"
-    case "stale_or_revoked":
-      return "Stale or revoked"
-    case "insufficient_evidence":
-      return "Insufficient evidence"
-    default:
-      return verdict.replace(/_/g, " ")
-  }
+  return toAiVerdictDisplay(verdict).label
 }
 
 function decisionVerdictTone(verdict: string) {
@@ -468,6 +431,7 @@ export default function IocsExplorerPage() {
   const latestIocDecision = latestIocDecisionQuery.data?.result.decision ?? null
   const latestIocDecisionResult = latestIocDecisionQuery.data?.result ?? null
   const latestIocDecisionStatus = latestIocDecisionResult?.status ?? null
+  const latestIocVerdictDisplay = latestIocDecision ? toAiVerdictDisplay(latestIocDecision.verdict) : null
   const latestIocNarrativeReasons =
     latestIocDecision?.reasons.filter((reason) => !isDecisionTelemetryReason(reason)) ?? []
   const latestIocLeadReason = latestIocNarrativeReasons[0] ?? null
@@ -1267,6 +1231,9 @@ export default function IocsExplorerPage() {
                             <div className="space-y-4">
                               <div className="flex flex-wrap items-center gap-3">
                                 <DecisionVerdictBadge verdict={latestIocDecision.verdict} />
+                                {latestIocVerdictDisplay ? (
+                                  <StatusBadge value={`Level ${latestIocVerdictDisplay.scalePosition} of 5`} />
+                                ) : null}
                                 <StatusBadge value={latestIocDecisionResult?.status ?? "unknown"} />
                               </div>
                               <div className="space-y-2">
