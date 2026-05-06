@@ -83,6 +83,52 @@ function ownerDisplay(detail: V2AlertDetailResponse) {
   return detail.ownerDisplayName || detail.ownerUserId
 }
 
+function involvedScannerFamilies(detail: V2AlertDetailResponse) {
+  const scannerFamilies = detail.scannerFamilies ?? []
+  const sourceFamilies = scannerFamilies.length > 0
+    ? scannerFamilies
+    : detail.linkedIocs.map((ioc) => ioc.scannerFamily)
+  const families = sourceFamilies
+    .map((family) => family.trim().toLowerCase())
+    .filter(Boolean)
+  const fallbackFamily = detail.scannerFamily.trim().toLowerCase()
+  const values = families.length > 0 || fallbackFamily === "mixed" ? families : [fallbackFamily]
+  const preferredOrder = ["yara", "sigma", "snort", "suricata"]
+
+  return [...new Set(values)].sort((left, right) => {
+    const leftIndex = preferredOrder.indexOf(left)
+    const rightIndex = preferredOrder.indexOf(right)
+    if (leftIndex === -1 && rightIndex === -1) {
+      return left.localeCompare(right)
+    }
+
+    if (leftIndex === -1) return 1
+    if (rightIndex === -1) return -1
+    return leftIndex - rightIndex
+  })
+}
+
+function InvolvedScannerBadges({
+  detail,
+  size = "md",
+}: {
+  detail: V2AlertDetailResponse
+  size?: "sm" | "md"
+}) {
+  const families = involvedScannerFamilies(detail)
+  if (families.length === 0) {
+    return <span className="text-xs text-muted-foreground">Scanner evidence pending</span>
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {families.map((family) => (
+        <ScannerFamilyBadge key={family} family={family} size={size} />
+      ))}
+    </div>
+  )
+}
+
 function parseCcEmails(value: string) {
   return value
     .split(/[\n,;]+/)
@@ -185,7 +231,7 @@ function CaseSource({ detail }: { detail: V2AlertDetailResponse }) {
         <div className="rounded-lg border border-border/60 bg-surface-2/45 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <ScannerFamilyBadge family={detail.scannerFamily} size="sm" />
+              <InvolvedScannerBadges detail={detail} size="sm" />
               <StatusBadge value={primary.status} />
             </div>
             {sources.length > 1 ? (
@@ -460,7 +506,7 @@ export default function AlertDetailPage() {
           <div className="flex flex-wrap items-center gap-1.5">
             <StatusBadge value={detail.severity} />
             <StatusBadge value={detail.status} />
-            <ScannerFamilyBadge family={detail.scannerFamily} />
+            <InvolvedScannerBadges detail={detail} />
           </div>
         </div>
 

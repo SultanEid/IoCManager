@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
-import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
+import { AlertScannerFamilyBadges } from "@/components/workbench/alerts/alert-scanner-family-badges"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { gateway } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
@@ -32,7 +32,11 @@ const columns: ColumnDef<V2AlertResponse>[] = [
         <p className="font-medium">{row.original.title}</p>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-muted-foreground">{row.original.targetDisplay}</span>
-          <ScannerFamilyBadge family={row.original.scannerFamily} size="sm" />
+          <AlertScannerFamilyBadges
+            scannerFamily={row.original.scannerFamily}
+            scannerFamilies={row.original.scannerFamilies}
+            size="sm"
+          />
         </div>
       </div>
     ),

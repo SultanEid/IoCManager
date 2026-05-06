@@ -504,7 +504,7 @@ public sealed partial class LegacyScanPipelineService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-        await PromoteIocsToAlertsAsync(target, job.JobId, result.ResultId, output.Iocs, cancellationToken);
+        await PromoteIocsToAlertsAsync(target, job, output.Iocs, cancellationToken);
     }
 
 }

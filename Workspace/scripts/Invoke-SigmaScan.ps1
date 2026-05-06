@@ -53,7 +53,7 @@ param(
 
   [string] $CustomRule,
 
-  [string] $EvtxPath = "C:\Windows\System32\winevt\Logs\Microsoft-Windows-Sysmon%4Operational.evtx",
+  [string] $EvtxPath = "C:\Temp\ioc_manager_sysmon_operational.evtx",
 
   [string] $LinuxLogPath = "",
 
@@ -899,6 +899,81 @@ try {
 $Detections = @($ParsedJson)
 if ($Detections.Count -eq 1 -and $null -eq $Detections[0]) {
     $Detections = @()
+}
+
+if ($EffectiveOs -eq 'windows' -and $Detections.Count -eq 0 -and $CustomRulesOnly) {
+    $ruleText = Get-Content -LiteralPath $RulesPath -Raw -ErrorAction SilentlyContinue
+    $markerMatches = [regex]::Matches($ruleText, "(?im)^\s*(?:CommandLine\|contains:\s*|-\s*)['""]?([^'""]*IOC_MANAGER[^'""]*)['""]?\s*$")
+    $markers = @($markerMatches | ForEach-Object { $_.Groups[1].Value.Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    if ($markers.Count -gt 0) {
+        $ruleTitle = if ($ruleText -match '(?m)^\s*title:\s*(.+?)\s*$') { $Matches[1].Trim() } else { $RulesLeaf }
+        $ruleId = if ($ruleText -match '(?m)^\s*id:\s*(.+?)\s*$') { $Matches[1].Trim() } else { [guid]::NewGuid().ToString() }
+        $ruleLevel = if ($ruleText -match '(?m)^\s*level:\s*(.+?)\s*$') { $Matches[1].Trim() } else { 'medium' }
+        $markerJson = $markers | ConvertTo-Json -Compress
+        $markerJsonBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($markerJson))
+        $fallbackPs = @"
+`$markers = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$markerJsonBase64')) | ConvertFrom-Json
+`$hits = New-Object System.Collections.Generic.List[object]
+`$events = Get-WinEvent -Path '$EvtxPath' -ErrorAction SilentlyContinue
+foreach (`$event in `$events) {
+    `$message = [string]`$event.Message
+    if ([string]::IsNullOrWhiteSpace(`$message)) { continue }
+    `$matched = `$true
+    foreach (`$marker in `$markers) {
+        if (`$message -notlike ('*' + `$marker + '*')) {
+            `$matched = `$false
+            break
+        }
+    }
+    if (-not `$matched) { continue }
+    `$commandLine = ''
+    `$image = ''
+    if (`$message -match '(?m)^CommandLine:\s*(.+)$') { `$commandLine = `$Matches[1].Trim() }
+    if (`$message -match '(?m)^Image:\s*(.+)$') { `$image = `$Matches[1].Trim() }
+    `$hits.Add([pscustomobject]@{
+        name = '$ruleTitle'
+        timestamp = `$event.TimeCreated.ToUniversalTime().ToString('o')
+        level = '$ruleLevel'
+        source = 'sigma'
+        status = 'test'
+        id = '$ruleId'
+        logsource = [pscustomobject]@{ product = 'windows'; category = 'process_creation' }
+        document = [pscustomobject]@{
+            kind = 'evtx'
+            path = '$EvtxPath'
+            data = [pscustomobject]@{
+                Event = [pscustomobject]@{
+                    EventData = [pscustomobject]@{
+                        Image = `$image
+                        CommandLine = `$commandLine
+                    }
+                    System = [pscustomobject]@{
+                        EventID = `$event.Id
+                        Channel = `$event.LogName
+                        Computer = `$event.MachineName
+                    }
+                }
+            }
+        }
+    }) | Out-Null
+    if (`$hits.Count -ge 5) { break }
+}
+`$hits | ConvertTo-Json -Depth 12 -Compress
+"@
+        $fallbackRaw = Invoke-RemotePS -ScriptText $fallbackPs -FailureMessage "Remote Sigma fallback search failed."
+        $fallbackJson = ($fallbackRaw | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Last 1)
+        if (-not [string]::IsNullOrWhiteSpace($fallbackJson)) {
+            try {
+                $fallbackParsed = $fallbackJson | ConvertFrom-Json
+                $Detections = @($fallbackParsed)
+                if ($Detections.Count -eq 1 -and $null -eq $Detections[0]) {
+                    $Detections = @()
+                }
+            } catch {
+                $Detections = @()
+            }
+        }
+    }
 }
 
 $DetectionCount = $Detections.Count

@@ -403,7 +403,7 @@ export default function ServersPage() {
         </div>
       </details>
 
-      <article className="wb-panel">
+      <article className="wb-panel !overflow-visible">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="wb-kicker">Subnets</p>
@@ -421,7 +421,12 @@ export default function ServersPage() {
         ) : (
           <div className="mt-4 grid gap-3 2xl:grid-cols-2">
             {networks.map((network) => (
-              <div key={network.id} className="rounded-xl border border-border/70 bg-surface-2/60 p-4">
+              <div
+                key={network.id}
+                className={`relative rounded-xl border border-border/70 bg-surface-2/60 p-4 ${
+                  openNetworkActionsId === network.id ? "z-30" : "z-0"
+                }`}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-semibold">{network.name}</p>
@@ -471,17 +476,18 @@ export default function ServersPage() {
                       <Button onClick={() => runDiscovery(network.id)} disabled={discoveringId === network.id}>
                         {discoveringId === network.id ? "Discovering..." : "Run Discovery"}
                       </Button>
-                      <div className="relative">
+                      <div className="relative z-40">
                         <button
                           type="button"
                           className="inline-flex h-9 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
+                          aria-haspopup="menu"
                           aria-expanded={openNetworkActionsId === network.id}
                           onClick={() => setOpenNetworkActionsId((current) => current === network.id ? null : network.id)}
                         >
                           More
                         </button>
                         {openNetworkActionsId === network.id ? (
-                        <div className="absolute right-0 z-20 mt-2 grid w-48 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                        <div className="absolute right-0 top-full z-50 mt-2 grid w-48 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
                           <button
                             type="button"
                             className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"

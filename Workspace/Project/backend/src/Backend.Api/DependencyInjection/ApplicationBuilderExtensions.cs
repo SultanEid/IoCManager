@@ -19,7 +19,11 @@ public static class ApplicationBuilderExtensions
             app.UseSwaggerUI();
         }
 
-        app.UseHttpsRedirection();
+        if (!app.Environment.IsDevelopment())
+        {
+            app.UseHttpsRedirection();
+        }
+
         app.UseRouting();
         app.UseAuthentication();
         app.UseMiddleware<ApiRequestThrottlingMiddleware>();

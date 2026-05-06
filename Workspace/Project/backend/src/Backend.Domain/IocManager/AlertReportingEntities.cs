@@ -95,6 +95,50 @@ public sealed class Alert : AuditableEntity
         Touch(actorUserId.Trim(), nowUtc);
     }
 
+    public void RefreshScanContext(
+        string title,
+        string summary,
+        AlertSeverity severity,
+        string scannerFamily,
+        int? targetId,
+        string targetDisplay,
+        string ruleName,
+        DateTimeOffset firstDetectedAtUtc,
+        DateTimeOffset lastDetectedAtUtc,
+        string actorUserId,
+        DateTimeOffset nowUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentException.ThrowIfNullOrWhiteSpace(summary);
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerFamily);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetDisplay);
+        ArgumentException.ThrowIfNullOrWhiteSpace(ruleName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);
+
+        Title = title.Trim();
+        Summary = summary.Trim();
+        if (severity > Severity)
+        {
+            Severity = severity;
+        }
+
+        ScannerFamily = scannerFamily.Trim();
+        TargetId = targetId;
+        TargetDisplay = targetDisplay.Trim();
+        RuleName = ruleName.Trim();
+        if (firstDetectedAtUtc < FirstDetectedAtUtc)
+        {
+            FirstDetectedAtUtc = firstDetectedAtUtc;
+        }
+
+        if (lastDetectedAtUtc > LastDetectedAtUtc)
+        {
+            LastDetectedAtUtc = lastDetectedAtUtc;
+        }
+
+        Touch(actorUserId.Trim(), nowUtc);
+    }
+
     public void SetStatus(AlertStatus status, string actorUserId, DateTimeOffset nowUtc)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(actorUserId);

@@ -5,8 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
 import { motion } from "framer-motion"
 import { alertCaseContext, alertCaseTitle, formatAlertOwner, formatAlertTimestamp } from "@/components/workbench/alert-case-format"
+import { AlertScannerFamilyBadges } from "@/components/workbench/alerts/alert-scanner-family-badges"
 import { ACCENT_TONES, severityAccent } from "@/components/workbench/accent-tone"
-import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -124,7 +124,9 @@ function AlertMobileCard({ alert, onOpen }: { alert: V2AlertResponse; onOpen: ()
       <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
         <div>
           <p className="wb-kicker">Scanner</p>
-          <div className="mt-1"><ScannerFamilyBadge family={alert.scannerFamily} size="sm" /></div>
+          <div className="mt-1">
+            <AlertScannerFamilyBadges scannerFamily={alert.scannerFamily} scannerFamilies={alert.scannerFamilies} size="sm" />
+          </div>
         </div>
         <div>
           <p className="wb-kicker">Target</p>
@@ -169,7 +171,11 @@ const columns: ColumnDef<V2AlertResponse>[] = [
     cell: ({ row }) => (
       <div className="min-w-[14rem] max-w-[22rem]">
         <div className="flex flex-wrap items-center gap-1.5">
-          <ScannerFamilyBadge family={row.original.scannerFamily} size="sm" />
+          <AlertScannerFamilyBadges
+            scannerFamily={row.original.scannerFamily}
+            scannerFamilies={row.original.scannerFamilies}
+            size="sm"
+          />
           <span className="text-xs text-muted-foreground">{row.original.linkedIocCount} IOC(s)</span>
         </div>
         <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{row.original.summary}</p>

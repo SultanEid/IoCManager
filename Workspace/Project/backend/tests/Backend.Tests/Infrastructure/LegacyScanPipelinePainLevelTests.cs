@@ -169,7 +169,7 @@ public sealed class LegacyScanPipelinePainLevelTests
     }
 
     [Fact]
-    public void CreateScanResultAlert_GroupsSupportedFindingsIntoOneCase()
+    public void CreateScanAlert_GroupsSupportedFindingsIntoOneCase()
     {
         var target = BuildAlertTarget();
         var firstFinding = new LegacyPipelinePersistedIoc(
@@ -209,18 +209,18 @@ public sealed class LegacyScanPipelinePainLevelTests
             target,
             [firstFinding, highSigmaFinding, lowSigmaFinding]);
 
-        var alert = LegacyScanPipelineService.CreateScanResultAlert(
-            target.TargetId,
+        var alert = LegacyScanPipelineService.CreateScanAlert(
+            batchId: null,
             jobId: 44,
-            resultId: 159,
             candidates,
             DateTimeOffset.Parse("2026-04-20T00:05:00Z"));
 
         candidates.Should().HaveCount(3);
-        alert.Title.Should().Be("SIGMA findings on Zombie (192.168.207.130) (job 44, result 159)");
+        alert.Title.Should().Be("SIGMA findings on Zombie (192.168.207.130) (scan job 44)");
         alert.Severity.Should().Be(AlertSeverity.High);
         alert.RuleName.Should().Be("Multiple rules");
         alert.Summary.Should().Contain("3 IOC finding(s)");
+        alert.Summary.Should().Contain("SIGMA");
         alert.Summary.Should().Contain("Highest severity: High");
         alert.Summary.Should().Contain("Suspicious PowerShell");
         alert.FirstDetectedAtUtc.Should().Be(DateTimeOffset.Parse("2026-04-20T00:00:00Z"));
@@ -228,22 +228,64 @@ public sealed class LegacyScanPipelinePainLevelTests
     }
 
     [Fact]
-    public void CreateScanResultAlert_OneFindingKeepsRuleName()
+    public void CreateScanAlert_OneFindingKeepsRuleName()
     {
         var target = BuildAlertTarget();
         var finding = BuildPersistedYaraIoc("IOCManager_ZombieVM_Mixed_Indicators", DateTimeOffset.Parse("2026-04-20T00:00:00Z"));
         var candidates = LegacyScanPipelineService.BuildFindingAlertCandidates(target, [finding]);
 
-        var alert = LegacyScanPipelineService.CreateScanResultAlert(
-            target.TargetId,
+        var alert = LegacyScanPipelineService.CreateScanAlert(
+            batchId: null,
             jobId: null,
-            resultId: 159,
             candidates,
             DateTimeOffset.Parse("2026-04-20T00:05:00Z"));
 
-        alert.Title.Should().Be("YARA findings on Zombie (192.168.207.130) (result 159)");
+        alert.Title.Should().Be("YARA findings on Zombie (192.168.207.130) (scan)");
         alert.RuleName.Should().Be("IOCManager_ZombieVM_Mixed_Indicators");
         alert.Severity.Should().Be(AlertSeverity.Medium);
+    }
+
+    [Fact]
+    public void CreateScanAlert_MixedFamiliesAndTargetsUsesScanLevelContext()
+    {
+        var webTarget = BuildAlertTarget();
+        var dbTarget = new LegacyPipelineTargetEntity
+        {
+            TargetId = 160,
+            DisplayName = "DB",
+            IPAddress = "192.168.207.131",
+        };
+        var yaraFinding = BuildPersistedYaraIoc("Injected file marker", DateTimeOffset.Parse("2026-04-20T00:00:00Z"));
+        var suricataFinding = new LegacyPipelinePersistedIoc(
+            Guid.NewGuid(),
+            DateTimeOffset.Parse("2026-04-20T00:01:00Z"),
+            "SURICATA",
+            "DB",
+            "Linux",
+            "Suspicious network marker",
+            "{}",
+            null,
+            null,
+            new LegacyPipelinePersistedNetworkDetail("192.168.207.25", "192.168.207.131", "tcp", "High", 42));
+        var candidates = LegacyScanPipelineService.BuildFindingAlertCandidates(webTarget, [yaraFinding])
+            .Concat(LegacyScanPipelineService.BuildFindingAlertCandidates(dbTarget, [suricataFinding]))
+            .ToArray();
+
+        var alert = LegacyScanPipelineService.CreateScanAlert(
+            Guid.Parse("c4ad54fe-45c8-4ef6-8812-1a878863e942"),
+            jobId: 44,
+            candidates,
+            DateTimeOffset.Parse("2026-04-20T00:05:00Z"));
+
+        alert.Title.Should().Be("Mixed scanner findings on Multiple targets (scan c4ad54fe)");
+        alert.ScannerFamily.Should().Be("mixed");
+        alert.TargetId.Should().BeNull();
+        alert.TargetDisplay.Should().Be("Multiple targets");
+        alert.RuleName.Should().Be("Multiple rules");
+        alert.Summary.Should().Contain("SURICATA");
+        alert.Summary.Should().Contain("YARA");
+        alert.Summary.Should().Contain("across 2 target(s)");
+        alert.Severity.Should().Be(AlertSeverity.High);
     }
 
     [Fact]

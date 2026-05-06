@@ -146,6 +146,7 @@ describe("AlertDetailPage", () => {
       if (key[0] === "alert-owners") {
         return {
           isLoading: false,
+          isSuccess: true,
           isError: false,
           error: null,
           data: [
@@ -155,9 +156,20 @@ describe("AlertDetailPage", () => {
         }
       }
 
+      if (key[2] === "aegis-plans") {
+        return {
+          isLoading: false,
+          isSuccess: true,
+          isError: false,
+          error: null,
+          data: { items: [] },
+        }
+      }
+
       if (key[2] === "email-updates") {
         return {
           isLoading: false,
+          isSuccess: true,
           isError: false,
           error: null,
           refetch: emailRefetch,
@@ -181,6 +193,7 @@ describe("AlertDetailPage", () => {
 
       return {
         isLoading: false,
+        isSuccess: true,
         isError: false,
         error: null,
         data: currentDetail,
@@ -202,6 +215,27 @@ describe("AlertDetailPage", () => {
     expect(screen.getByText("1 IOC(s)")).toBeInTheDocument()
     expect(screen.queryByText("Related Scan Results")).not.toBeInTheDocument()
     expect(screen.queryByText("Open decision")).not.toBeInTheDocument()
+  })
+
+  it("lists involved scanner families for scan-level mixed cases", () => {
+    const baseIoc = currentDetail.linkedIocs[0]
+    currentDetail = {
+      ...currentDetail,
+      scannerFamily: "mixed",
+      linkedIocCount: 3,
+      linkedIocs: [
+        { ...baseIoc, iocId: "fb192f1b-bcc8-4617-9dde-6ed434770bf8", scannerFamily: "yara" },
+        { ...baseIoc, iocId: "98f23172-8a3d-4080-a95f-296d4920b01c", scannerFamily: "sigma" },
+        { ...baseIoc, iocId: "913b4a31-898a-489d-9e80-2d9dd4bdc73f", scannerFamily: "suricata" },
+      ],
+    }
+
+    render(<AlertDetailPage />)
+
+    expect(screen.queryByText("Mixed")).not.toBeInTheDocument()
+    expect(screen.getAllByText("YARA").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Sigma").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Suricata").length).toBeGreaterThan(0)
   })
 
   it("renders a muted fallback when source scan context is absent", () => {
@@ -233,6 +267,7 @@ describe("AlertDetailPage", () => {
     render(<AlertDetailPage />)
 
     expect(screen.getByText("0% complete")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }))
     fireEvent.change(screen.getByLabelText(/Update status for IOC/i), { target: { value: "InReview" } })
 
     await waitFor(() => {
@@ -268,6 +303,7 @@ describe("AlertDetailPage", () => {
 
   it("renders owner routing and email history", () => {
     render(<AlertDetailPage />)
+    fireEvent.click(screen.getByRole("button", { name: "Communications" }))
 
     expect(screen.getAllByText("Security Operations Center").length).toBeGreaterThan(0)
     expect(screen.getAllByText("soc@local.test").length).toBeGreaterThan(0)
@@ -277,6 +313,7 @@ describe("AlertDetailPage", () => {
 
   it("updates the alert owner from configured owner choices", async () => {
     render(<AlertDetailPage />)
+    fireEvent.click(screen.getByRole("button", { name: "Communications" }))
 
     fireEvent.change(screen.getByDisplayValue("Security Operations Center - soc@local.test"), {
       target: { value: "forensics" },
@@ -293,6 +330,7 @@ describe("AlertDetailPage", () => {
 
   it("sends a manual email update to the stored owner mailbox", async () => {
     render(<AlertDetailPage />)
+    fireEvent.click(screen.getByRole("button", { name: "Communications" }))
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Owner update" } })
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Review this alert." } })

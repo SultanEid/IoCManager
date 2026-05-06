@@ -90,7 +90,11 @@ internal static class V2Mappings
             source.UpdatedAtUtc);
     }
 
-    public static AlertResponse ToAlertResponse(this Alert source, int linkedIocCount = 0, AlertProgressResponse? progress = null)
+    public static AlertResponse ToAlertResponse(
+        this Alert source,
+        int linkedIocCount = 0,
+        AlertProgressResponse? progress = null,
+        IReadOnlyList<string>? scannerFamilies = null)
     {
         progress ??= new AlertProgressResponse(linkedIocCount, linkedIocCount, 0, 0, 0);
 
@@ -105,6 +109,7 @@ internal static class V2Mappings
             source.OwnerEmail,
             source.ApprovalTierRequired,
             source.ScannerFamily,
+            NormalizeScannerFamilies(scannerFamilies, source.ScannerFamily),
             source.TargetId?.ToString(),
             source.TargetDisplay,
             source.RuleName,
@@ -115,6 +120,29 @@ internal static class V2Mappings
             source.CreatedAtUtc,
             source.UpdatedAtUtc);
     }
+
+    public static IReadOnlyList<string> NormalizeScannerFamilies(IReadOnlyList<string>? scannerFamilies, string fallbackFamily)
+    {
+        var values = (scannerFamilies is { Count: > 0 } ? scannerFamilies : [fallbackFamily])
+            .Select(x => x.Trim().ToLowerInvariant())
+            .Where(x => !string.IsNullOrWhiteSpace(x) && x != "mixed")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(ScannerFamilySortIndex)
+            .ThenBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return values.Length > 0 ? values : [fallbackFamily.Trim().ToLowerInvariant()];
+    }
+
+    private static int ScannerFamilySortIndex(string scannerFamily)
+        => scannerFamily.ToLowerInvariant() switch
+        {
+            "yara" => 0,
+            "sigma" => 1,
+            "snort" => 2,
+            "suricata" => 3,
+            _ => 99,
+        };
 
     public static PermissionResponse ToPermissionResponse(this Permission source)
         => new(source.Id, source.Key, source.Description, source.CreatedAtUtc);

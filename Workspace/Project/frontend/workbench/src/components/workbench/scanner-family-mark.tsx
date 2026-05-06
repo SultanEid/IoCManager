@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { Bug } from "lucide-react"
 
-type KnownScannerFamily = "yara" | "sigma" | "snort" | "suricata"
+type KnownScannerFamily = "yara" | "sigma" | "snort" | "suricata" | "mixed"
 
 type ScannerMarkProps = {
   family: string
@@ -61,11 +61,17 @@ const FAMILY_META: Record<
     badgeClassName: "border-orange-300/25 bg-orange-500/10 text-orange-100",
     glyphClassName: "text-orange-50",
   },
+  mixed: {
+    label: "Mixed",
+    frameClassName: "border-cyan-300/25 bg-[linear-gradient(145deg,rgba(34,211,238,0.28),rgba(168,85,247,0.12))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
+    badgeClassName: "border-cyan-300/25 bg-cyan-500/10 text-cyan-100",
+    glyphClassName: "text-cyan-50",
+  },
 }
 
 function normalizeScannerFamily(family: string): KnownScannerFamily | null {
   const normalized = family.trim().toLowerCase()
-  if (normalized === "yara" || normalized === "sigma" || normalized === "snort" || normalized === "suricata") {
+  if (normalized === "yara" || normalized === "sigma" || normalized === "snort" || normalized === "suricata" || normalized === "mixed") {
     return normalized
   }
 
@@ -169,6 +175,17 @@ function SuricataGlyph({ className }: { className?: string }) {
   )
 }
 
+function MixedGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 7h4v4H7z" opacity="0.95" />
+      <path d="M13 7h4v4h-4z" opacity="0.7" />
+      <path d="M7 13h4v4H7z" opacity="0.7" />
+      <path d="M13 13h4v4h-4z" opacity="0.95" />
+    </svg>
+  )
+}
+
 function ScannerGlyph({ family }: { family: KnownScannerFamily }) {
   const glyphClassName = "h-full w-full"
   switch (family) {
@@ -180,6 +197,8 @@ function ScannerGlyph({ family }: { family: KnownScannerFamily }) {
       return <SnortGlyph className={glyphClassName} />
     case "suricata":
       return <SuricataGlyph className={glyphClassName} />
+    case "mixed":
+      return <MixedGlyph className={glyphClassName} />
   }
 }
 

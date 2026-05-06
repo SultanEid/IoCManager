@@ -36,6 +36,7 @@ export const v2AlertResponseSchema = z.object({
   ownerEmail: nullableString,
   approvalTierRequired: safeString,
   scannerFamily: safeString,
+  scannerFamilies: z.array(safeString).default([]),
   targetId: z.string().nullable(),
   targetDisplay: safeString,
   ruleName: safeString,

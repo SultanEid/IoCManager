@@ -135,11 +135,14 @@ public sealed class AlertsController : ControllerBase
                 .Skip(skip)
                 .Take(pageSize)
                 .ToArrayAsync(cancellationToken);
-            var progressByAlertId = await BuildProgressByAlertIdAsync(items.Select(x => x.Id).ToArray(), cancellationToken);
+            var alertIds = items.Select(x => x.Id).ToArray();
+            var progressByAlertId = await BuildProgressByAlertIdAsync(alertIds, cancellationToken);
+            var scannerFamiliesByAlertId = await BuildScannerFamiliesByAlertIdAsync(alertIds, cancellationToken);
             var responseItems = items.Select(item =>
             {
                 var progress = ResolveProgress(progressByAlertId, item.Id);
-                return item.ToAlertResponse(progress.TotalIocs, progress);
+                scannerFamiliesByAlertId.TryGetValue(item.Id, out var scannerFamilies);
+                return item.ToAlertResponse(progress.TotalIocs, progress, scannerFamilies);
             }).ToArray();
 
             if (responseItems.Length > 0)
@@ -368,6 +371,52 @@ public sealed class AlertsController : ControllerBase
             .ToDictionary(x => x.Key, x => BuildProgress(x.Select(item => item.Status)));
     }
 
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<string>>> BuildScannerFamiliesByAlertIdAsync(
+        IReadOnlyCollection<Guid> alertIds,
+        CancellationToken cancellationToken)
+    {
+        if (alertIds.Count == 0)
+        {
+            return new Dictionary<Guid, IReadOnlyList<string>>();
+        }
+
+        var links = await _dbContext.AlertIocs
+            .AsNoTracking()
+            .Where(x => alertIds.Contains(x.AlertId))
+            .Select(x => new AlertIocScannerFamilyRow(x.AlertId, x.IocId))
+            .ToArrayAsync(cancellationToken);
+        var iocIds = links.Select(x => x.IocId).Distinct().ToArray();
+        if (iocIds.Length == 0)
+        {
+            return new Dictionary<Guid, IReadOnlyList<string>>();
+        }
+
+        var scannerFamilyByIocId = await _legacyDbContext.Iocs
+            .AsNoTracking()
+            .Where(x => iocIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.ScannerType })
+            .ToDictionaryAsync(x => x.Id, x => x.ScannerType, cancellationToken);
+
+        return links
+            .Select(link => new
+            {
+                link.AlertId,
+                ScannerFamily = scannerFamilyByIocId.TryGetValue(link.IocId, out var scannerFamily)
+                    ? scannerFamily.Trim().ToLowerInvariant()
+                    : string.Empty,
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.ScannerFamily))
+            .GroupBy(x => x.AlertId)
+            .ToDictionary(
+                x => x.Key,
+                x => (IReadOnlyList<string>)x
+                    .Select(item => item.ScannerFamily)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(ScannerFamilySortIndex)
+                    .ThenBy(item => item, StringComparer.OrdinalIgnoreCase)
+                    .ToArray());
+    }
+
     private static AlertProgressResponse ResolveProgress(
         IReadOnlyDictionary<Guid, AlertProgressResponse> progressByAlertId,
         Guid alertId)
@@ -558,6 +607,9 @@ public sealed class AlertsController : ControllerBase
             ? await _legacyDbContext.Targets.AsNoTracking().FirstOrDefaultAsync(x => x.TargetId == alert.TargetId.Value, cancellationToken)
             : null;
         var progress = BuildProgress(linkedIocLinks);
+        var scannerFamilies = V2Mappings.NormalizeScannerFamilies(
+            linkedIocs.Select(x => x.ScannerType).ToArray(),
+            alert.ScannerFamily);
 
         var detail = new AlertDetailResponse(
             alert.Id,
@@ -570,6 +622,7 @@ public sealed class AlertsController : ControllerBase
             alert.OwnerEmail,
             alert.ApprovalTierRequired,
             alert.ScannerFamily,
+            scannerFamilies,
             alert.TargetId?.ToString(),
             alert.TargetDisplay,
             alert.RuleName,
@@ -658,6 +711,7 @@ public sealed class AlertsController : ControllerBase
             null,
             "Analyst",
             NormalizeFamily(detail.ScannerFamily),
+            [NormalizeFamily(detail.ScannerFamily)],
             detail.TargetId,
             detail.TargetDisplay,
             detail.RuleName,
@@ -716,6 +770,7 @@ public sealed class AlertsController : ControllerBase
             null,
             "Analyst",
             NormalizeFamily(finding.ScannerFamily),
+            [NormalizeFamily(finding.ScannerFamily)],
             finding.TargetId,
             finding.TargetDisplay,
             finding.RuleName,
@@ -764,6 +819,17 @@ public sealed class AlertsController : ControllerBase
             };
 
     private sealed record AlertIocProgressRow(Guid AlertId, AlertIocStatus Status);
+    private sealed record AlertIocScannerFamilyRow(Guid AlertId, Guid IocId);
+
+    private static int ScannerFamilySortIndex(string scannerFamily)
+        => scannerFamily.ToLowerInvariant() switch
+        {
+            "yara" => 0,
+            "sigma" => 1,
+            "snort" => 2,
+            "suricata" => 3,
+            _ => 99,
+        };
 
     private static string? ValidateEmailUpdateRequest(SendAlertEmailUpdateRequest request)
     {
