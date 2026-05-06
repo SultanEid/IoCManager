@@ -1,0 +1,93 @@
+table '_Measures 4'
+	lineageTag: 61d3e525-e2af-4fc3-8156-5993a34368c8
+	sourceLineageTag: af00ef6d-6b0d-4d4e-8711-6292f74b075e
+
+	measure 'Total IOCs 4' = EXTERNALMEASURE("Total IOCs", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 80cb6b00-90ac-4fe3-bf10-9c893a4a8503
+		sourceLineageTag: 9f14df57-db9d-4668-b59d-81975068f585
+		dataCategory: Uncategorized
+
+	measure 'Windows Threats 4' = EXTERNALMEASURE("Windows Threats", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 5ce3133d-b586-4350-9876-69ef42636933
+		sourceLineageTag: 405df069-039b-4ce6-af0a-5989e2ba027c
+		dataCategory: Uncategorized
+
+	measure 'Yara Detections 4' = EXTERNALMEASURE("Yara Detections", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 20859146-afe5-4554-b4e8-f77b51c8c76f
+		sourceLineageTag: 58dbc538-8f18-4c92-9279-8d2d9d912d75
+		dataCategory: Uncategorized
+
+	measure 'Yesterday IOCs 4' = EXTERNALMEASURE("Yesterday IOCs", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 3533d1fd-8aea-4768-b73b-6d99fd36c264
+		sourceLineageTag: 22102dc8-4276-4792-9048-88c8238bc301
+		dataCategory: Uncategorized
+
+	measure 'Total Alerts 4' = EXTERNALMEASURE("Total Alerts", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: fc18bc70-3710-4887-a0e8-68f8d5f9b19f
+		sourceLineageTag: 71c7f6a5-4bb8-4abe-b4a8-f26ddb772c7f
+		dataCategory: Uncategorized
+
+	measure 'Today IOCs 4' = EXTERNALMEASURE("Today IOCs", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: afaec2df-a144-4adf-a833-19eafa78f0ff
+		sourceLineageTag: e552392e-dc8f-4002-9e98-d74c3286be48
+		dataCategory: Uncategorized
+
+	measure 'Suricata Detections 4' = EXTERNALMEASURE("Suricata Detections", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 1d757f8a-add2-4cf2-9c3b-ed4515da0bf4
+		sourceLineageTag: c6cc14f7-d947-4ef8-b3c3-f1bb2714445c
+		dataCategory: Uncategorized
+
+	measure 'Snort Detections 4' = EXTERNALMEASURE("Snort Detections", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 90597e12-8dd8-42ee-a50c-99d22b88a2e7
+		sourceLineageTag: 04116e33-dcf0-4655-ace9-df43a36cc581
+		dataCategory: Uncategorized
+
+	measure 'Sigma Detections 4' = EXTERNALMEASURE("Sigma Detections", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 3668bc70-91a0-4ee0-8067-96b327d6ce92
+		sourceLineageTag: a4967da9-6f32-4e00-91e5-546f038695ac
+		dataCategory: Uncategorized
+
+	measure 'Linux Threats 4' = EXTERNALMEASURE("Linux Threats", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 9fa9e666-c4a5-495e-9639-fc207a5bba5e
+		sourceLineageTag: 58dc3b65-cdc6-4013-9437-ab925112c39d
+		dataCategory: Uncategorized
+
+	measure 'High Severity Threats 4' = EXTERNALMEASURE("High Severity Threats", INTEGER, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		formatString: 0
+		lineageTag: 2df9ada4-ccc3-493c-95f7-67c993783658
+		sourceLineageTag: 624d25c2-46d4-46e5-ac06-d8f1e8032a3a
+		dataCategory: Uncategorized
+
+	measure 'Daily Change % 4' = EXTERNALMEASURE("Daily Change %", DOUBLE, "DirectQuery to AS - DeTechTive_semantic_model 3")
+		lineageTag: a7f6a988-c245-4573-9c91-5fb792db2499
+		sourceLineageTag: 24881649-ff65-4a24-8991-53f6ef8192a2
+		dataCategory: Uncategorized
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Placeholder
+		dataType: string
+		isHidden
+		lineageTag: b5791fc3-4a42-4542-aaca-b766f4d0a38e
+		sourceLineageTag: 25910517-a015-47fa-ad91-47ee711a4ddc
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Placeholder
+
+		annotation SummarizationSetBy = User
+
+	partition '_Measures 4' = entity
+		mode: directQuery
+		source
+			entityName: _Measures
+			expressionSource: 'DirectQuery to AS - DeTechTive_semantic_model 3'

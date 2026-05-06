@@ -1,0 +1,10 @@
+expression 'DirectQuery to AS - DeTechTive_semantic_model 3' =
+		let
+		    Source = AnalysisServices.Database("powerbi://api.powerbi.com/v1.0/myorg/DeTechTive", "DeTechTive_semantic_model"),
+		    Cubes = Table.Combine(Source[Data]),
+		    Cube = Cubes{[Id="Model", Kind="Cube"]}[Data]
+		in
+		    Cube
+	lineageTag: 070078bf-ae7e-4212-8fd2-c888e69a39ff
+
+	annotation PBI_IncludeFutureArtifacts = True

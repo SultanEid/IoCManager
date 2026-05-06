@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "DeTechTive"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "bde20309-1c6d-453c-a9ab-78c83248c68a"
+  }
+}

@@ -1,0 +1,93 @@
+table 'Target 4'
+	lineageTag: 4031224c-30eb-4f9a-b855-c613f3d84a62
+	sourceLineageTag: 5d1106db-5585-41e4-9edb-f7a96db82b07
+
+	column TargetID
+		dataType: int64
+		formatString: 0
+		lineageTag: d0238358-c7eb-41e1-8f58-e3acde370d8c
+		sourceLineageTag: 557e74ca-23b3-43fd-a3b2-a01177ec78ff
+		dataCategory: Uncategorized
+		summarizeBy: count
+		sourceColumn: TargetID
+
+		annotation SummarizationSetBy = User
+
+	column HostName
+		dataType: string
+		lineageTag: 8507c726-6c19-44e4-9db9-d3466a760fb4
+		sourceLineageTag: d4c5d378-62d1-4404-b197-1ab231a0f0ee
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: HostName
+
+		annotation SummarizationSetBy = User
+
+	column IPAddress
+		dataType: string
+		isNullable: false
+		lineageTag: e4b698d0-36bb-4019-bd1c-585e77d7bda2
+		sourceLineageTag: 094df402-5108-4912-bfa3-65ddd3eeaf51
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: IPAddress
+
+		annotation SummarizationSetBy = User
+
+	column Status
+		dataType: string
+		lineageTag: 3bd73285-a9d1-4232-8807-7b60ae6b721e
+		sourceLineageTag: fedb9eb9-8df3-4042-af2d-9eece851b12e
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: Status
+
+		annotation SummarizationSetBy = User
+
+	column TargetOsType
+		dataType: string
+		lineageTag: e177fc05-b069-480b-b352-b5283add6efd
+		sourceLineageTag: 3d3bf291-7545-4ff0-bcfc-7a1b083f4280
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: TargetOsType
+
+		annotation SummarizationSetBy = User
+
+	column NetworkID
+		dataType: int64
+		formatString: 0
+		lineageTag: c7d61f99-5a71-4001-b866-e7f3bdf9f547
+		sourceLineageTag: 55f72f83-4c9f-45c4-9308-b866729dcb89
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: NetworkID
+
+		annotation SummarizationSetBy = User
+
+	column LastSweep
+		dataType: dateTime
+		formatString: General Number
+		lineageTag: 20652be5-ebb9-47f2-a4c7-3a39e8352e1d
+		sourceLineageTag: 65f0b847-5558-46c0-b101-5af3cafeead4
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: LastSweep
+
+		annotation SummarizationSetBy = User
+
+	column DisplayName
+		dataType: string
+		lineageTag: 431b5d0a-0872-4a87-914c-f09cdc7de17b
+		sourceLineageTag: 3c32d53d-e7e9-4841-b62d-b17fde0ba325
+		dataCategory: Uncategorized
+		summarizeBy: none
+		sourceColumn: DisplayName
+
+		annotation SummarizationSetBy = User
+
+	partition 'Target 4' = entity
+		mode: directQuery
+		source
+			entityName: Target
+			expressionSource: 'DirectQuery to AS - DeTechTive_semantic_model 3'
