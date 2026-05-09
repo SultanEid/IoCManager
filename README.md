@@ -18,7 +18,7 @@
 
 ---
 
-## ✨ What Is IOC Manager?
+## ✨ What Is DeTechTive?
 
 **IOC Manager** is a proof-of-concept cyber operations platform that brings fragmented indicator, scanner, alert, and reporting workflows into one coordinated workbench.
 
