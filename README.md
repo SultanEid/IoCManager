@@ -1,4 +1,4 @@
-# IOC Manager 🛡️
+# DeTechTive 🛡️
 
 <p align="center">
   <strong>A unified cyber operations platform for IoC management, scanner orchestration, alert review, reporting, and AI-assisted analyst decisions.</strong>
