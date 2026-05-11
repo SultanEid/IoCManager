@@ -77,7 +77,8 @@ public sealed record LegacyPipelineTargetResponse(
     string IpAddress,
     string Status,
     string? TargetOsType,
-    DateTimeOffset? LastSweepAtUtc);
+    DateTimeOffset? LastSweepAtUtc,
+    Guid SyntheticTargetServerId);
 
 public sealed record UpdateLegacyPipelineTargetRequest(string? DisplayName);
 

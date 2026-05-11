@@ -198,6 +198,427 @@
 }
 
 @layer components {
+  .auth-scene {
+    --auth-grid-opacity: 0.22;
+    --auth-depth-opacity: 0.12;
+    --auth-ray-opacity: 0.56;
+    --auth-ray-blur: 26px;
+    --auth-ray-saturate: 1.22;
+    --auth-ray-blend: screen;
+    --auth-scanline-opacity: 0.48;
+    --auth-packet-opacity: 0.58;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--background) 92%, black), var(--background-tail)),
+      var(--background);
+    isolation: isolate;
+  }
+
+  .dark .auth-scene {
+    --auth-grid-opacity: 0.28;
+    --auth-depth-opacity: 0.15;
+    --auth-ray-opacity: 0.72;
+    --auth-ray-blur: 28px;
+    --auth-ray-saturate: 1.34;
+    --auth-ray-blend: screen;
+    --auth-scanline-opacity: 0.58;
+    --auth-packet-opacity: 0.72;
+  }
+
+  .auth-scene::before {
+    content: "";
+    position: absolute;
+    inset: -22%;
+    z-index: 0;
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--primary) 13%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--primary) 11%, transparent) 1px, transparent 1px);
+    background-size: 88px 88px;
+    mask-image: linear-gradient(180deg, transparent 0%, black 26%, black 68%, transparent 100%);
+    opacity: var(--auth-grid-opacity);
+    transform: rotate(-7deg) translate3d(0, 0, 0);
+    animation: auth-grid-drift 26s linear infinite;
+  }
+
+  .auth-scene::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-image:
+      repeating-linear-gradient(90deg, transparent 0 118px, color-mix(in srgb, var(--foreground) 5%, transparent) 118px 119px),
+      repeating-linear-gradient(180deg, transparent 0 54px, color-mix(in srgb, var(--foreground) 3%, transparent) 54px 55px);
+    opacity: var(--auth-depth-opacity);
+    animation: auth-depth-breathe 9s ease-in-out infinite;
+  }
+
+  .auth-color-ray {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 1;
+    width: 150vw;
+    height: 25rem;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at 50% 48%, color-mix(in srgb, var(--primary) 28%, transparent), transparent 56%),
+      linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--primary) 24%, transparent) 28%,
+        color-mix(in srgb, var(--accent-violet) 24%, transparent) 48%,
+        color-mix(in srgb, var(--accent-warm) 18%, transparent) 66%,
+        transparent 100%
+      );
+    filter: blur(var(--auth-ray-blur)) saturate(var(--auth-ray-saturate));
+    mix-blend-mode: var(--auth-ray-blend);
+    opacity: var(--auth-ray-opacity);
+    transform: translate3d(-50%, -50%, 0) rotate(-18deg);
+    animation: auth-ray-drift 12s ease-in-out infinite;
+  }
+
+  .auth-color-ray::before,
+  .auth-color-ray::after {
+    content: "";
+    position: absolute;
+    inset: -40% -12%;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+
+  .auth-color-ray::before {
+    background: conic-gradient(
+      from 150deg at 50% 50%,
+      transparent 0deg,
+      color-mix(in srgb, var(--primary) 30%, transparent) 54deg,
+      color-mix(in srgb, var(--accent-violet) 24%, transparent) 98deg,
+      transparent 156deg,
+      color-mix(in srgb, var(--accent-warm) 16%, transparent) 218deg,
+      transparent 300deg
+    );
+    filter: blur(34px);
+    opacity: 0.68;
+    animation: auth-ray-orbit 18s linear infinite;
+  }
+
+  .auth-color-ray::after {
+    inset: 18% 12%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--primary) 46%, transparent),
+      color-mix(in srgb, var(--accent-violet) 32%, transparent),
+      transparent
+    );
+    filter: blur(16px);
+    opacity: 0.74;
+    transform: rotate(2deg);
+    animation: auth-ray-sweep 8.5s ease-in-out infinite;
+  }
+
+  .auth-scanline {
+    position: absolute;
+    left: -12%;
+    right: -12%;
+    z-index: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 58%, transparent), color-mix(in srgb, var(--accent-warm) 22%, transparent), transparent);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--primary) 20%, transparent);
+    opacity: var(--auth-scanline-opacity);
+  }
+
+  .auth-scanline-primary {
+    top: 31%;
+    animation: auth-scan-primary 7.8s ease-in-out infinite;
+  }
+
+  .auth-scanline-secondary {
+    top: 67%;
+    opacity: 0.24;
+    animation: auth-scan-secondary 10.5s ease-in-out infinite;
+  }
+
+  .auth-packets {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: var(--auth-packet-opacity);
+  }
+
+  .auth-packets span {
+    position: absolute;
+    width: 34px;
+    height: 1px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 74%, transparent), transparent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--primary) 24%, transparent);
+    animation: auth-packet-flow 8s linear infinite;
+  }
+
+  .detechtive-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .detechtive-brand-icon {
+    width: 1.9rem;
+    height: 1.9rem;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px color-mix(in srgb, #4284be 22%, transparent));
+  }
+
+  .detechtive-wordmark {
+    display: inline-block;
+    color: var(--muted-foreground);
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    line-height: 1;
+  }
+
+  .detechtive-wordmark-accent {
+    background: linear-gradient(90deg, #4284be 0%, #75b3cb 46%, #4284be 100%);
+    background-size: 220% 100%;
+    background-clip: text;
+    color: #4284be;
+    font-weight: 800;
+    text-shadow: 0 0 12px color-mix(in srgb, #4284be 24%, transparent);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: detechtive-wordmark-flow 3.8s ease-in-out infinite;
+  }
+
+  .auth-packets span:nth-child(1) {
+    top: 18%;
+    left: -8%;
+    animation-delay: -1.2s;
+  }
+
+  .auth-packets span:nth-child(2) {
+    top: 29%;
+    left: -12%;
+    width: 48px;
+    animation-delay: -5s;
+    animation-duration: 10s;
+  }
+
+  .auth-packets span:nth-child(3) {
+    top: 43%;
+    left: -10%;
+    animation-delay: -3.6s;
+    animation-duration: 9.2s;
+  }
+
+  .auth-packets span:nth-child(4) {
+    top: 58%;
+    left: -14%;
+    width: 42px;
+    animation-delay: -7.4s;
+    animation-duration: 11s;
+  }
+
+  .auth-packets span:nth-child(5) {
+    top: 72%;
+    left: -11%;
+    animation-delay: -2.4s;
+    animation-duration: 9.8s;
+  }
+
+  .auth-packets span:nth-child(6) {
+    top: 84%;
+    left: -9%;
+    width: 54px;
+    animation-delay: -6.5s;
+    animation-duration: 12s;
+  }
+
+  :root:not(.dark) .auth-scene {
+    --auth-grid-opacity: 0.44;
+    --auth-depth-opacity: 0.24;
+    --auth-ray-opacity: 0.92;
+    --auth-ray-blur: 24px;
+    --auth-ray-saturate: 1.42;
+    --auth-ray-blend: normal;
+    --auth-scanline-opacity: 0.72;
+    --auth-packet-opacity: 0.9;
+    background:
+      radial-gradient(circle at 24% 16%, color-mix(in srgb, var(--primary) 24%, transparent), transparent 31%),
+      radial-gradient(circle at 78% 72%, color-mix(in srgb, var(--accent-cool) 18%, transparent), transparent 34%),
+      radial-gradient(circle at 52% 50%, color-mix(in srgb, var(--accent-violet) 10%, transparent), transparent 38%),
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 88%, white), var(--background-tail)),
+      var(--background);
+  }
+
+  :root:not(.dark) .auth-scene::before {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--primary) 18%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--primary) 15%, transparent) 1px, transparent 1px);
+    opacity: 0.34;
+    mask-image: linear-gradient(180deg, transparent 0%, black 18%, black 78%, transparent 100%);
+  }
+
+  :root:not(.dark) .auth-scene::after {
+    background-image:
+      repeating-linear-gradient(90deg, transparent 0 118px, color-mix(in srgb, var(--primary) 10%, transparent) 118px 119px),
+      repeating-linear-gradient(180deg, transparent 0 54px, color-mix(in srgb, var(--foreground) 5%, transparent) 54px 55px);
+    opacity: 0.18;
+  }
+
+  :root:not(.dark) .auth-color-ray {
+    height: 28rem;
+    background:
+      radial-gradient(ellipse at 50% 48%, color-mix(in srgb, var(--primary) 38%, transparent), transparent 58%),
+      linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--primary) 34%, transparent) 30%,
+        color-mix(in srgb, var(--accent-violet) 28%, transparent) 48%,
+        color-mix(in srgb, var(--accent-warm) 22%, transparent) 64%,
+        transparent 100%
+      );
+    filter: blur(var(--auth-ray-blur)) saturate(var(--auth-ray-saturate));
+    opacity: var(--auth-ray-opacity);
+  }
+
+  :root:not(.dark) .auth-scanline {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--primary) 70%, transparent),
+      color-mix(in srgb, var(--accent-warm) 34%, transparent),
+      transparent
+    );
+    box-shadow:
+      0 0 20px color-mix(in srgb, var(--primary) 30%, transparent),
+      0 0 1px color-mix(in srgb, var(--primary) 56%, transparent);
+    opacity: var(--auth-scanline-opacity);
+  }
+
+  :root:not(.dark) .auth-scanline-secondary {
+    opacity: 0.32;
+  }
+
+  :root:not(.dark) .auth-packets {
+    opacity: 0.66;
+  }
+
+  :root:not(.dark) .auth-packets span {
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 86%, transparent), transparent);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--primary) 34%, transparent);
+  }
+
+  :root:not(.dark) .auth-scene .relative.z-10 > section {
+    border-color: color-mix(in srgb, var(--primary) 15%, var(--border));
+    background:
+      linear-gradient(160deg, color-mix(in srgb, white 86%, var(--primary)), color-mix(in srgb, var(--surface-1) 94%, white) 52%, color-mix(in srgb, var(--surface-2) 88%, white));
+    box-shadow:
+      0 26px 70px rgba(15, 23, 42, 0.18),
+      0 0 0 1px rgba(255, 255, 255, 0.82) inset,
+      0 0 42px color-mix(in srgb, var(--primary) 13%, transparent);
+    backdrop-filter: blur(18px) saturate(1.08);
+  }
+
+  @keyframes auth-grid-drift {
+    from {
+      background-position: 0 0, 0 0;
+    }
+    to {
+      background-position: 176px 88px, 176px 88px;
+    }
+  }
+
+  @keyframes auth-depth-breathe {
+    0%,
+    100% {
+      opacity: 0.08;
+    }
+    50% {
+      opacity: 0.16;
+    }
+  }
+
+  @keyframes auth-ray-drift {
+    0%,
+    100% {
+      transform: translate3d(-58%, -54%, 0) rotate(-18deg);
+    }
+    50% {
+      transform: translate3d(-42%, -44%, 0) rotate(-15deg);
+    }
+  }
+
+  @keyframes auth-ray-orbit {
+    from {
+      transform: rotate(0deg) scale(1);
+    }
+    50% {
+      transform: rotate(180deg) scale(1.08);
+    }
+    to {
+      transform: rotate(360deg) scale(1);
+    }
+  }
+
+  @keyframes auth-ray-sweep {
+    0%,
+    100% {
+      transform: translateX(-7%) rotate(2deg);
+      opacity: 0.44;
+    }
+    50% {
+      transform: translateX(7%) rotate(-2deg);
+      opacity: 0.92;
+    }
+  }
+
+  @keyframes auth-scan-primary {
+    0%,
+    100% {
+      transform: translateY(-18px);
+    }
+    50% {
+      transform: translateY(28px);
+    }
+  }
+
+  @keyframes auth-scan-secondary {
+    0%,
+    100% {
+      transform: translateY(18px);
+    }
+    50% {
+      transform: translateY(-24px);
+    }
+  }
+
+  @keyframes auth-packet-flow {
+    from {
+      transform: translateX(0);
+      opacity: 0;
+    }
+    14%,
+    82% {
+      opacity: 1;
+    }
+    to {
+      transform: translateX(118vw);
+      opacity: 0;
+    }
+  }
+
+  @keyframes detechtive-wordmark-flow {
+    0%,
+    100% {
+      background-position: 0% 50%;
+      text-shadow: 0 0 8px color-mix(in srgb, #4284be 18%, transparent);
+    }
+    50% {
+      background-position: 100% 50%;
+      text-shadow: 0 0 15px color-mix(in srgb, #75b3cb 34%, transparent);
+    }
+  }
+
   .wb-page {
     @apply min-w-0 max-w-full space-y-5 overflow-x-clip lg:space-y-6;
   }
@@ -323,6 +744,23 @@
   .wb-reading-surface :is(input, select, textarea):focus {
     border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 13%, transparent);
+  }
+
+  :root.dark select {
+    color-scheme: dark;
+    background-color: var(--surface-1);
+    color: var(--foreground);
+  }
+
+  :root.dark select option,
+  :root.dark select optgroup {
+    background-color: var(--surface-1);
+    color: var(--foreground);
+  }
+
+  :root.dark select option:checked {
+    background-color: color-mix(in srgb, var(--primary) 28%, var(--surface-1));
+    color: var(--foreground);
   }
 }
 

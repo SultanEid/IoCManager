@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { StatusBadge } from "@/components/workbench/status-badge"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
@@ -667,20 +668,16 @@ export function ScanPlanManagementPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell>
-                                            <div className="relative flex justify-end">
-                                                <Button
-                                                    type="button"
-                                                    size="xs"
-                                                    variant="outline"
-                                                    aria-expanded={openPlanActionsId === plan.id}
-                                                    onClick={() => setOpenPlanActionsId((current) => current === plan.id ? null : plan.id)}
+                                            <div className="flex justify-end">
+                                                <DropdownMenu
+                                                    open={openPlanActionsId === plan.id}
+                                                    onOpenChange={(open) => setOpenPlanActionsId(open ? plan.id : null)}
                                                 >
+                                                    <DropdownMenuTrigger className="inline-flex h-6 items-center rounded-[min(var(--radius-md),10px)] border border-border bg-background px-2 text-xs font-medium transition hover:bg-muted aria-expanded:bg-muted aria-expanded:text-foreground">
                                                     More
-                                                </Button>
-                                                {openPlanActionsId === plan.id ? (
-                                                    <div className="absolute right-0 top-9 z-20 grid w-40 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
-                                                        <button
-                                                            type="button"
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" sideOffset={8} className="grid w-40 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                                                        <DropdownMenuItem
                                                             className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
                                                             onClick={() => {
                                                                 setEditingPlanId(plan.id)
@@ -691,9 +688,8 @@ export function ScanPlanManagementPage() {
                                                             }}
                                                         >
                                                             Edit details
-                                                        </button>
-                                                        <button
-                                                            type="button"
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
                                                             className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
                                                             onClick={() => {
                                                                 setEditingPlanId(plan.id)
@@ -704,9 +700,8 @@ export function ScanPlanManagementPage() {
                                                             }}
                                                         >
                                                             Schedule
-                                                        </button>
-                                                        <button
-                                                            type="button"
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
                                                             className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                                                             disabled={!canManage || runPlanMutation.isPending}
                                                             onClick={() => {
@@ -715,9 +710,9 @@ export function ScanPlanManagementPage() {
                                                             }}
                                                         >
                                                             Run now
-                                                        </button>
-                                                    </div>
-                                                ) : null}
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
                                             </div>
                                         </TableCell>
                                     </TableRow>

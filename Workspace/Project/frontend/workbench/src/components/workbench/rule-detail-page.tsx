@@ -15,6 +15,10 @@ import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
 import { LoadingState, EmptyState } from "@/shared/ui/state-panels"
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 export function RuleDetailPage({ ruleId }: { ruleId: string }) {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -23,12 +27,17 @@ export function RuleDetailPage({ ruleId }: { ruleId: string }) {
   const [actorUserId, setActorUserId] = useState(sessionActorUserId)
   const [restoreStatus, setRestoreStatus] = useState("draft")
   const resolvedActorUserId = actorUserId.trim()
+  const isRuleIdFormatValid = isUuid(ruleId)
 
   useEffect(() => {
     setActorUserId(sessionActorUserId)
   }, [sessionActorUserId])
 
-  const detailQuery = useWorkbenchQuery(["rules-repository", "detail", ruleId], (signal) => gateway.getRuleDetail(ruleId, signal))
+  const detailQuery = useWorkbenchQuery(
+    ["rules-repository", "detail", ruleId],
+    (signal) => gateway.getRuleDetail(ruleId, signal),
+    { enabled: isRuleIdFormatValid },
+  )
 
   const archiveMutation = useMutation({
     mutationFn: () => gateway.archiveRule(ruleId, { actorUserId: resolvedActorUserId, changeReason: "manual archive" }),
@@ -46,12 +55,41 @@ export function RuleDetailPage({ ruleId }: { ruleId: string }) {
     },
   })
 
+  if (!isRuleIdFormatValid) {
+    return (
+      <section className="wb-page space-y-6">
+        <div className="wb-panel flex flex-col items-center justify-center gap-3 border border-primary/18 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_94%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] py-16 text-center">
+          <p className="wb-kicker text-primary/90">Rule Detail</p>
+          <h2 className="text-lg font-semibold tracking-tight">Invalid rule link</h2>
+          <p className="max-w-xl text-sm text-muted-foreground">
+            This rule route does not contain a complete rule identifier. Return to the repository and open the rule from the current inventory.
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={() => router.push("/rules")}>
+            Back to repository
+          </Button>
+        </div>
+      </section>
+    )
+  }
+
   if (detailQuery.isLoading) {
     return <LoadingState label="Loading rule detail" />
   }
 
   if (detailQuery.isError) {
-    return <ClassifiedFailureState failure={classifyUiError(detailQuery.error)} fallbackTitle="Rule detail unavailable" />
+    return (
+      <section className="wb-page space-y-4">
+        <ClassifiedFailureState failure={classifyUiError(detailQuery.error)} fallbackTitle="Rule detail unavailable" />
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => router.push("/rules")}>
+            Back to repository
+          </Button>
+          <Button type="button" size="sm" onClick={() => void detailQuery.refetch()}>
+            Try again
+          </Button>
+        </div>
+      </section>
+    )
   }
 
   const detail = detailQuery.data

@@ -1,11 +1,13 @@
 import { RuleDetailPage } from "@/components/workbench/rule-detail-page"
 
 type RuleDetailRouteProps = {
-  params: {
+  params: Promise<{
     ruleId: string
-  }
+  }>
 }
 
-export default function RuleDetailRoute({ params }: RuleDetailRouteProps) {
-  return <RuleDetailPage ruleId={params.ruleId} />
+export default async function RuleDetailRoute({ params }: RuleDetailRouteProps) {
+  const { ruleId } = await params
+
+  return <RuleDetailPage ruleId={ruleId} />
 }

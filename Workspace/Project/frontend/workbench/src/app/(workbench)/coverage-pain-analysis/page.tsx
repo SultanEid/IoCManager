@@ -143,20 +143,6 @@ function buildEmptyAnalysis(range: { fromUtc: string; toUtc: string }): LegacyPi
   }
 }
 
-function buildPostureSummary(analysis: LegacyPipelinePainAnalysis) {
-  const dominant = [...analysis.levels].sort((left, right) => right.count - left.count)[0]
-  if (!dominant || dominant.count === 0) {
-    return "No IOC detections landed in the selected window."
-  }
-
-  const label = formatPainLevelLabel(dominant.level)
-  if (dominant.level === "Ttp" || dominant.level === "Tool") {
-    return `${label} currently leads the detection mix, so the environment is seeing higher-pain adversary signals.`
-  }
-
-  return `${label} currently leads the detection mix, so the posture is still weighted toward indicator-level findings.`
-}
-
 export default function PyramidOfPainPage() {
   const router = useRouter()
   const [rangeAnchor] = useState(() => new Date())
@@ -188,7 +174,6 @@ export default function PyramidOfPainPage() {
 
   const activeLevelSummary = orderedLevels.find((level) => level.level === activeLevel) ?? orderedLevels[0]
   const maxCount = Math.max(...orderedLevels.map((level) => level.count), 1)
-  const postureSummary = analysisQuery.data ? buildPostureSummary(analysis) : "Loading Pyramid of Pain data for the selected window."
   const activeMeta = LEVEL_META[activeLevelSummary.level as PainLevel]
   const ActiveIcon = activeMeta.icon
   const isRefreshing = analysisQuery.isFetching && !analysisQuery.isLoading
@@ -215,7 +200,6 @@ export default function PyramidOfPainPage() {
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
               Each IOC is categorized by its strongest value-first indicator, then linked back to IOC Explorer for row-level review.
             </p>
-            <p className="mt-4 max-w-2xl text-sm text-foreground/90">{postureSummary}</p>
           </div>
 
           <div className="flex max-w-full flex-wrap items-center gap-2" aria-label="Pyramid duration">
@@ -279,7 +263,7 @@ export default function PyramidOfPainPage() {
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="wb-kicker">Value-First Tiers</p>
-              <h3 className="mt-1 text-base font-semibold">Cleaner Pyramid of Pain distribution</h3>
+              <h3 className="mt-1 text-base font-semibold">Detection pressure by tier</h3>
             </div>
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-surface-2/40 px-3 py-1.5 text-xs text-muted-foreground">
               <Radar className="h-3.5 w-3.5" />

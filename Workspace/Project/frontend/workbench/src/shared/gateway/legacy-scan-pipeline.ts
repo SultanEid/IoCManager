@@ -68,6 +68,7 @@ const targetSchema = z.object({
   status: z.string(),
   targetOsType: z.string().nullable(),
   lastSweepAtUtc: z.string().nullable(),
+  syntheticTargetServerId: z.string().uuid(),
 })
 
 const discoverySchema = z.object({
@@ -339,6 +340,7 @@ const mockLegacyTargets: LegacyPipelineTarget[] = [
     status: "Online",
     targetOsType: "Windows",
     lastSweepAtUtc: "2026-04-26T08:35:00.000Z",
+    syntheticTargetServerId: "1a0e5e58-9444-4b94-86c0-13ee93dc2cd6",
   },
   {
     id: "ac4fd902-b3c2-4f76-99d0-343ad229f9f1",
@@ -350,6 +352,7 @@ const mockLegacyTargets: LegacyPipelineTarget[] = [
     status: "Online",
     targetOsType: "Linux",
     lastSweepAtUtc: "2026-04-26T08:33:00.000Z",
+    syntheticTargetServerId: "44a5b766-bf40-41ca-98e6-8f9b922a3a49",
   },
 ]
 

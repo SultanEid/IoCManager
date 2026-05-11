@@ -1,0 +1,16 @@
+title: Apache WebShell Case Study Process Marker
+id: 42050130-0000-4000-8000-000000000130
+status: experimental
+description: Case-study marker for command execution activity associated with the Apache web-shell validation scenario.
+author: Don
+date: 2026/05/07
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains: "APACHE_WEBSHELL_SIGMA_MARKER_20260507"
+  condition: selection
+falsepositives:
+  - Controlled lab validation marker.
+level: high

@@ -1,0 +1,1 @@
+alert tcp any any -> 172.165.50.130 80 (msg:"Apache WebShell Case Study HTTP command marker"; content:"/uploads/shell.php?cmd="; nocase; sid:42050130; rev:1; classtype:web-application-attack;)

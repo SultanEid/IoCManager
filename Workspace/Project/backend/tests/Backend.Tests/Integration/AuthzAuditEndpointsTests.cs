@@ -44,7 +44,7 @@ public sealed class AuthzAuditEndpointsTests : IClassFixture<TestWebApplicationF
         var analystNetwork = await analystClient.PostAsJsonAsync(
             "/api/v2/infrastructure/networks",
             new CreateNetworkRequest("Analyst Network", "10.71.0.0/16", "analyst", "analyst-1"));
-        analystNetwork.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystNetwork.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var leadNetwork = await leadClient.PostAsJsonAsync(
             "/api/v2/infrastructure/networks",
@@ -81,7 +81,7 @@ public sealed class AuthzAuditEndpointsTests : IClassFixture<TestWebApplicationF
         var analystPromoteHost = await analystClient.PostAsJsonAsync(
             $"/api/v2/infrastructure/discovered-hosts/{Guid.NewGuid()}/promote",
             new PromoteDiscoveredHostRequest("host-1", "Windows", "lab", "analyst-1"));
-        analystPromoteHost.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystPromoteHost.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var leadPromoteHost = await leadClient.PostAsJsonAsync(
             $"/api/v2/infrastructure/discovered-hosts/{Guid.NewGuid()}/promote",
@@ -107,7 +107,7 @@ public sealed class AuthzAuditEndpointsTests : IClassFixture<TestWebApplicationF
                 ActorUserId: "analyst-1",
                 TargetServerIds: [targetServer!.Id],
                 RuleRevisionIds: []));
-        analystCreatePlan.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystCreatePlan.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var leadCreatePlan = await leadClient.PostAsJsonAsync(
             "/api/v2/scanning/plans",
@@ -135,7 +135,7 @@ public sealed class AuthzAuditEndpointsTests : IClassFixture<TestWebApplicationF
         var analystRunPlan = await analystClient.PostAsJsonAsync(
             $"/api/v2/scanning/plans/{createdScanPlan!.Id}/run",
             new RunScanPlanRequest("analyst-1", "Manual"));
-        analystRunPlan.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystRunPlan.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var leadRunPlan = await leadClient.PostAsJsonAsync(
             $"/api/v2/scanning/plans/{createdScanPlan.Id}/run",
@@ -180,7 +180,7 @@ public sealed class AuthzAuditEndpointsTests : IClassFixture<TestWebApplicationF
                 "{\"ok\":true}",
                 [createdAlert!.Id],
                 "analyst-1"));
-        analystCreateReport.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystCreateReport.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var leadCreateReport = await leadClient.PostAsJsonAsync(
             "/api/v2/reports",
@@ -221,7 +221,7 @@ public sealed class AuthzAuditEndpointsTests : IClassFixture<TestWebApplicationF
                 "title: legacy-compatibility",
                 "v1",
                 "analyst-1"));
-        analystLegacyCreate.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystLegacyCreate.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
 
         var leadLegacyCreate = await leadClient.PostAsJsonAsync(
             "/api/rules",
@@ -236,7 +236,7 @@ public sealed class AuthzAuditEndpointsTests : IClassFixture<TestWebApplicationF
 
         var legacyRuleId = Guid.NewGuid();
         var analystLegacyDelete = await analystClient.DeleteAsync($"/api/rules/{legacyRuleId}?actorUserId=analyst-1");
-        analystLegacyDelete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystLegacyDelete.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
 
         var leadLegacyDelete = await leadClient.DeleteAsync($"/api/rules/{legacyRuleId}?actorUserId=lead-1");
         leadLegacyDelete.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -604,7 +605,20 @@ internal static class LegacyScanPipelineHelpers
             target.IPAddress,
             target.Status ?? "Unknown",
             CleanOrNull(target.TargetOsType),
-            ToDateTimeOffset(target.LastSweep));
+            ToDateTimeOffset(target.LastSweep),
+            BuildSyntheticTargetServerId(target.TargetId.ToString(CultureInfo.InvariantCulture)));
+
+    public static Guid BuildSyntheticTargetServerId(string targetId) => BuildStableGuid($"legacy-target:{targetId}");
+
+    private static Guid BuildStableGuid(string input)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        var bytes = new byte[16];
+        Array.Copy(hash, bytes, bytes.Length);
+        bytes[7] = (byte)((bytes[7] & 0x0F) | 0x40);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        return new Guid(bytes);
+    }
 
     public static bool TryGetProperty(JsonElement element, string propertyName, out JsonElement property)
     {

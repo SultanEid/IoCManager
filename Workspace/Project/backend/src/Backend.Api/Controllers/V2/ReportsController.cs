@@ -273,6 +273,21 @@ public sealed class ReportsController : ControllerBase
         var iocType = ParseOptionalIocType(request.IocType);
         var source = V2SearchHelpers.NormalizeNullable(request.Source);
 
+        if (request.TargetServerId.HasValue)
+        {
+            var legacyTarget = await ResolveLegacyTargetBySyntheticIdAsync(request.TargetServerId.Value, cancellationToken);
+            if (legacyTarget is not null)
+            {
+                return Ok(await GenerateLegacyBackedReportAsync(
+                    request,
+                    reportType,
+                    scannerFamily,
+                    legacyTarget,
+                    generatedAtUtc,
+                    cancellationToken));
+            }
+        }
+
         var alertsQuery = _dbContext.AlertsV2.AsNoTracking().AsQueryable();
         if (fromUtc.HasValue)
         {
@@ -537,6 +552,127 @@ public sealed class ReportsController : ControllerBase
             persistedReport));
     }
 
+    private async Task<LegacyPipelineTargetResponse?> ResolveLegacyTargetBySyntheticIdAsync(Guid targetServerId, CancellationToken cancellationToken)
+    {
+        var legacyTargets = await _legacyScanPipelineService.ListTargetsAsync(null, cancellationToken);
+        return legacyTargets.FirstOrDefault(target => target.SyntheticTargetServerId == targetServerId);
+    }
+
+    private async Task<GeneratedReportResponse> GenerateLegacyBackedReportAsync(
+        GenerateReportRequest request,
+        ReportType reportType,
+        string? scannerFamily,
+        LegacyPipelineTargetResponse legacyTarget,
+        DateTimeOffset generatedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var legacyReport = await _legacyScanPipelineService.GenerateReportAsync(
+            new LegacyPipelineGenerateReportRequest(
+                request.ReportType,
+                request.Title,
+                null,
+                legacyTarget.Id,
+                null,
+                request.FromUtc,
+                request.ToUtc,
+                scannerFamily,
+                request.Severity,
+                request.Status,
+                false,
+                request.ActorUserId),
+            cancellationToken);
+
+        var sections = legacyReport.Sections
+            .Select(ToGeneratedReportSectionResponse)
+            .ToArray();
+        var targetLabel = BuildLegacyTargetDisplay(legacyTarget);
+        var title = string.IsNullOrWhiteSpace(request.Title)
+            ? legacyReport.Title
+            : request.Title.Trim();
+        var summaryJson = JsonSerializer.Serialize(new
+        {
+            requestedReportType = reportType.ToString(),
+            generatedAtUtc = legacyReport.GeneratedAtUtc,
+            scope = legacyReport.Scope,
+            source = "legacy-pipeline",
+            filters = new
+            {
+                request.FromUtc,
+                request.ToUtc,
+                request.TargetServerId,
+                TargetLabel = targetLabel,
+                ScannerFamily = scannerFamily,
+                request.Severity,
+                request.Status,
+                request.IocType,
+                request.Source,
+            },
+            sections,
+        });
+
+        ReportResponse? persistedReport = null;
+        if (request.Persist)
+        {
+            var report = Report.Create(
+                title,
+                reportType,
+                summaryJson,
+                request.ActorUserId,
+                legacyReport.GeneratedAtUtc,
+                generatedAtUtc);
+
+            _dbContext.ReportsV2.Add(report);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _auditService.TryWriteAsync(
+                User,
+                "reports.generate",
+                "report",
+                report.Id.ToString("N"),
+                new
+                {
+                    report.Title,
+                    report.ReportType,
+                    LegacyTargetId = legacyTarget.Id,
+                    LegacyTarget = targetLabel,
+                },
+                cancellationToken);
+
+            persistedReport = report.ToReportResponse([]);
+        }
+
+        return new GeneratedReportResponse(
+            reportType.ToString(),
+            title,
+            request.Persist ? "persisted" : "preview_ready",
+            legacyReport.GeneratedAtUtc,
+            sections,
+            [],
+            persistedReport);
+    }
+
+    private static string BuildLegacyTargetDisplay(LegacyPipelineTargetResponse target)
+    {
+        var label = !string.IsNullOrWhiteSpace(target.DisplayName)
+            ? target.DisplayName!
+            : !string.IsNullOrWhiteSpace(target.Hostname)
+                ? target.Hostname!
+                : target.IpAddress;
+        return string.Equals(label, target.IpAddress, StringComparison.OrdinalIgnoreCase)
+            ? target.IpAddress
+            : $"{label} ({target.IpAddress})";
+    }
+
+    private static GeneratedReportSectionResponse ToGeneratedReportSectionResponse(LegacyPipelineReportSectionResponse section)
+        => new(
+            section.Title,
+            section.Summary,
+            section.Metrics
+                .Select(metric => new GeneratedReportMetricResponse(metric.Label, metric.Value, metric.Detail))
+                .ToArray(),
+            section.Highlights,
+            null,
+            []);
+
     [HttpPost]
     [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
@@ -790,7 +926,8 @@ public sealed class ReportsController : ControllerBase
                     : default;
             var query = new LegacyPipelineReportQueryResponse(
                 JobId: null,
-                TargetId: ReadString(filters, "targetServerId", "TargetServerId"),
+                TargetId: ReadString(filters, "targetLabel", "TargetLabel")
+                    ?? ReadString(filters, "targetServerId", "TargetServerId"),
                 NetworkId: null,
                 ScannerFamily: ReadString(filters, "scannerFamily", "ScannerFamily"),
                 FromUtc: ReadString(filters, "fromUtc", "FromUtc"),

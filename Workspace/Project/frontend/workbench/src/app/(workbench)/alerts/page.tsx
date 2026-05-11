@@ -28,34 +28,34 @@ const STATUS_SUMMARY_CONFIG = [
   {
     status: "Open",
     label: "Open",
-    border: "border-rose-300/35",
-    surface: "bg-rose-500/12",
-    text: "text-rose-100",
-    rail: "bg-rose-300",
+    border: "border-rose-300/55 dark:border-rose-300/35",
+    surface: "bg-rose-100/75 dark:bg-rose-500/12",
+    text: "text-rose-800 dark:text-rose-100",
+    rail: "bg-rose-500 dark:bg-rose-300",
   },
   {
     status: "Investigating",
     label: "Investigating",
-    border: "border-orange-300/35",
-    surface: "bg-orange-500/12",
-    text: "text-orange-100",
-    rail: "bg-orange-300",
+    border: "border-orange-300/55 dark:border-orange-300/35",
+    surface: "bg-orange-100/75 dark:bg-orange-500/12",
+    text: "text-orange-800 dark:text-orange-100",
+    rail: "bg-orange-500 dark:bg-orange-300",
   },
   {
     status: "Resolved",
     label: "Resolved",
-    border: "border-sky-300/35",
-    surface: "bg-sky-500/12",
-    text: "text-sky-100",
-    rail: "bg-sky-300",
+    border: "border-sky-300/55 dark:border-sky-300/35",
+    surface: "bg-sky-100/75 dark:bg-sky-500/12",
+    text: "text-sky-800 dark:text-sky-100",
+    rail: "bg-sky-500 dark:bg-sky-300",
   },
   {
     status: "Closed",
     label: "Closed",
-    border: "border-slate-300/25",
-    surface: "bg-slate-500/12",
-    text: "text-slate-200",
-    rail: "bg-slate-400",
+    border: "border-slate-300/70 dark:border-slate-300/25",
+    surface: "bg-slate-200/85 dark:bg-slate-500/12",
+    text: "text-slate-800 dark:text-slate-200",
+    rail: "bg-slate-500 dark:bg-slate-400",
   },
 ] as const
 
@@ -338,7 +338,7 @@ export default function AlertsPage() {
               <div key={item.status} className={`relative overflow-hidden rounded-md border ${item.border} ${item.surface} px-3 py-2.5`}>
                 <span className={`absolute inset-y-2 left-0 w-0.5 rounded-r ${item.rail}`} aria-hidden="true" />
                 <p className={`truncate pl-1 text-xs font-semibold uppercase tracking-normal ${item.text}`}>{item.label}</p>
-                <p className="mt-2 pl-1 text-xl font-semibold leading-none tracking-tight">{item.count}</p>
+                <p className="mt-2 pl-1 text-xl font-semibold leading-none tracking-tight text-foreground">{item.count}</p>
               </div>
             ))}
           </div>

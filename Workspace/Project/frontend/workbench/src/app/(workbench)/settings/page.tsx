@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
-import { canAccessAdminActions, canAccessWorkflowSettingsActions, roleLabel, roleLabels } from "@/shared/auth/session"
+import { canAccessAdminActions, roleLabel, roleLabels } from "@/shared/auth/session"
 import { gateway, isModeConfigured } from "@/shared/gateway"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
@@ -56,7 +56,6 @@ export default function SettingsPage() {
   const { session } = useAuth()
   const queryClient = useQueryClient()
   const canAdmin = canAccessAdminActions(session)
-  const canWorkflowSettings = canAccessWorkflowSettingsActions(session)
   const actorUserId = session?.userId ?? session?.username ?? ""
 
   const [overviewMessage, setOverviewMessage] = useState<string | null>(null)
@@ -95,7 +94,7 @@ export default function SettingsPage() {
   const rolesQuery = useWorkbenchQuery(["settings", "roles"], (signal) => gateway.listRoles(signal), { enabled: canAdmin })
   const permissionsQuery = useWorkbenchQuery(["settings", "permissions"], (signal) => gateway.listPermissions(signal), { enabled: canAdmin })
   const rolePermissionsQuery = useWorkbenchQuery(["settings", "role-permissions"], (signal) => gateway.listRolePermissions(undefined, signal), { enabled: canAdmin })
-  const scannersQuery = useWorkbenchQuery(["settings", "scanners"], (signal) => gateway.listScanners(signal), { enabled: canWorkflowSettings })
+  const scannersQuery = useWorkbenchQuery(["settings", "scanners"], (signal) => gateway.listScanners(signal), { enabled: canAdmin })
 
   const retentionPolicies = useMemo(() => retentionPoliciesQuery.data ?? [], [retentionPoliciesQuery.data])
   const archiveRecords = useMemo(() => archiveRecordsQuery.data ?? [], [archiveRecordsQuery.data])
@@ -141,7 +140,7 @@ export default function SettingsPage() {
             },
           ]
         : []),
-      ...(canWorkflowSettings
+      ...(canAdmin
         ? [
             {
               key: "scanners" as const,
@@ -151,7 +150,7 @@ export default function SettingsPage() {
           ]
         : []),
     ],
-    [alertOwners.length, canAdmin, canWorkflowSettings, enabledAlertOwners, retentionPolicies.length, roles.length, scanners.length, smtpStatusQuery.data?.willSendEmail, users.length],
+    [alertOwners.length, canAdmin, enabledAlertOwners, retentionPolicies.length, roles.length, scanners.length, smtpStatusQuery.data?.willSendEmail, users.length],
   )
 
   const groupedRolePermissions = useMemo(
@@ -1146,7 +1145,7 @@ export default function SettingsPage() {
         </>
       ) : null}
 
-      {canWorkflowSettings && activeSection === "scanners" ? (
+      {canAdmin && activeSection === "scanners" ? (
         <motion.article id="scanner-settings" className="wb-panel scroll-mt-24 space-y-4" variants={panelMotion}>
           <div>
             <h3 className="text-sm font-semibold tracking-tight">Scanners</h3>
