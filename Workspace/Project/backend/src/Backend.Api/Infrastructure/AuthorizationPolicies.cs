@@ -15,7 +15,7 @@ public static class AuthorizationPolicies
     public static void Configure(AuthorizationOptions options)
     {
         options.AddPolicy(AnalystAccess, policy => policy.RequireRole("Analyst", "Lead", "DEV"));
-        options.AddPolicy(LeadAccess, policy => policy.RequireRole("Lead", "DEV"));
+        options.AddPolicy(LeadAccess, policy => policy.RequireRole("Analyst", "Lead", "DEV"));
         options.AddPolicy(AdminAccess, policy => policy.RequireRole("Admin", "DEV"));
         options.AddPolicy(AlertAccess, policy => policy.RequireRole("IT", "Analyst", "Lead", "DEV"));
         options.AddPolicy(InfrastructureReadAccess, policy => policy.RequireRole("Analyst", "Lead", "Admin", "DEV"));

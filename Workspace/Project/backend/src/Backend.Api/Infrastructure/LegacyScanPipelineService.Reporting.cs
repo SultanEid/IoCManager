@@ -83,7 +83,7 @@ public sealed partial class LegacyScanPipelineService
             cancellationToken);
 
         var context = new ReportContext(
-            LegacyScanPipelineHelpers.BuildReportScopeLabel(request.JobId, request.TargetId, request.NetworkId),
+            await ResolveReportScopeLabelAsync(request, cancellationToken),
             BuildTimeWindowLabel(fromDate, toDate),
             scannerFamily ?? "All scanners",
             severity ?? "All severities",
@@ -262,6 +262,38 @@ public sealed partial class LegacyScanPipelineService
                 "Reserved infrastructure addresses are excluded from target inventory counts.",
                 "Saved reports remain point-in-time snapshots when reopened from the library."
             ]);
+
+    private async Task<string> ResolveReportScopeLabelAsync(
+        LegacyPipelineGenerateReportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.JobId))
+        {
+            return $"Job {request.JobId}";
+        }
+
+        var targetId = LegacyScanPipelineHelpers.ParseOptionalIntId(request.TargetId, nameof(request.TargetId));
+        if (targetId.HasValue)
+        {
+            var target = await _dbContext.Targets.AsNoTracking()
+                .FirstOrDefaultAsync(item => item.TargetId == targetId.Value, cancellationToken);
+            return target is null
+                ? $"Target {request.TargetId}"
+                : LegacyScanPipelineHelpers.BuildTargetDisplay(target);
+        }
+
+        var networkId = LegacyScanPipelineHelpers.ParseOptionalIntId(request.NetworkId, nameof(request.NetworkId));
+        if (networkId.HasValue)
+        {
+            var network = await _dbContext.Networks.AsNoTracking()
+                .FirstOrDefaultAsync(item => item.NetworkId == networkId.Value, cancellationToken);
+            return network is null
+                ? $"Subnet {request.NetworkId}"
+                : $"{network.Name} ({network.SubNet})";
+        }
+
+        return "Global";
+    }
 
     private static string BuildTimeWindowLabel(DateTimeOffset? fromDate, DateTimeOffset? toDate)
         => !fromDate.HasValue && !toDate.HasValue

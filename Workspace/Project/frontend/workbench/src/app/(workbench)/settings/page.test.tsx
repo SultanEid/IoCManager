@@ -85,13 +85,6 @@ vi.mock("@/shared/auth/auth-provider", () => ({
 
 vi.mock("@/shared/auth/session", () => ({
   canAccessAdminActions: (session: { roles?: string[] } | null) => Boolean(session?.roles?.includes("Admin")),
-  canAccessWorkflowSettingsActions: (session: { roles?: string[] } | null) =>
-    Boolean(
-      session?.roles?.includes("Analyst")
-      || session?.roles?.includes("Lead")
-      || session?.roles?.includes("Admin")
-      || session?.roles?.includes("DEV"),
-    ),
   roleLabel: (value: string) => value,
   roleLabels: (roles: string[]) => roles.join(", "),
 }))
@@ -319,7 +312,7 @@ describe.skip("SettingsPage", () => {
     expect(screen.getByText("Overview")).toBeInTheDocument()
     expect(screen.queryByText("Retention")).not.toBeInTheDocument()
     expect(screen.queryByText("Access")).not.toBeInTheDocument()
-    expect(screen.getByText("Scanners")).toBeInTheDocument()
+    expect(screen.queryByText("Scanners")).not.toBeInTheDocument()
   })
 
   it("shows admin sections for administrator sessions", () => {

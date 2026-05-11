@@ -265,7 +265,7 @@ internal static class SmokeChecks
     {
         var source = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Infrastructure", "AuthorizationPolicies.cs"));
         Expect.Contains("policy.RequireRole(\"Analyst\", \"Lead\", \"DEV\")", source, "Analyst access should include Analyst, Lead, and DEV.");
-        Expect.Contains("policy.RequireRole(\"Lead\", \"DEV\")", source, "Lead access should exclude Analyst and include only Lead plus DEV.");
+        Expect.Contains("policy.RequireRole(\"Analyst\", \"Lead\", \"DEV\")", source, "Lead access should include Analyst for operational IOC, discovery, scan, and report actions.");
         Expect.Contains("policy.RequireRole(\"Admin\", \"DEV\")", source, "Admin access should include Admin and DEV.");
         Expect.Contains("policy.RequireRole(\"IT\", \"Analyst\", \"Lead\", \"DEV\")", source, "Alert access should include IT + security roles + DEV.");
         Expect.Contains("InfrastructureReadAccess", source, "Infrastructure read policy should be present.");
@@ -288,7 +288,7 @@ internal static class SmokeChecks
         var infrastructureSource = File.ReadAllText(ResolveRepoPath("Project", "backend", "src", "Backend.Api", "Controllers", "V2", "InfrastructureController.cs"));
         Expect.Contains("[Authorize(Policy = AuthorizationPolicies.InfrastructureReadAccess)]", infrastructureSource, "Infrastructure controller should use InfrastructureReadAccess policy.");
         Expect.Contains("[HttpPost(\"scanners\")]", infrastructureSource, "Infrastructure controller should expose scanner create.");
-        Expect.Contains("[Authorize(Policy = AuthorizationPolicies.WorkflowSettingsAccess)]", infrastructureSource, "Scanner settings mutations should use WorkflowSettingsAccess policy.");
+        Expect.Contains("[Authorize(Policy = AuthorizationPolicies.AdminAccess)]", infrastructureSource, "Scanner settings mutations should stay admin-only.");
         return Task.CompletedTask;
     }
 

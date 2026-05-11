@@ -280,6 +280,73 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
     }
 
     [Fact]
+    public async Task GenerateReport_WithLegacySyntheticTarget_PersistsReadableTargetScope()
+    {
+        using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
+
+        await CleanupLegacyReportScopeRegressionDataAsync();
+        try
+        {
+            int legacyTargetId;
+            await using (var scope = _factory.Services.CreateAsyncScope())
+            {
+                var legacyDbContext = scope.ServiceProvider.GetRequiredService<LegacyScanPipelineDbContext>();
+                var network = new LegacyPipelineNetworkEntity
+                {
+                    Name = "Regression Scope Network",
+                    SubNet = "10.252.207.0/24",
+                };
+                legacyDbContext.Networks.Add(network);
+                await legacyDbContext.SaveChangesAsync();
+
+                var target = new LegacyPipelineTargetEntity
+                {
+                    DisplayName = "Web-Server",
+                    HostName = "web-server",
+                    IPAddress = "10.252.207.130",
+                    Status = "Online",
+                    TargetOsType = "Windows",
+                    NetworkId = network.NetworkId,
+                };
+                legacyDbContext.Targets.Add(target);
+                await legacyDbContext.SaveChangesAsync();
+                legacyTargetId = target.TargetId;
+            }
+
+            var syntheticTargetServerId = LegacyScanPipelineHelpers.BuildSyntheticTargetServerId(legacyTargetId.ToString());
+            var response = await leadClient.PostAsJsonAsync(
+                "/api/v2/reports/generate",
+                new GenerateReportRequest(
+                    ReportType: "DetailedIocReport",
+                    Title: "Legacy target scope review",
+                    FromUtc: null,
+                    ToUtc: null,
+                    TargetServerId: syntheticTargetServerId,
+                    ScannerFamily: null,
+                    Severity: null,
+                    Status: null,
+                    IocType: null,
+                    Source: null,
+                    Persist: true,
+                    ActorUserId: "1"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var report = await response.Content.ReadFromJsonAsync<GeneratedReportResponse>(JsonOptions);
+            report.Should().NotBeNull();
+            report!.PersistedReport.Should().NotBeNull();
+            report.Sections.Should().Contain(section =>
+                section.Title == "Scope and Methodology"
+                && section.Metrics.Any(metric => metric.Label == "Scope" && metric.Value == "Web-Server (10.252.207.130)"));
+            report.PersistedReport!.SummaryJson.Should().Contain("Web-Server (10.252.207.130)");
+            report.PersistedReport.SummaryJson.Should().NotContain($"Target {legacyTargetId}");
+        }
+        finally
+        {
+            await CleanupLegacyReportScopeRegressionDataAsync();
+        }
+    }
+
+    [Fact]
     public async Task ScanPlanScheduler_DuePlan_QueuesScheduledJob()
     {
         using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
@@ -782,6 +849,7 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
     {
         using var leadClient = _factory.CreateAuthenticatedClient("lead-1", "Lead");
         using var analystClient = _factory.CreateAuthenticatedClient("analyst-1", "Analyst");
+        using var adminClient = _factory.CreateAuthenticatedClient("admin-1", "Admin");
 
         var network = await CreateNetworkAsync(leadClient, "ManagedNet", "10.90.0.0/16");
         var subnet = await CreateSubnetAsync(leadClient, network.Id, "ManagedSubnet", "10.90.1.0/24");
@@ -795,7 +863,7 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
                 OperatingSystem: "Linux",
                 Environment: "prod",
                 ActorUserId: "analyst-1"));
-        analystCreateResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        analystCreateResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var createManagedResponse = await leadClient.PostAsJsonAsync(
             "/api/v2/infrastructure/managed-servers",
@@ -830,13 +898,13 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
         secretMetadata!.HasConnectionSecret.Should().BeTrue();
         secretMetadata.ConnectionSecretUpdatedAtUtc.Should().NotBeNull();
 
-        var createScannerResponse = await leadClient.PostAsJsonAsync(
+        var createScannerResponse = await adminClient.PostAsJsonAsync(
             "/api/v2/infrastructure/scanners",
             new CreateScannerRequest(
                 Name: "scanner-yara-1",
                 EngineType: "yara",
                 Version: "4.2.0",
-                ActorUserId: "lead-1",
+                ActorUserId: "admin-1",
                 Capabilities: ["Yara", "Sigma"]));
         createScannerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var scanner = await createScannerResponse.Content.ReadFromJsonAsync<ScannerResponse>(JsonOptions);
@@ -1266,6 +1334,62 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
         }
 
         throw new TimeoutException($"Timed out waiting for a scheduled scan job for plan {scanPlanId}.");
+    }
+
+    private async Task CleanupLegacyReportScopeRegressionDataAsync()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CtiDbContext>();
+        var reports = await dbContext.ReportsV2
+            .Where(report => report.Title == "Legacy target scope review")
+            .ToArrayAsync();
+        dbContext.ReportsV2.RemoveRange(reports);
+        await dbContext.SaveChangesAsync();
+
+        var legacyDbContext = scope.ServiceProvider.GetRequiredService<LegacyScanPipelineDbContext>();
+        var targetIds = await legacyDbContext.Targets
+            .Where(target => target.IPAddress == "10.252.207.130")
+            .Select(target => target.TargetId)
+            .ToArrayAsync();
+        var resultIds = await legacyDbContext.ScanResults
+            .Where(result => result.TargetId.HasValue && targetIds.Contains(result.TargetId.Value))
+            .Select(result => result.ResultId)
+            .ToArrayAsync();
+        var jobIds = await legacyDbContext.ScanResults
+            .Where(result => result.JobId.HasValue && result.TargetId.HasValue && targetIds.Contains(result.TargetId.Value))
+            .Select(result => result.JobId!.Value)
+            .ToArrayAsync();
+        var iocIds = await legacyDbContext.Iocs
+            .Where(ioc => ioc.ResultId.HasValue && resultIds.Contains(ioc.ResultId.Value))
+            .Select(ioc => ioc.Id)
+            .ToArrayAsync();
+
+        legacyDbContext.YaraDetails.RemoveRange(await legacyDbContext.YaraDetails.Where(item => iocIds.Contains(item.Id)).ToArrayAsync());
+        legacyDbContext.SigmaDetails.RemoveRange(await legacyDbContext.SigmaDetails.Where(item => iocIds.Contains(item.Id)).ToArrayAsync());
+        legacyDbContext.NetworkDetails.RemoveRange(await legacyDbContext.NetworkDetails.Where(item => iocIds.Contains(item.Id)).ToArrayAsync());
+        legacyDbContext.Iocs.RemoveRange(await legacyDbContext.Iocs.Where(ioc => iocIds.Contains(ioc.Id)).ToArrayAsync());
+        legacyDbContext.Reports.RemoveRange(await legacyDbContext.Reports
+            .Where(report =>
+                (report.TargetId.HasValue && targetIds.Contains(report.TargetId.Value))
+                || (report.ResultId.HasValue && resultIds.Contains(report.ResultId.Value))
+                || (report.JobId.HasValue && jobIds.Contains(report.JobId.Value))
+                || report.Title == "Legacy target scope review")
+            .ToArrayAsync());
+        legacyDbContext.ScanResults.RemoveRange(await legacyDbContext.ScanResults.Where(result => resultIds.Contains(result.ResultId)).ToArrayAsync());
+        legacyDbContext.ScanJobs.RemoveRange(await legacyDbContext.ScanJobs
+            .Where(job =>
+                jobIds.Contains(job.JobId)
+                || (job.Summary != null && job.Summary.Contains("Regression Scope Network")))
+            .ToArrayAsync());
+        var targets = await legacyDbContext.Targets
+            .Where(target => targetIds.Contains(target.TargetId))
+            .ToArrayAsync();
+        legacyDbContext.Targets.RemoveRange(targets);
+        var networks = await legacyDbContext.Networks
+            .Where(network => network.Name == "Regression Scope Network" || network.SubNet == "10.252.207.0/24")
+            .ToArrayAsync();
+        legacyDbContext.Networks.RemoveRange(networks);
+        await legacyDbContext.SaveChangesAsync();
     }
 
     private async Task<DiscoveryRunResponse> QueueAndWaitAsync(HttpClient client, Guid subnetId, string startIp, string endIp)

@@ -48,6 +48,9 @@ const mockedGateway = vi.hoisted(() => ({
   listTargetServers: vi.fn(),
   generateReport: vi.fn(),
   deleteReport: vi.fn(),
+  listReportMitigationPlans: vi.fn(),
+  generateReportMitigation: vi.fn(),
+  translateReportMitigationPlan: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({
@@ -109,12 +112,31 @@ describe("ReportsPage mode behavior", () => {
     })
     mockedGateway.getReport.mockRejectedValue(new Error("Unexpected report detail lookup."))
     mockedGateway.listTargetServers.mockResolvedValue([])
+    mockedGateway.listReportMitigationPlans.mockResolvedValue({
+      items: [],
+      totalCount: 0,
+      page: 1,
+      pageSize: 20,
+    })
     mockedUseWorkbenchQuery.mockImplementation((queryKey: unknown) => {
-      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "servers") {
+      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "targets") {
         return {
           isLoading: false,
           isError: false,
           data: [],
+        }
+      }
+
+      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "aegis-plans") {
+        return {
+          isLoading: false,
+          isError: false,
+          data: {
+            items: [],
+            totalCount: 0,
+            page: 1,
+            pageSize: 20,
+          },
         }
       }
 
@@ -135,6 +157,7 @@ describe("ReportsPage mode behavior", () => {
     render(<ReportsPage />)
 
     expect(screen.getByText("Report workspace")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Library (0)" }))
     expect(screen.getByText("No saved reports")).toBeInTheDocument()
   })
 
@@ -144,6 +167,7 @@ describe("ReportsPage mode behavior", () => {
 
     render(<ReportsPage />)
 
+    fireEvent.click(screen.getByRole("button", { name: "Library (0)" }))
     expect(screen.getByText("No saved reports")).toBeInTheDocument()
   })
 
@@ -173,11 +197,24 @@ describe("ReportsPage mode behavior", () => {
     }
 
     mockedUseWorkbenchQuery.mockImplementation((queryKey: unknown) => {
-      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "servers") {
+      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "targets") {
         return {
           isLoading: false,
           isError: false,
           data: [],
+        }
+      }
+
+      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "aegis-plans") {
+        return {
+          isLoading: false,
+          isError: false,
+          data: {
+            items: [],
+            totalCount: 0,
+            page: 1,
+            pageSize: 20,
+          },
         }
       }
 
@@ -195,6 +232,7 @@ describe("ReportsPage mode behavior", () => {
 
     render(<ReportsPage />)
 
+    fireEvent.click(screen.getByRole("button", { name: "Library (1)" }))
     fireEvent.click(screen.getAllByRole("button", { name: /^Preview$/ })[0])
 
     expect(await screen.findByRole("dialog", { name: "Report review" })).toBeInTheDocument()
@@ -206,6 +244,7 @@ describe("ReportsPage mode behavior", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Report review" })).not.toBeInTheDocument()
     })
+    fireEvent.click(screen.getByRole("button", { name: "Builder" }))
     expect(screen.getByText("No preview yet")).toBeInTheDocument()
     expect(screen.queryByText("Critical posture.")).not.toBeInTheDocument()
   })
@@ -246,6 +285,119 @@ describe("ReportsPage mode behavior", () => {
 
     expect(await screen.findByText("Critical posture.")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: /Export HTML/i })).toHaveAttribute("href", `/api/v2/reports/${persistedReport.id}/html`)
+  })
+
+  it("keeps report review color restrained to severities and scanner badges", async () => {
+    mockedGateway.generateReport.mockResolvedValue({
+      requestedReportType: "DetailedIocReport",
+      title: "IOC Manager Mixed Scan",
+      status: "preview",
+      generatedAtUtc: "2026-05-05T14:21:04Z",
+      sections: [
+        {
+          title: "Detection Overview",
+          summary: "Normalized IOC evidence.",
+          metrics: [
+            { label: "Total Findings", value: "115", detail: "Normalized IOC rows in scope." },
+            { label: "High / Critical", value: "0", detail: "Highest-priority findings in scope." },
+            { label: "Critical", value: "4", detail: "Critical findings in scope." },
+          ],
+          highlights: ["Sigma: IOC Manager Mixed Scan Sigma Marker | 12 findings"],
+          narrative: null,
+          tables: [],
+        },
+      ],
+      alertIds: [],
+      persistedReport: null,
+    })
+
+    render(<ReportsPage />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Preview report/i }))
+
+    expect(await screen.findByText("Detection Overview")).toBeInTheDocument()
+    expect(screen.getByText("115")).toHaveClass("text-foreground")
+    expect(screen.getAllByText("0").some((element) => element.classList.contains("text-emerald-300"))).toBe(true)
+    expect(screen.getByText("4")).toHaveClass("text-red-700")
+    expect(screen.getAllByText("Sigma").length).toBeGreaterThan(0)
+  })
+
+  it("keeps Aegis review cards tone-coded and renames the review gate", async () => {
+    const report = {
+      id: "9f2523a3-0a2f-4cf8-8939-86c1d01f7d75",
+      title: "Aegis mitigation: Severe alert",
+      reportType: "Operational",
+      summaryJson: JSON.stringify({
+        aegisMitigationPlanVersion: 1,
+        result: {
+          plannerModel: "Aegis",
+          extractedIocs: [],
+          claims: [],
+          mitigationPlan: {
+            executiveSummary: "Operator-ready response plan.",
+            threatSummary: "Aegis threat summary.",
+            severity: "high",
+            confidence: "medium",
+            requiresHumanReview: true,
+            affectedAssetHypotheses: ["Web-Server (192.168.207.130)"],
+            immediateActions: [],
+            hardeningActions: [],
+            scanRecommendations: [],
+            assumptions: [],
+            gaps: [],
+            validationSteps: [],
+          },
+        },
+      }),
+      generatedAtUtc: "2026-05-06T08:03:00Z",
+      createdAtUtc: "2026-05-06T08:03:00Z",
+      updatedAtUtc: "2026-05-06T08:03:00Z",
+      alertIds: [],
+    }
+
+    mockedUseWorkbenchQuery.mockImplementation((queryKey: unknown) => {
+      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "targets") {
+        return {
+          isLoading: false,
+          isError: false,
+          data: [],
+        }
+      }
+
+      if (Array.isArray(queryKey) && queryKey[0] === "reports" && queryKey[1] === "aegis-plans") {
+        return {
+          isLoading: false,
+          isError: false,
+          data: {
+            items: [],
+            totalCount: 0,
+            page: 1,
+            pageSize: 20,
+          },
+        }
+      }
+
+      return {
+        isLoading: false,
+        isError: false,
+        data: {
+          items: [report],
+          totalCount: 1,
+          page: 1,
+          pageSize: 20,
+        },
+      }
+    })
+
+    render(<ReportsPage />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Library (1)" }))
+    fireEvent.click(screen.getAllByRole("button", { name: /^Preview$/ })[0])
+
+    expect(await screen.findByText("Operator-ready response plan")).toBeInTheDocument()
+    expect(screen.getByText("Action Required")).toHaveClass("text-rose-100")
+    expect(screen.getByText("medium")).toHaveClass("text-orange-100")
+    expect(screen.queryByText("Human review recommended")).not.toBeInTheDocument()
   })
 
   it("opens a review query report by id when it is outside the first page", async () => {

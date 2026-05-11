@@ -30,6 +30,22 @@ function resolveAuthErrorMessage(error: unknown) {
   return "Sign in failed. Please verify your credentials and try again."
 }
 
+function DeTechTiveWordmark() {
+  return (
+    <div className="detechtive-brand" aria-label="DeTechTive">
+      <img className="detechtive-brand-icon" src="/detechtive-logo.png" alt="" aria-hidden="true" />
+      <span className="detechtive-wordmark">
+        <span className="detechtive-wordmark-accent">D</span>
+        <span>e</span>
+        <span className="detechtive-wordmark-accent">T</span>
+        <span>ech</span>
+        <span className="detechtive-wordmark-accent">T</span>
+        <span>ive</span>
+      </span>
+    </div>
+  )
+}
+
 export function AuthForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -80,7 +96,7 @@ export function AuthForm() {
       <section className="w-full max-w-xl rounded-2xl border border-border/80 bg-card/90 p-6 shadow-2xl shadow-black/30 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">IoC Manager</p>
+            <DeTechTiveWordmark />
             <h1 className="mt-2 text-2xl font-semibold">Open a sample workspace</h1>
             <p className="mt-1 text-sm text-muted-foreground">Use a guided workspace with representative roles and sample operational data.</p>
           </div>
@@ -138,9 +154,9 @@ export function AuthForm() {
 
   return (
     <section className="w-full max-w-md rounded-2xl border border-border/80 bg-card/85 p-6 shadow-2xl shadow-black/30 backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">IoC Manager</p>
+      <DeTechTiveWordmark />
       <h1 className="mt-2 text-2xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Use your ASP.NET API credentials to access IoC Manager.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Sign in to access DeTechTive.</p>
 
       <form className="mt-5 space-y-3" onSubmit={onSubmit}>
         <label className="space-y-1">

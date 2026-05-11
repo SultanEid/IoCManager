@@ -70,7 +70,7 @@
       },
       "artifact_hashes": {
         "calibration": "0d3239275399217502afbc7738cfd4cb69568f5c14ed8051709007150a8588dc",
-        "thresholds": "efdd1af0be7dbca549533afc9e9f90a2f6d374de57fdd8037ff5cc1ff6440258",
+        "thresholds": "530e50a0d422a36f1eda6ab1396a0b82fe053ba42427d8c047c3d5763a10c558",
         "metrics": "19d8945289c76e747b5d2f3499d3626db58fe6c9fff8cf973e986f9870c5b8c0",
         "cv_report": "b08a1b51bb74ffa1dd82857e7231d0554ef4773e3836ca2eac32589255d77741"
       },

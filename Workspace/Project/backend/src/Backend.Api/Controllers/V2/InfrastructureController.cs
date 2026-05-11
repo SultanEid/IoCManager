@@ -1069,7 +1069,7 @@ public sealed partial class InfrastructureController : ControllerBase
     }
 
     [HttpPost("scanners")]
-    [Authorize(Policy = AuthorizationPolicies.WorkflowSettingsAccess)]
+    [Authorize(Policy = AuthorizationPolicies.AdminAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
     [ProducesResponseType<ScannerResponse>(StatusCodes.Status201Created)]
     public async Task<ActionResult<ScannerResponse>> CreateScanner([FromBody] CreateScannerRequest request, CancellationToken cancellationToken)
@@ -1106,7 +1106,7 @@ public sealed partial class InfrastructureController : ControllerBase
     }
 
     [HttpPut("scanners/{scannerId:guid}/capabilities")]
-    [Authorize(Policy = AuthorizationPolicies.WorkflowSettingsAccess)]
+    [Authorize(Policy = AuthorizationPolicies.AdminAccess)]
     [EnableRateLimiting(RateLimitPolicies.Write)]
     [ProducesResponseType<ScannerResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

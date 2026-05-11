@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  AlertTriangle,
   BarChart3,
   Clock3,
   Database,
@@ -10,19 +11,23 @@ import {
   Eye,
   FileText,
   FolderOpen,
+  Layers3,
   ShieldCheck,
   type LucideIcon,
   X,
 } from "lucide-react"
+import { ScannerFamilyBadge } from "@/components/workbench/scanner-family-mark"
 import { AegisMitigationTimeline, AegisPrimaryActions, type LegacyPlanLike } from "@/components/workbench/aegis/mitigation-plan-elements"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { reportTypeAccent } from "@/components/workbench/accent-tone"
 import { classifyUiError } from "@/shared/api/error-classification"
-import type { GeneratedReportResponse, GeneratedReportSectionResponse, ReportMitigationPlanResponse, ReportResponse, RuleFamily, TargetServerResponse } from "@/shared/api/schemas"
+import type { GeneratedReportResponse, GeneratedReportSectionResponse, ReportMitigationPlanResponse, ReportResponse, RuleFamily } from "@/shared/api/schemas"
 import { writeAegisWidgetState } from "@/shared/aegis/widget-state"
 import { useAuth } from "@/shared/auth/auth-provider"
 import { gateway } from "@/shared/gateway"
+import { listLegacyTargets, type LegacyPipelineTarget } from "@/shared/gateway/legacy-scan-pipeline"
 import type { GenerateReportInput, ReportGenerationType } from "@/shared/gateway/types"
 import { useWorkbenchQuery } from "@/shared/query/use-workbench-query"
 import { ClassifiedFailureState } from "@/shared/ui/error-fallback"
@@ -59,8 +64,22 @@ const SEVERITY_OPTIONS = ["Critical", "High", "Medium", "Low"] as const
 const STATUS_OPTIONS = ["Open", "Investigating", "Resolved", "Closed"] as const
 const REPORT_WORKSPACES = ["builder", "library"] as const
 const REPORT_LIBRARY_PAGE_SIZE = 12
+const TIME_RANGE_PRESETS = [
+  { label: "Last 24h", days: 1 },
+  { label: "Last 7d", days: 7 },
+  { label: "Last 30d", days: 30 },
+] as const
 
 type ReportWorkspace = (typeof REPORT_WORKSPACES)[number]
+type ReportTargetOption = {
+  id: string
+  legacyTargetId?: string | null
+  label: string
+  ipAddress: string
+  status: string
+  source: "managed" | "legacy"
+  networkName?: string | null
+}
 
 const REPORT_TYPE_LABELS: Record<string, string> = {
   ExecutiveSummary: "Executive Summary",
@@ -73,9 +92,61 @@ function defaultUtcRange() {
   const now = new Date()
   const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
   return {
-    fromUtc: from.toISOString().replace(/\.\d{3}Z$/, "Z"),
-    toUtc: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+    fromUtc: toUtcIsoInput(from),
+    toUtc: toUtcIsoInput(now),
   }
+}
+
+function toUtcIsoInput(value: Date) {
+  return value.toISOString().replace(/\.\d{3}Z$/, "Z")
+}
+
+function toDateTimeLocalInput(value: string | null | undefined) {
+  if (!value) {
+    return ""
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+
+  const pad = (part: number) => String(part).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function fromDateTimeLocalInput(value: string) {
+  if (!value) {
+    return ""
+  }
+
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? "" : toUtcIsoInput(date)
+}
+
+function buildPresetRange(preset: (typeof TIME_RANGE_PRESETS)[number]) {
+  const now = new Date()
+  return {
+    fromUtc: toUtcIsoInput(new Date(now.getTime() - preset.days * 24 * 60 * 60 * 1000)),
+    toUtc: toUtcIsoInput(now),
+  }
+}
+
+function formatTargetOption(target: ReportTargetOption) {
+  const address = target.ipAddress && target.label !== target.ipAddress ? ` (${target.ipAddress})` : ""
+  const scope = target.networkName ? ` - ${target.networkName}` : ""
+  return `${target.label}${address}${scope}`
+}
+
+function findReportTarget(targets: ReportTargetOption[], targetId: string | null | undefined) {
+  if (!targetId) {
+    return null
+  }
+
+  const normalized = targetId.toLowerCase()
+  return targets.find((item) =>
+    item.id.toLowerCase() === normalized
+    || item.legacyTargetId?.toLowerCase() === normalized) ?? null
 }
 
 function formatUtc(value: string | null | undefined) {
@@ -214,6 +285,11 @@ type ReportTone = {
   rail: string
 }
 
+type ReportVisualTone = ReportTone & {
+  icon: LucideIcon
+  glow: string
+}
+
 const neutralReportTone: ReportTone = {
   border: "border-border/55",
   surface: "bg-surface-1/55",
@@ -221,14 +297,25 @@ const neutralReportTone: ReportTone = {
   rail: "bg-border",
 }
 
+const neutralReportVisualTone: ReportVisualTone = {
+  ...neutralReportTone,
+  icon: FileText,
+  glow: "shadow-[var(--shadow-soft)]",
+}
+
 function normalizeReportToken(value: string) {
   return value.trim().toLowerCase().replace(/[_-]/g, " ")
+}
+
+function parseReportNumber(value: string) {
+  const parsed = Number(value.replace(/,/g, "").match(/-?\d+(\.\d+)?/)?.[0] ?? Number.NaN)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function reportToneForValue(value: string | null | undefined): ReportTone {
   const normalized = normalizeReportToken(value ?? "")
 
-  if (["critical", "high", "open", "yes", "human review recommended"].includes(normalized)) {
+  if (["critical", "high", "open", "yes", "human review recommended", "action required"].includes(normalized)) {
     return {
       border: "border-rose-300/35",
       surface: "bg-rose-500/10",
@@ -271,6 +358,25 @@ function reportToneForMetric(label: string, value: string): ReportTone {
   const normalizedLabel = normalizeReportToken(label)
   const normalizedValue = normalizeReportToken(value)
 
+  if (normalizedLabel.includes("high") || normalizedLabel.includes("critical")) {
+    const numericValue = parseReportNumber(value)
+    if (numericValue === 0) {
+      return {
+        border: "border-emerald-300/35",
+        surface: "bg-emerald-500/10",
+        text: "text-emerald-100",
+        rail: "bg-emerald-300",
+      }
+    }
+
+    return {
+      border: "border-rose-300/35",
+      surface: "bg-rose-500/10",
+      text: "text-rose-100",
+      rail: "bg-rose-300",
+    }
+  }
+
   if (normalizedLabel === "confidence") {
     if (normalizedValue === "high") {
       return {
@@ -303,6 +409,71 @@ function reportToneForMetric(label: string, value: string): ReportTone {
   return reportToneForValue(value)
 }
 
+function reportVisualForMetric(label: string): ReportVisualTone {
+  const normalizedLabel = normalizeReportToken(label)
+
+  if (normalizedLabel.includes("high") || normalizedLabel.includes("critical")) {
+    return {
+      ...neutralReportVisualTone,
+      icon: AlertTriangle,
+    }
+  }
+
+  if (normalizedLabel.includes("total") || normalizedLabel.includes("finding")) {
+    return {
+      ...neutralReportVisualTone,
+      icon: BarChart3,
+    }
+  }
+
+  if (normalizedLabel.includes("target") || normalizedLabel.includes("asset") || normalizedLabel.includes("rule") || normalizedLabel.includes("scanner")) {
+    return {
+      ...neutralReportVisualTone,
+      icon: Database,
+    }
+  }
+
+  return neutralReportVisualTone
+}
+
+function reportVisualForSection(title: string): ReportVisualTone {
+  const normalizedTitle = normalizeReportToken(title)
+
+  if (normalizedTitle.includes("aegis") || normalizedTitle.includes("mitigation")) {
+    return {
+      ...neutralReportVisualTone,
+      icon: ShieldCheck,
+    }
+  }
+
+  return neutralReportVisualTone
+}
+
+function metricValueClass(label: string, value: string) {
+  const normalizedLabel = normalizeReportToken(label)
+  const isHighCriticalCount = normalizedLabel.includes("high") || normalizedLabel.includes("critical")
+
+  if (isHighCriticalCount) {
+    const numericValue = parseReportNumber(value)
+    return numericValue === 0 ? "text-emerald-300" : "text-red-700 dark:text-red-300"
+  }
+
+  if (normalizedLabel === "severity") {
+    return reportToneForMetric(label, value).text
+  }
+
+  return "text-foreground"
+}
+
+function scannerFamiliesFromText(value: string) {
+  const normalized = normalizeReportToken(value)
+  return (["yara", "sigma", "snort", "suricata"] as const).filter((family) => normalized.includes(family))
+}
+
+function findingCountFromHighlight(value: string) {
+  return value.match(/(\d[\d,]*)\s+findings?/i)?.[1] ?? null
+}
+
 function splitLeadingReportToken(value: string) {
   const match = value.match(/^([a-zA-Z][a-zA-Z0-9_ -]{1,32}):\s*(.+)$/)
   if (!match) {
@@ -315,37 +486,156 @@ function splitLeadingReportToken(value: string) {
   }
 }
 
-function ReportMetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  const isToneable = ["severity", "status", "human review", "review gate", "confidence"].includes(normalizeReportToken(label))
-  const tone = isToneable ? reportToneForMetric(label, value) : neutralReportTone
+function ReportMetricCard({ label, value, detail, variant = "neutral" }: { label: string; value: string; detail: string; variant?: "neutral" | "tone" }) {
+  const visual = reportVisualForMetric(label)
+  const Icon = visual.icon
+  const valueClass = metricValueClass(label, value)
+  const tone = variant === "tone" ? reportToneForMetric(label, value) : neutralReportTone
+
+  if (variant === "tone") {
+    return (
+      <div className={`relative overflow-hidden rounded-[1.2rem] border ${tone.border} ${tone.surface} p-4 shadow-[var(--shadow-soft)]`}>
+        <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${tone.rail}`} aria-hidden="true" />
+        <div className="flex items-start gap-3">
+          <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${tone.border} bg-background/25 ${tone.text}`}>
+            <Icon className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="wb-kicker block">{label}</span>
+            <span className={`mt-1 block text-2xl font-semibold ${tone.text}`}>{value}</span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">{detail}</span>
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className={`relative overflow-hidden rounded-[1.2rem] border ${tone.border} ${tone.surface} p-3 shadow-[var(--shadow-soft)]`}>
-      {isToneable ? <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${tone.rail}`} aria-hidden="true" /> : null}
-      <p className="wb-kicker">{label}</p>
-      <p className={`mt-1 text-lg font-semibold ${isToneable ? tone.text : ""}`}>{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    <div className="relative overflow-hidden rounded-[1.2rem] border border-border/60 bg-surface-1/55 p-4 shadow-[var(--shadow-soft)]">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/65 bg-background/35 text-muted-foreground">
+          <Icon className="h-5 w-5" />
+        </span>
+        <span className="min-w-0">
+          <span className="wb-kicker block">{label}</span>
+          <span className={`mt-1 block text-2xl font-semibold ${valueClass}`}>{value}</span>
+          <span className="mt-1 block text-xs leading-5 text-muted-foreground">{detail}</span>
+        </span>
+      </div>
     </div>
   )
 }
 
 function ReportHighlightCard({ highlight }: { highlight: string }) {
   const leading = splitLeadingReportToken(highlight)
-  const tone = leading ? reportToneForValue(leading.token) : neutralReportTone
+  const scanners = scannerFamiliesFromText(highlight)
+  const findingCount = findingCountFromHighlight(highlight)
+  const body = (leading ? leading.body : highlight).replace(/\s*\|\s*\d[\d,]*\s+findings?$/i, "")
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border ${tone.border} ${tone.surface} px-4 py-3 text-sm leading-6 text-muted-foreground`}>
-      {leading ? <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${tone.rail}`} aria-hidden="true" /> : null}
-      {leading ? (
-        <p>
-          <span className={`mr-2 inline-flex rounded-full border ${tone.border} ${tone.surface} px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${tone.text}`}>
+    <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45 px-4 py-3 text-sm leading-6 text-muted-foreground shadow-[var(--shadow-soft)]">
+      <div className="flex flex-wrap items-center gap-2">
+        {leading ? (
+          <span className="inline-flex rounded-full border border-border/65 bg-background/35 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {leading.token}
           </span>
-          <span>{leading.body}</span>
-        </p>
-      ) : (
-        highlight
-      )}
+        ) : null}
+        {scanners.map((scanner) => (
+          <ScannerFamilyBadge key={`${highlight}-${scanner}`} family={scanner} size="sm" />
+        ))}
+        {findingCount ? (
+          <span className="inline-flex rounded-full border border-border/65 bg-background/35 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+            {findingCount} findings
+          </span>
+        ) : null}
+        <span className="min-w-[220px] flex-1 text-foreground/82">{body}</span>
+      </div>
+    </div>
+  )
+}
+
+function ReportSectionFrame({ section }: { section: GeneratedReportSectionResponse }) {
+  const visual = reportVisualForSection(section.title)
+  const Icon = visual.icon
+
+  return (
+    <div className="relative overflow-hidden rounded-[1.65rem] border border-border/65 bg-surface-1/55 p-5 shadow-[var(--shadow-soft)]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border/65 bg-background/35 text-muted-foreground">
+            <Icon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-base font-semibold">{section.title}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">{section.summary}</p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-2 rounded-full border border-border/65 bg-background/35 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+          <Layers3 className="h-3.5 w-3.5" />
+          {section.metrics.length} metrics
+        </span>
+      </div>
+
+      {section.narrative ? (
+        <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
+          {section.narrative}
+        </div>
+      ) : null}
+
+      {section.metrics.length > 0 ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+          {section.metrics.map((metric) => (
+            <ReportMetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
+          ))}
+        </div>
+      ) : null}
+
+      {section.highlights.length > 0 ? (
+        <div className="mt-4 grid gap-2">
+          {section.highlights.map((highlight) => (
+            <ReportHighlightCard key={highlight} highlight={highlight} />
+          ))}
+        </div>
+      ) : null}
+
+      {section.tables.length > 0 ? (
+        <div className="mt-4 space-y-4">
+          {section.tables.map((table) => (
+            <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
+              <div className="flex items-center gap-2 border-b border-border/55 px-4 py-3">
+                <Database className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-semibold">{table.title}</p>
+              </div>
+              {table.rows.length === 0 ? (
+                <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                      <tr>
+                        {table.columns.map((column) => (
+                          <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {table.rows.map((row, rowIndex) => (
+                        <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0 odd:bg-white/[0.018]">
+                          {table.columns.map((column) => (
+                            <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
+                              {row.values[column.key] ?? "n/a"}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -411,7 +701,7 @@ function buildAegisSnapshot(report: ReportResponse, record: Record<string, unkno
     scope: sourceReportId ? `Aegis mitigation for source report ${sourceReportId}` : "Aegis mitigation plan",
     query: {
       source: trigger ?? (sourceAlertId ? "alert-driven" : "report-review"),
-      status: requiresHumanReview === false ? "Ready for operator review" : "Human review recommended",
+      status: requiresHumanReview === false ? "Ready for operator review" : "Action Required",
     },
     aegisPlan: plan as LegacyPlanLike,
     sections: [
@@ -516,7 +806,7 @@ function buildAegisSnapshot(report: ReportResponse, record: Record<string, unkno
   }
 }
 
-function parseReportSnapshot(report: ReportResponse, targets: TargetServerResponse[]): ReportSnapshot {
+function parseReportSnapshot(report: ReportResponse, targets: ReportTargetOption[]): ReportSnapshot {
   try {
     const parsed = JSON.parse(report.summaryJson) as unknown
     if (typeof parsed === "object" && parsed !== null) {
@@ -530,6 +820,7 @@ function parseReportSnapshot(report: ReportResponse, targets: TargetServerRespon
       const query: SnapshotQuery = filters
         ? {
             targetServerId: readOptionalString(filters, "targetServerId"),
+            targetLabel: readOptionalString(filters, "targetLabel"),
             scannerFamily: readOptionalString(filters, "scannerFamily") ?? readOptionalString(filters, "ScannerFamily"),
             fromUtc: readOptionalString(filters, "fromUtc") ?? readOptionalString(filters, "FromUtc"),
             toUtc: readOptionalString(filters, "toUtc") ?? readOptionalString(filters, "ToUtc"),
@@ -541,8 +832,8 @@ function parseReportSnapshot(report: ReportResponse, targets: TargetServerRespon
         : {}
 
       if (query.targetServerId) {
-        const target = targets.find((item) => item.id === query.targetServerId)
-        query.targetLabel = target ? target.hostname || target.ipAddress : query.targetServerId
+        const target = findReportTarget(targets, query.targetServerId)
+        query.targetLabel = target ? formatTargetOption(target) : query.targetLabel ?? query.targetServerId
       }
 
       const sections = readStoredSections(record).map(normalizeReportSection)
@@ -660,7 +951,36 @@ export default function ReportsPage() {
     })
   }, [])
 
-  const targetsQuery = useWorkbenchQuery(["reports", "servers"], (signal) => gateway.listTargetServers(undefined, signal))
+  const targetsQuery = useWorkbenchQuery(["reports", "targets"], async (signal) => {
+    const [managedTargets, legacyTargets] = await Promise.all([
+      gateway.listTargetServers(undefined, signal),
+      listLegacyTargets(undefined, signal),
+    ])
+
+    const managedOptions: ReportTargetOption[] = managedTargets.map((target) => ({
+      id: target.id,
+      label: target.hostname || target.ipAddress,
+      ipAddress: target.ipAddress,
+      status: target.status,
+      source: "managed",
+    }))
+    const legacyOptions: ReportTargetOption[] = legacyTargets.map((target: LegacyPipelineTarget) => ({
+      id: target.syntheticTargetServerId,
+      legacyTargetId: target.id,
+      label: target.displayName ?? target.hostname ?? target.ipAddress,
+      ipAddress: target.ipAddress,
+      status: target.status,
+      source: "legacy",
+      networkName: target.networkName,
+    }))
+    const managedIds = new Set(managedOptions.map((target) => target.id.toLowerCase()))
+    const merged = [
+      ...managedOptions,
+      ...legacyOptions.filter((target) => !managedIds.has(target.id.toLowerCase())),
+    ]
+
+    return merged.sort((left, right) => formatTargetOption(left).localeCompare(formatTargetOption(right)))
+  })
   const reportsQuery = useWorkbenchQuery(["reports", "library", refreshKey], (signal) => gateway.listReports({ page: 1, pageSize: 100 }, signal))
   const aegisPlansQuery = useWorkbenchQuery(["reports", "aegis-plans", refreshKey], (signal) => gateway.listReportMitigationPlans(signal))
   const requestedReviewId = searchParams.get("review")
@@ -697,7 +1017,7 @@ export default function ReportsPage() {
     }
   }
 
-  const openSavedReport = useCallback(async (report: ReportResponse, targets: TargetServerResponse[]) => {
+  const openSavedReport = useCallback(async (report: ReportResponse, targets: ReportTargetOption[]) => {
     setErrorText(null)
     setMessage(null)
     setClosedReviewId(null)
@@ -766,6 +1086,23 @@ export default function ReportsPage() {
       ...current,
       fromUtc: range.fromUtc,
       toUtc: range.toUtc,
+    }))
+  }
+
+  const applyTimePreset = (preset: (typeof TIME_RANGE_PRESETS)[number]) => {
+    const range = buildPresetRange(preset)
+    setForm((current) => ({
+      ...current,
+      fromUtc: range.fromUtc,
+      toUtc: range.toUtc,
+    }))
+  }
+
+  const clearTimeRange = () => {
+    setForm((current) => ({
+      ...current,
+      fromUtc: "",
+      toUtc: "",
     }))
   }
 
@@ -937,9 +1274,10 @@ export default function ReportsPage() {
   )
   const reportTypeOptions = Array.from(new Set(reports.map((report) => report.reportType).filter(Boolean))).sort()
   const aegisPlanBySourceReportId = new Map((aegisPlansQuery.data?.items ?? []).filter((plan) => plan.sourceReportId).map((plan) => [plan.sourceReportId, plan]))
+  const selectedTarget = findReportTarget(targets, form.targetId)
   const generatedQuery: SnapshotQuery = {
     targetServerId: form.targetId || null,
-    targetLabel: targets.find((item) => item.id === form.targetId)?.hostname ?? targets.find((item) => item.id === form.targetId)?.ipAddress ?? null,
+    targetLabel: selectedTarget ? formatTargetOption(selectedTarget) : null,
     scannerFamily: form.scannerFamily || null,
     fromUtc: form.fromUtc || null,
     toUtc: form.toUtc || null,
@@ -1104,8 +1442,9 @@ export default function ReportsPage() {
                     onChange={(event) => setForm((current) => ({ ...current, targetId: event.target.value }))}
                   >
                     <option value="">All targets</option>
-                    {targets.map((target) => <option key={target.id} value={target.id}>{target.hostname || target.ipAddress}</option>)}
+                    {targets.map((target) => <option key={target.id} value={target.id}>{formatTargetOption(target)}</option>)}
                   </select>
+                  <span className="text-[11px] text-muted-foreground">{targets.length} reportable targets loaded from managed and scan-pipeline inventory.</span>
                 </label>
               </div>
 
@@ -1134,23 +1473,54 @@ export default function ReportsPage() {
                 </label>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">From UTC</span>
-                  <Input
-                    placeholder="ISO-8601"
-                    value={form.fromUtc}
-                    onChange={(event) => setForm((current) => ({ ...current, fromUtc: event.target.value }))}
-                  />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">To UTC</span>
-                  <Input
-                    placeholder="ISO-8601"
-                    value={form.toUtc}
-                    onChange={(event) => setForm((current) => ({ ...current, toUtc: event.target.value }))}
-                  />
-                </label>
+              <div className="space-y-3 rounded-xl border border-border/60 bg-surface-1/50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Time range</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Use quick ranges or select local date/time values. The request is saved as UTC.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {TIME_RANGE_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        className="rounded-lg border border-border/70 bg-background px-2.5 py-1.5 text-xs font-medium transition hover:border-primary/45 hover:bg-primary/10"
+                        onClick={() => applyTimePreset(preset)}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="rounded-lg border border-border/70 bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/45 hover:bg-surface-2 hover:text-foreground"
+                      onClick={clearTimeRange}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">From</span>
+                    <Input
+                      type="datetime-local"
+                      value={toDateTimeLocalInput(form.fromUtc)}
+                      onChange={(event) => setForm((current) => ({ ...current, fromUtc: fromDateTimeLocalInput(event.target.value) }))}
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">To</span>
+                    <Input
+                      type="datetime-local"
+                      value={toDateTimeLocalInput(form.toUtc)}
+                      onChange={(event) => setForm((current) => ({ ...current, toUtc: fromDateTimeLocalInput(event.target.value) }))}
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-2 text-[11px] text-muted-foreground md:grid-cols-2">
+                  <span>UTC from: {form.fromUtc || "Any start"}</span>
+                  <span>UTC to: {form.toUtc || "Any end"}</span>
+                </div>
               </div>
 
               <div className="rounded-xl border border-border/60 bg-surface-1/60 px-3 py-3">
@@ -1303,7 +1673,7 @@ export default function ReportsPage() {
 
       {activeWorkspace === "library" ? (
       <>
-      <article className="wb-panel space-y-4">
+      <article className="wb-panel !overflow-visible space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="wb-kicker">Saved Library</p>
@@ -1377,7 +1747,12 @@ export default function ReportsPage() {
               const aegisBusy = aegisBusyReportId === report.id
               const accent = reportTypeAccent(report.reportType)
               return (
-                <div key={report.id} className="relative overflow-hidden rounded-xl border border-border/65 bg-surface-1/60 p-3 transition-colors hover:border-primary/25 hover:bg-surface-1/75">
+                <div
+                  key={report.id}
+                  className={`relative rounded-xl border border-border/65 bg-surface-1/60 p-3 transition-colors hover:border-primary/25 hover:bg-surface-1/75 ${
+                    openLibraryActionsId === report.id ? "z-30" : "z-0"
+                  }`}
+                >
                   <span className={`absolute inset-y-3 left-0 w-1 rounded-r ${accent.rail}`} aria-hidden="true" />
                   <div className="flex flex-wrap items-center justify-between gap-3 pl-2">
                     <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
@@ -1398,27 +1773,24 @@ export default function ReportsPage() {
                       <Button type="button" size="sm" variant="outline" onClick={() => openSavedReport(report, targets)} disabled={deleting}>
                         Preview
                       </Button>
-                      <div className="relative">
-                        <button
-                          type="button"
-                          className="inline-flex h-8 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                          aria-expanded={openLibraryActionsId === report.id}
-                          onClick={() => setOpenLibraryActionsId((current) => current === report.id ? null : report.id)}
-                        >
+                      <DropdownMenu
+                        open={openLibraryActionsId === report.id}
+                        onOpenChange={(open) => setOpenLibraryActionsId(open ? report.id : null)}
+                      >
+                        <DropdownMenuTrigger className="inline-flex h-8 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted aria-expanded:bg-muted aria-expanded:text-foreground">
                           More
-                        </button>
-                        {openLibraryActionsId === report.id ? (
-                        <div className="absolute right-0 z-20 mt-2 grid w-56 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" sideOffset={8} className="grid w-56 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
                           <a
                             className="rounded-lg px-3 py-2 text-sm transition hover:bg-surface-2"
                             href={reportHtmlHref(report.id)}
                             download
+                            onClick={() => setOpenLibraryActionsId(null)}
                           >
                             Export HTML
                           </a>
                           {aegisPlan || isAegisPlan ? (
-                            <button
-                              type="button"
+                            <DropdownMenuItem
                               className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
                               onClick={() => {
                                 setOpenLibraryActionsId(null)
@@ -1426,10 +1798,9 @@ export default function ReportsPage() {
                               }}
                             >
                               Open in Aegis
-                            </button>
+                            </DropdownMenuItem>
                           ) : (
-                            <button
-                              type="button"
+                            <DropdownMenuItem
                               className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                               onClick={() => {
                                 setOpenLibraryActionsId(null)
@@ -1438,11 +1809,10 @@ export default function ReportsPage() {
                               disabled={deleting || aegisBusy}
                             >
                               {aegisBusy ? "Creating..." : "Create mitigation plan"}
-                            </button>
+                            </DropdownMenuItem>
                           )}
                           {aegisPlan && !isAegisPlan ? (
-                            <button
-                              type="button"
+                            <DropdownMenuItem
                               className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                               onClick={() => {
                                 setOpenLibraryActionsId(null)
@@ -1451,10 +1821,10 @@ export default function ReportsPage() {
                               disabled={deleting || aegisBusy}
                             >
                               {aegisBusy ? "Regenerating..." : "Regenerate Aegis plan"}
-                            </button>
+                            </DropdownMenuItem>
                           ) : null}
-                          <button
-                            type="button"
+                          <DropdownMenuItem
+                            variant="destructive"
                             className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10"
                             onClick={() => {
                               setOpenLibraryActionsId(null)
@@ -1463,10 +1833,9 @@ export default function ReportsPage() {
                             disabled={deleting}
                           >
                             {deleting ? "Deleting..." : "Delete"}
-                          </button>
-                        </div>
-                        ) : null}
-                      </div>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 </div>
@@ -1587,21 +1956,25 @@ export default function ReportsPage() {
                           label="Severity"
                           value={displayReviewAegisPlan.severity || "Unknown"}
                           detail="Aegis-assessed response priority for this case."
+                          variant="tone"
                         />
                         <ReportMetricCard
                           label="Confidence"
                           value={displayReviewAegisPlan.confidence || "Unknown"}
                           detail="Confidence based on available evidence and linked operational context."
+                          variant="tone"
                         />
                         <ReportMetricCard
                           label="Review Gate"
-                          value={displayReviewAegisPlan.requiresHumanReview === false ? "Operator can proceed" : "Human review recommended"}
+                          value={displayReviewAegisPlan.requiresHumanReview === false ? "Operator can proceed" : "Action Required"}
                           detail="Aegis remains advisory and does not apply mitigations directly."
+                          variant="tone"
                         />
                         <ReportMetricCard
                           label="Affected Focus"
                           value={displayReviewAegisPlan.affectedAssetHypotheses?.[0] || "Workspace-wide case"}
                           detail="Primary target or case hypothesis Aegis anchored the plan around."
+                          variant="tone"
                         />
                       </div>
                     </div>
@@ -1612,142 +1985,14 @@ export default function ReportsPage() {
 
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
                     {reviewSections?.slice(1).map((section) => (
-                      <div key={section.title} className="wb-section-frame">
-                        <div>
-                          <p className="text-base font-semibold">{section.title}</p>
-                          <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
-                        </div>
-
-                        {section.narrative ? (
-                          <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
-                            {section.narrative}
-                          </div>
-                        ) : null}
-
-                        {section.metrics.length > 0 ? (
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            {section.metrics.map((metric) => (
-                              <ReportMetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {section.highlights.length > 0 ? (
-                          <div className="mt-4 grid gap-2">
-                            {section.highlights.map((highlight) => (
-                              <ReportHighlightCard key={highlight} highlight={highlight} />
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {section.tables.length > 0 ? (
-                          <div className="mt-4 space-y-4">
-                            {section.tables.map((table) => (
-                              <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
-                                <div className="border-b border-border/55 px-4 py-3">
-                                  <p className="text-sm font-semibold">{table.title}</p>
-                                </div>
-                                {table.rows.length === 0 ? (
-                                  <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
-                                ) : (
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full min-w-[720px] text-sm">
-                                      <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                                        <tr>
-                                          {table.columns.map((column) => (
-                                            <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
-                                          ))}
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {table.rows.map((row, rowIndex) => (
-                                          <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0">
-                                            {table.columns.map((column) => (
-                                              <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
-                                                {row.values[column.key] ?? "n/a"}
-                                              </td>
-                                            ))}
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
+                      <ReportSectionFrame key={section.title} section={section} />
                     ))}
                   </div>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {reviewSections?.map((section) => (
-                    <div key={section.title} className="wb-section-frame">
-                      <div>
-                        <p className="text-base font-semibold">{section.title}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
-                      </div>
-
-                      {section.narrative ? (
-                        <div className="mt-4 rounded-2xl border border-border/55 bg-background/35 px-4 py-3 text-sm leading-6 text-foreground/85">
-                          {section.narrative}
-                        </div>
-                      ) : null}
-
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                        {section.metrics.map((metric) => (
-                          <ReportMetricCard key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
-                        ))}
-                      </div>
-
-                      {section.highlights.length > 0 ? (
-                        <div className="mt-4 grid gap-2">
-                          {section.highlights.map((highlight) => (
-                            <ReportHighlightCard key={highlight} highlight={highlight} />
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {section.tables.length > 0 ? (
-                        <div className="mt-4 space-y-4">
-                          {section.tables.map((table) => (
-                            <div key={table.title} className="overflow-hidden rounded-2xl border border-border/60 bg-surface-1/45">
-                              <div className="border-b border-border/55 px-4 py-3">
-                                <p className="text-sm font-semibold">{table.title}</p>
-                              </div>
-                              {table.rows.length === 0 ? (
-                                <div className="px-4 py-4 text-sm text-muted-foreground">No rows matched this report scope.</div>
-                              ) : (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full min-w-[720px] text-sm">
-                                    <thead className="text-left text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                                      <tr>
-                                        {table.columns.map((column) => (
-                                          <th key={column.key} className="border-b border-border/50 px-3 py-2 font-semibold">{column.label}</th>
-                                        ))}
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {table.rows.map((row, rowIndex) => (
-                                        <tr key={`${table.title}-${rowIndex}`} className="border-b border-border/35 last:border-0">
-                                          {table.columns.map((column) => (
-                                            <td key={column.key} className="max-w-[280px] px-3 py-2 align-top text-muted-foreground">
-                                              {row.values[column.key] ?? "n/a"}
-                                            </td>
-                                          ))}
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
+                    <ReportSectionFrame key={section.title} section={section} />
                   ))}
                 </div>
               )}

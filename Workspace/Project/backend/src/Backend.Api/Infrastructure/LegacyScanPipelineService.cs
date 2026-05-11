@@ -649,7 +649,9 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
     {
         var presets = _pipelineOptions.CurrentValue.RulePathPresets
             .OrderBy(item => item.Key)
-            .Select(item => new LegacyPipelineRulePresetResponse(item.Key, item.Value.ToArray()))
+            .Select(item => new LegacyPipelineRulePresetResponse(
+                item.Key,
+                item.Value.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()))
             .ToArray();
         return Task.FromResult<IReadOnlyList<LegacyPipelineRulePresetResponse>>(presets);
     }
@@ -1160,7 +1162,7 @@ public sealed partial class LegacyScanPipelineService : ILegacyScanPipelineServi
         var title = string.IsNullOrWhiteSpace(request.Title)
             ? (reportTypeDisplayName.EndsWith("Report", StringComparison.OrdinalIgnoreCase) ? reportTypeDisplayName : $"{reportTypeDisplayName} Report")
             : request.Title.Trim();
-        var scope = LegacyScanPipelineHelpers.BuildReportScopeLabel(request.JobId, request.TargetId, request.NetworkId);
+        var scope = await ResolveReportScopeLabelAsync(request, cancellationToken);
         var generatedAtUtc = DateTimeOffset.UtcNow;
         var sections = await BuildReportSectionsAsync(request, cancellationToken);
         var query = ToReportQueryResponse(request);

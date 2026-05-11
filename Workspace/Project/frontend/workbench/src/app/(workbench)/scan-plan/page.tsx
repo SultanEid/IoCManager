@@ -5,6 +5,7 @@ import { CheckCircle2, Clock3, FolderSearch } from "lucide-react"
 import { ScannerFamilyBadge, ScannerFamilyMark } from "@/components/workbench/scanner-family-mark"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
@@ -1072,7 +1073,7 @@ export default function ScanPlanPage() {
       ) : null}
 
       {activeWorkspace === "library" ? (
-      <section className="wb-panel space-y-4">
+      <section className="wb-panel !overflow-visible space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="wb-kicker">Stored Plans</p>
@@ -1092,7 +1093,12 @@ export default function ScanPlanPage() {
         ) : (
           <div className="grid gap-3">
             {visiblePlans.map((plan) => (
-              <details key={plan.id} className="rounded-xl border border-border/70 bg-surface-2/55 p-4">
+              <details
+                key={plan.id}
+                className={`relative rounded-xl border border-border/70 bg-surface-2/55 p-4 ${
+                  openPlanActionsId === plan.id ? "z-30" : "z-0"
+                }`}
+              >
                 <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -1143,19 +1149,16 @@ export default function ScanPlanPage() {
                   {plan.notes ? <p className="mt-2 text-muted-foreground">{plan.notes}</p> : null}
                 </div>
 
-                <div className="relative mt-4 flex justify-end">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-expanded={openPlanActionsId === plan.id}
-                    onClick={() => setOpenPlanActionsId((current) => current === plan.id ? null : plan.id)}
+                <div className="mt-4 flex justify-end">
+                  <DropdownMenu
+                    open={openPlanActionsId === plan.id}
+                    onOpenChange={(open) => setOpenPlanActionsId(open ? plan.id : null)}
                   >
+                    <DropdownMenuTrigger className="inline-flex h-7 items-center rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium transition hover:bg-muted aria-expanded:bg-muted aria-expanded:text-foreground">
                     More
-                  </Button>
-                  {openPlanActionsId === plan.id ? (
-                    <div className="absolute right-0 top-10 z-20 grid w-44 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
-                      <button
-                        type="button"
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" sideOffset={8} className="grid w-44 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                      <DropdownMenuItem
                         className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
                           setOpenPlanActionsId(null)
@@ -1164,9 +1167,8 @@ export default function ScanPlanPage() {
                         disabled={runningId === plan.id}
                       >
                         {runningId === plan.id ? "Queueing..." : "Run now"}
-                      </button>
-                      <button
-                        type="button"
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
                         onClick={() => {
                           setOpenPlanActionsId(null)
@@ -1174,9 +1176,8 @@ export default function ScanPlanPage() {
                         }}
                       >
                         Edit
-                      </button>
-                      <button
-                        type="button"
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
                           setOpenPlanActionsId(null)
@@ -1185,9 +1186,8 @@ export default function ScanPlanPage() {
                         disabled={statusUpdatingId === plan.id}
                       >
                         {statusUpdatingId === plan.id ? "Updating..." : plan.status === "Active" ? "Pause" : "Activate"}
-                      </button>
-                      <button
-                        type="button"
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
                           setOpenPlanActionsId(null)
@@ -1196,9 +1196,9 @@ export default function ScanPlanPage() {
                         disabled={cloningId === plan.id}
                       >
                         {cloningId === plan.id ? "Cloning..." : "Clone"}
-                      </button>
-                      <button
-                        type="button"
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
                         className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
                           setOpenPlanActionsId(null)
@@ -1207,9 +1207,9 @@ export default function ScanPlanPage() {
                         disabled={deletingId === plan.id}
                       >
                         {deletingId === plan.id ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  ) : null}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </details>
             ))}

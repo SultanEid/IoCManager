@@ -1,0 +1,1 @@
+alert http any any -> 172.165.50.130 any (msg:"Apache WebShell Case Study Suricata HTTP command marker"; http.uri; content:"/uploads/shell.php?cmd="; nocase; sid:42050131; rev:1; classtype:web-application-attack;)

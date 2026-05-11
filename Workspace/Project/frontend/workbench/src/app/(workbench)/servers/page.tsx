@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { classifyUiError } from "@/shared/api/error-classification"
 import { useAuth } from "@/shared/auth/auth-provider"
@@ -463,6 +464,8 @@ export default function ServersPage() {
                         Cancel
                       </Button>
                     </div>
+                    {actionMessage ? <p className="text-sm text-emerald-700 dark:text-emerald-300">{actionMessage}</p> : null}
+                    {actionError ? <p className="text-sm text-rose-700 dark:text-rose-300">{actionError}</p> : null}
                   </div>
                 ) : (
                   <>
@@ -476,20 +479,15 @@ export default function ServersPage() {
                       <Button onClick={() => runDiscovery(network.id)} disabled={discoveringId === network.id}>
                         {discoveringId === network.id ? "Discovering..." : "Run Discovery"}
                       </Button>
-                      <div className="relative z-40">
-                        <button
-                          type="button"
-                          className="inline-flex h-9 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted"
-                          aria-haspopup="menu"
-                          aria-expanded={openNetworkActionsId === network.id}
-                          onClick={() => setOpenNetworkActionsId((current) => current === network.id ? null : network.id)}
-                        >
+                      <DropdownMenu
+                        open={openNetworkActionsId === network.id}
+                        onOpenChange={(open) => setOpenNetworkActionsId(open ? network.id : null)}
+                      >
+                        <DropdownMenuTrigger className="inline-flex h-9 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted aria-expanded:bg-muted aria-expanded:text-foreground">
                           More
-                        </button>
-                        {openNetworkActionsId === network.id ? (
-                        <div className="absolute right-0 top-full z-50 mt-2 grid w-48 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
-                          <button
-                            type="button"
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" sideOffset={8} className="grid w-48 gap-1 rounded-xl border border-border/70 bg-surface-1 p-2 shadow-[var(--shadow-panel)]">
+                          <DropdownMenuItem
                             className="rounded-lg px-3 py-2 text-left text-sm transition hover:bg-surface-2"
                             onClick={() => {
                               setOpenNetworkActionsId(null)
@@ -497,9 +495,9 @@ export default function ServersPage() {
                             }}
                           >
                             Edit settings
-                          </button>
-                          <button
-                            type="button"
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
                             className="rounded-lg px-3 py-2 text-left text-sm text-destructive transition hover:bg-destructive/10"
                             onClick={() => {
                               setOpenNetworkActionsId(null)
@@ -507,10 +505,9 @@ export default function ServersPage() {
                             }}
                           >
                             Delete subnet
-                          </button>
-                        </div>
-                        ) : null}
-                      </div>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       {confirmingDeleteNetworkId === network.id ? (
                         <>
                           <Button

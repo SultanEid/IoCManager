@@ -56,6 +56,26 @@ function formatScopeLabel(scopeType: RuleScopeType, scopeValue: string | null) {
   return scopeValue ? `${label} / ${scopeValue}` : label
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function RepositoryMetricCard({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "ready" | "deleted" }) {
+  const toneClass =
+    tone === "ready"
+      ? "from-emerald-400/14 to-primary/8"
+      : tone === "deleted"
+        ? "from-rose-400/12 to-primary/6"
+        : "from-primary/14 to-surface-2/60"
+
+  return (
+    <div className={`rounded-2xl border border-primary/18 bg-gradient-to-br ${toneClass} p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_16px_38px_rgba(0,0,0,0.14)]`}>
+      <p className="wb-kicker text-primary/90">{label}</p>
+      <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+    </div>
+  )
+}
+
 const columns: ColumnDef<RuleListItem>[] = [
   {
     accessorKey: "name",
@@ -476,30 +496,18 @@ export function RuleRepositoryPage() {
         </p>
         <div className="mt-4 grid gap-3 xl:grid-cols-[1.35fr_0.65fr]">
           <div className="grid gap-3 sm:grid-cols-4">
-            <div className="rounded-2xl border border-border/70 bg-surface-2/65 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <p className="wb-kicker">Visible Rules</p>
-              <p className="mt-1 text-lg font-semibold tracking-tight">{items.length}</p>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-surface-2/65 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <p className="wb-kicker">Total Matches</p>
-              <p className="mt-1 text-lg font-semibold tracking-tight">{total}</p>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-surface-2/65 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <p className="wb-kicker">Ready In Page</p>
-              <p className="mt-1 text-lg font-semibold tracking-tight">{readyCount}</p>
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-surface-2/65 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <p className="wb-kicker">Deleted In Page</p>
-              <p className="mt-1 text-lg font-semibold tracking-tight">{deletedCount}</p>
-            </div>
+            <RepositoryMetricCard label="Visible Rules" value={items.length} />
+            <RepositoryMetricCard label="Total Matches" value={total} />
+            <RepositoryMetricCard label="Ready In Page" value={readyCount} tone="ready" />
+            <RepositoryMetricCard label="Deleted In Page" value={deletedCount} tone="deleted" />
           </div>
-          <div className="rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,_rgba(58,93,169,0.18),_rgba(12,18,26,0.96)_72%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <p className="wb-kicker">Visible Families</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{visibleFamilyCount || 0}</p>
+          <div className="rounded-2xl border border-primary/22 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--primary)_16%,transparent),color-mix(in_srgb,var(--surface-2)_90%,transparent))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_45px_rgba(0,0,0,0.16)]">
+            <p className="wb-kicker text-primary/90">Visible Families</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{visibleFamilyCount || 0}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {familyBreakdown.length > 0 ? familyBreakdown.map((entry) => (
-                <div key={entry.family} className="rounded-full border border-border/70 bg-surface-1/70 px-2.5 py-1 text-[11px] text-muted-foreground">
-                  {formatFamilyLabel(entry.family)} <span className="text-foreground">{entry.count}</span>
+                <div key={entry.family} className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                  {formatFamilyLabel(entry.family)} <span className="text-primary">{entry.count}</span>
                 </div>
               )) : (
                 <p className="text-xs text-muted-foreground">No family coverage on this page yet.</p>
@@ -509,13 +517,13 @@ export function RuleRepositoryPage() {
         </div>
       </header>
 
-      <article className="wb-panel space-y-4 border border-border/70 bg-[linear-gradient(180deg,rgba(12,18,26,0.98),rgba(16,22,32,0.92))]">
+      <article className="wb-panel space-y-4 border border-primary/16 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_94%,transparent),color-mix(in_srgb,var(--background)_88%,transparent))] shadow-[0_22px_58px_rgba(0,0,0,0.16)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold tracking-tight">Search and filter</h3>
             <p className="mt-1 text-xs text-muted-foreground">Search by identity, source, tags, actor, version, or narrow to one family and lifecycle slice.</p>
           </div>
-          <div className="rounded-full border border-border/70 bg-surface-2/65 px-3 py-1 text-[11px] text-muted-foreground">
+          <div className="rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
             URL state preserved
           </div>
         </div>
@@ -527,7 +535,7 @@ export function RuleRepositoryPage() {
             placeholder="Search name, source, tags, actor, version"
           />
           <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm text-foreground"
             value={filters.family}
             onChange={(event) => setFilters((previous) => ({ ...previous, family: event.target.value as RuleFamily | "", page: 1 }))}
           >
@@ -549,7 +557,7 @@ export function RuleRepositoryPage() {
             placeholder="Severity"
           />
           <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm text-foreground"
             value={filters.scopeType}
             onChange={(event) => setFilters((previous) => ({ ...previous, scopeType: event.target.value as RuleScopeType | "", page: 1 }))}
           >
@@ -564,7 +572,7 @@ export function RuleRepositoryPage() {
 
         <div className="grid gap-3 md:grid-cols-5">
           <select
-            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm"
+            className="h-9 rounded-lg border border-border/70 bg-surface-1 px-2 text-sm text-foreground"
             value={filters.status}
             onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value, page: 1 }))}
           >
@@ -642,14 +650,14 @@ export function RuleRepositoryPage() {
         </div>
       </article>
 
-      <article className="wb-panel space-y-4 border border-border/70 bg-[linear-gradient(180deg,rgba(11,16,24,0.98),rgba(15,21,31,0.9))]">
+      <article className="wb-panel space-y-4 border border-primary/16 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_95%,transparent),color-mix(in_srgb,var(--background)_90%,transparent))] shadow-[0_22px_58px_rgba(0,0,0,0.16)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold tracking-tight">Repository inventory</h3>
             <p className="mt-1 text-xs text-muted-foreground">Current page {page} with {Math.min(pageSize, items.length)} visible records.</p>
           </div>
-          <div className="rounded-full border border-border/70 bg-surface-2/60 px-3 py-1 text-[11px] text-muted-foreground">
-            Click any row for detail, revisions, import history, and validation.
+          <div className="rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+            Rows open rule detail and validation history.
           </div>
         </div>
 
@@ -676,7 +684,16 @@ export function RuleRepositoryPage() {
             />
           )
         ) : (
-          <DataGrid data={items} columns={columns} onRowClick={(row) => router.push(`/rules/${row.id}`)} />
+          <DataGrid
+            data={items}
+            columns={columns}
+            rowClassName="hover:bg-primary/6"
+            onRowClick={(row) => {
+              if (isUuid(row.id)) {
+                router.push(`/rules/${encodeURIComponent(row.id)}`)
+              }
+            }}
+          />
         )}
 
         <div className="flex items-center justify-between text-sm">

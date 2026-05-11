@@ -2721,7 +2721,7 @@ public sealed class ScanAnalystPocService
             || ex is SocketException
             || ex is InvalidOperationException;
 
-    private static Guid BuildLegacyTargetGuid(string targetId) => BuildStableGuid($"legacy-target:{targetId}");
+    private static Guid BuildLegacyTargetGuid(string targetId) => LegacyScanPipelineHelpers.BuildSyntheticTargetServerId(targetId);
 
     private static Guid BuildLegacyNetworkGuid(string networkId) => BuildStableGuid($"legacy-network:{networkId}");
 

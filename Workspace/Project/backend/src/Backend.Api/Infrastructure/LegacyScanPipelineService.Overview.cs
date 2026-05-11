@@ -15,7 +15,10 @@ public sealed partial class LegacyScanPipelineService
         var iocCount = await _dbContext.Iocs
             .AsNoTracking()
             .CountAsync(cancellationToken);
-        var reportCount = await _dbContext.Reports
+        var legacyReportCount = await _dbContext.Reports
+            .AsNoTracking()
+            .CountAsync(cancellationToken);
+        var v2ReportCount = await _ctiDbContext.ReportsV2
             .AsNoTracking()
             .CountAsync(cancellationToken);
         var alertCount = await _ctiDbContext.AlertsV2
@@ -25,7 +28,7 @@ public sealed partial class LegacyScanPipelineService
         return new LegacyPipelineOverviewSummaryResponse(
             targetCount,
             iocCount,
-            reportCount,
+            legacyReportCount + v2ReportCount,
             alertCount);
     }
 }

@@ -40,7 +40,7 @@ public sealed class LegacyScanPipelineController : ControllerBase
     }
 
     [HttpPut("networks/{networkId}")]
-    [Authorize(Policy = AuthorizationPolicies.LeadAccess)]
+    [Authorize(Policy = AuthorizationPolicies.AnalystAccess)]
     public async Task<ActionResult<LegacyPipelineNetworkResponse>> UpdateNetwork(
         string networkId,
         [FromBody] UpdateLegacyPipelineNetworkRequest request,
