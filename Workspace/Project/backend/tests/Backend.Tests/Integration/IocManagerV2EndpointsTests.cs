@@ -1347,8 +1347,14 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
         await dbContext.SaveChangesAsync();
 
         var legacyDbContext = scope.ServiceProvider.GetRequiredService<LegacyScanPipelineDbContext>();
+        var networkIds = await legacyDbContext.Networks
+            .Where(network => network.Name == "Regression Scope Network" || network.SubNet == "10.252.207.0/24")
+            .Select(network => network.NetworkId)
+            .ToArrayAsync();
         var targetIds = await legacyDbContext.Targets
-            .Where(target => target.IPAddress == "10.252.207.130")
+            .Where(target =>
+                target.IPAddress == "10.252.207.130"
+                || (target.NetworkId.HasValue && networkIds.Contains(target.NetworkId.Value)))
             .Select(target => target.TargetId)
             .ToArrayAsync();
         var resultIds = await legacyDbContext.ScanResults
@@ -1385,8 +1391,10 @@ public sealed class IocManagerV2EndpointsTests : IClassFixture<TestWebApplicatio
             .Where(target => targetIds.Contains(target.TargetId))
             .ToArrayAsync();
         legacyDbContext.Targets.RemoveRange(targets);
+        await legacyDbContext.SaveChangesAsync();
+
         var networks = await legacyDbContext.Networks
-            .Where(network => network.Name == "Regression Scope Network" || network.SubNet == "10.252.207.0/24")
+            .Where(network => networkIds.Contains(network.NetworkId))
             .ToArrayAsync();
         legacyDbContext.Networks.RemoveRange(networks);
         await legacyDbContext.SaveChangesAsync();
